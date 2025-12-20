@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2025-01-XX
+
+### 🎨 Enhanced - Bookmark UI Overhaul
+- **Floating input dialogs**: All bookmark operations now use modern floating window interface
+- **Add Bookmark dialog**: Blue-bordered floating input with automatic whitespace trimming
+- **List Bookmark dialog**: Interactive selection with direct navigation support
+- **Remove Bookmark dialog**: Two-stage confirmation with color-coded warnings
+- **Improved input handling**: Better cursor positioning, no border overlap, proper padding
+
+### Added
+- **DialogRenderer#show_input_dialog**: Unified floating input interface with ESC support
+- **Color-coded feedback dialogs**: 🔵 Blue (info), 🔴 Red (warning/error), 🟡 Yellow (confirm), 🟢 Green (success)
+- **Automatic input trimming**: Leading/trailing spaces removed from bookmark names
+- **Path truncation**: Long paths display with `~` for home directory
+
+### Fixed
+- **Input field positioning**: Text no longer overlaps with dialog borders
+- **Bookmark list navigation**: Users can now navigate to bookmarks from list view
+- **Dialog layout**: Proper spacing between all dialog elements
+
+### Technical Details
+- New input dialog system with multi-byte character support
+- Enhanced BookmarkManager with private helper methods for dialogs
+- Improved cursor positioning calculations
+- **Detailed changelog**: [CHANGELOG_v0.10.0.md](./CHANGELOG_v0.10.0.md)
+
+## [0.9.0] - 2025-01-XX
+
 ### Added
 - **Escape key support for file/directory creation**: Press `Esc` to cancel file (`a`) or directory (`A`) creation prompts and return to the main view
 - **Interactive input improvements**: Backspace support and better character handling for Japanese input

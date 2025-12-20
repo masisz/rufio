@@ -698,15 +698,24 @@ module Rufio
       case result[:action]
       when :add
         success = @bookmark_manager.add_interactive(result[:path])
-        wait_for_keypress
+        @terminal_ui&.refresh_display
         success
       when :list
-        @bookmark_manager.list_interactive
-        wait_for_keypress
-        true
+        selected_bookmark = @bookmark_manager.list_interactive
+        @terminal_ui&.refresh_display
+        if selected_bookmark
+          # Navigate to selected bookmark
+          if @bookmark_manager.path_exists?(selected_bookmark)
+            navigate_to_directory(selected_bookmark[:path])
+          else
+            show_error_and_wait('bookmark.path_not_exist', selected_bookmark[:path])
+          end
+        else
+          false
+        end
       when :remove
         @bookmark_manager.remove_interactive
-        wait_for_keypress
+        @terminal_ui&.refresh_display
         true
       when :navigate
         goto_bookmark(result[:number])

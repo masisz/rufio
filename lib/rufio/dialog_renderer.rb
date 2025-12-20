@@ -123,5 +123,111 @@ module Rufio
 
       [width, height]
     end
+
+    # Show a floating input dialog and get user input
+    # @param title [String] Dialog title
+    # @param prompt [String] Prompt message
+    # @param options [Hash] Customization options
+    # @option options [String] :border_color Border color ANSI code
+    # @option options [String] :title_color Title color ANSI code
+    # @option options [String] :content_color Content color ANSI code
+    # @option options [Integer] :width Dialog width (default: 50)
+    # @return [String, nil] User input (nil if cancelled)
+    def show_input_dialog(title, prompt, options = {})
+      require 'io/console'
+
+      width = options[:width] || 50
+      height = 8 # title + separator + prompt + input line + blank + ESC message + borders
+
+      x, y = calculate_center(width, height)
+
+      content_lines = [
+        '',
+        prompt,
+        '',
+        '> ', # Input line with prompt indicator
+        '',
+        '',
+        'Press ESC to cancel'
+      ]
+
+      # Draw initial dialog
+      draw_floating_window(x, y, width, height, title, content_lines, options)
+
+      # Position cursor at input line
+      # y + 1 (top border) + 1 (title) + 1 (separator) + 1 (blank) + 1 (prompt) + 1 (blank) + 1 (input line) = y + 6
+      input_y = y + 6
+      input_x = x + 4 # Inside border with prompt '> ' (border 1 + space 1 + '> ' 2)
+      print "\e[#{input_y};#{input_x}H"
+      STDOUT.flush
+
+      # Read input with escape support
+      input = read_input_in_dialog(x, y, width, height, input_x, input_y, options)
+
+      # Clear dialog
+      clear_area(x, y, width, height)
+
+      input
+    end
+
+    private
+
+    # ASCII character range constants
+    ASCII_PRINTABLE_START = 32
+    ASCII_PRINTABLE_END = 127
+    MULTIBYTE_THRESHOLD = 1
+
+    # Read user input within a dialog
+    # @param dialog_x [Integer] Dialog X position
+    # @param dialog_y [Integer] Dialog Y position
+    # @param dialog_width [Integer] Dialog width
+    # @param dialog_height [Integer] Dialog height
+    # @param input_x [Integer] Input field X position
+    # @param input_y [Integer] Input field Y position
+    # @param options [Hash] Display options
+    # @return [String, nil] User input (nil if cancelled)
+    def read_input_in_dialog(dialog_x, dialog_y, dialog_width, dialog_height, input_x, input_y, options)
+      content_color = options[:content_color] || "\e[37m"
+      reset_color = "\e[0m"
+
+      input_chars = []
+      max_input_width = dialog_width - 8 # Leave space for borders and padding (border 2 + padding 4 + border 2)
+
+      loop do
+        char = STDIN.getch
+
+        case char
+        when "\e" # Escape - cancel
+          return nil
+        when "\r", "\n" # Enter - submit
+          return input_chars.join.strip
+        when "\u007F", "\b" # Backspace/Delete
+          unless input_chars.empty?
+            input_chars.pop
+            # Redraw input line - clear the entire input area
+            print "\e[#{input_y};#{input_x}H"
+            print "#{content_color}#{' ' * max_input_width}#{reset_color}"
+            print "\e[#{input_y};#{input_x}H"
+            print "#{content_color}#{input_chars.join}#{reset_color}"
+            STDOUT.flush
+          end
+        when "\u0003" # Ctrl+C
+          raise Interrupt
+        else
+          # Accept printable characters
+          if (char.ord >= ASCII_PRINTABLE_START && char.ord < ASCII_PRINTABLE_END) ||
+             char.bytesize > MULTIBYTE_THRESHOLD # Multibyte characters (Japanese, etc.)
+            current_width = TextUtils.display_width(input_chars.join)
+            char_width = TextUtils.display_width(char)
+
+            if current_width + char_width <= max_input_width
+              input_chars << char
+              print "#{content_color}#{char}#{reset_color}"
+              STDOUT.flush
+            end
+          end
+        end
+      end
+    end
   end
 end
