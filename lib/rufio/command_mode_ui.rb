@@ -1,0 +1,168 @@
+# frozen_string_literal: true
+
+require 'io/console'
+
+module Rufio
+  # コマンドモードのUI - Tab補完とフローティングウィンドウでの結果表示
+  class CommandModeUI
+    def initialize(command_mode, dialog_renderer)
+      @command_mode = command_mode
+      @dialog_renderer = dialog_renderer
+    end
+
+    # 入力文字列に対する補完候補を取得
+    # @param input [String] 現在の入力文字列
+    # @return [Array<String>] 補完候補の配列
+    def autocomplete(input)
+      # 利用可能なコマンド一覧を取得
+      available = @command_mode.available_commands.map(&:to_s)
+
+      # 入力が空の場合は全てのコマンドを返す
+      return available if input.empty?
+
+      # 入力に一致するコマンドをフィルタリング
+      available.select { |cmd| cmd.start_with?(input) }
+    end
+
+    # コマンドを補完する
+    # @param input [String] 現在の入力文字列
+    # @return [String] 補完後の文字列
+    def complete_command(input)
+      suggestions = autocomplete(input)
+
+      # マッチするものがない場合は元の入力を返す
+      return input if suggestions.empty?
+
+      # 一つだけマッチする場合はそれを返す
+      return suggestions.first if suggestions.length == 1
+
+      # 複数マッチする場合は共通プレフィックスを返す
+      find_common_prefix(suggestions)
+    end
+
+    # コマンド入力プロンプトをフローティングウィンドウで表示
+    # @param input [String] 現在の入力文字列
+    # @param suggestions [Array<String>] 補完候補（オプション）
+    def show_input_prompt(input, suggestions = [])
+      # タイトル
+      title = "コマンドモード"
+
+      # コンテンツ行を構築
+      content_lines = [""]
+      content_lines << "#{input}_"  # カーソルを_で表現
+      content_lines << ""
+
+      # 補完候補がある場合は表示
+      unless suggestions.empty?
+        content_lines << "補完候補:"
+        suggestions.each do |suggestion|
+          content_lines << "  #{suggestion}"
+        end
+        content_lines << ""
+      end
+
+      content_lines << "Tab: 補完 | Enter: 実行 | ESC: キャンセル"
+
+      # ウィンドウの色設定（青）
+      border_color = "\e[34m"      # Blue
+      title_color = "\e[1;34m"     # Bold blue
+      content_color = "\e[37m"     # White
+
+      # ウィンドウサイズを計算
+      width, height = @dialog_renderer.calculate_dimensions(content_lines, {
+                                                               title: title,
+                                                               min_width: 50,
+                                                               max_width: 80
+                                                             })
+
+      # 中央位置を計算
+      x, y = @dialog_renderer.calculate_center(width, height)
+
+      # フローティングウィンドウを描画
+      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+                                               border_color: border_color,
+                                               title_color: title_color,
+                                               content_color: content_color
+                                             })
+    end
+
+    # コマンド実行結果をフローティングウィンドウで表示
+    # @param result [String, nil] コマンド実行結果
+    def show_result(result)
+      # nil または空文字列の場合は何も表示しない
+      return if result.nil? || result.empty?
+
+      # 結果を行に分割
+      result_lines = result.split("\n")
+
+      # エラーメッセージかどうかを判定
+      is_error = result.include?("⚠️") || result.include?("エラー")
+
+      # ウィンドウの色設定
+      if is_error
+        border_color = "\e[31m"      # Red
+        title_color = "\e[1;31m"     # Bold red
+        content_color = "\e[37m"     # White
+      else
+        border_color = "\e[32m"      # Green
+        title_color = "\e[1;32m"     # Bold green
+        content_color = "\e[37m"     # White
+      end
+
+      # ウィンドウタイトル
+      title = "コマンド実行結果"
+
+      # コンテンツ行を構築
+      content_lines = [""] + result_lines + ["", "Press any key to close"]
+
+      # ウィンドウサイズを計算
+      width, height = @dialog_renderer.calculate_dimensions(content_lines, {
+                                                               title: title,
+                                                               min_width: 40,
+                                                               max_width: 100
+                                                             })
+
+      # 中央位置を計算
+      x, y = @dialog_renderer.calculate_center(width, height)
+
+      # フローティングウィンドウを描画
+      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+                                               border_color: border_color,
+                                               title_color: title_color,
+                                               content_color: content_color
+                                             })
+
+      # キー入力を待つ
+      STDIN.getch
+
+      # ウィンドウをクリア
+      @dialog_renderer.clear_area(x, y, width, height)
+    end
+
+    private
+
+    # 文字列配列の共通プレフィックスを見つける
+    # @param strings [Array<String>] 文字列配列
+    # @return [String] 共通プレフィックス
+    def find_common_prefix(strings)
+      return "" if strings.empty?
+      return strings.first if strings.length == 1
+
+      # 最短の文字列の長さを取得
+      min_length = strings.map(&:length).min
+
+      # 各文字位置で全ての文字列が同じ文字を持っているかチェック
+      common_length = 0
+      min_length.times do |i|
+        char = strings.first[i]
+        if strings.all? { |s| s[i] == char }
+          common_length = i + 1
+        else
+          break
+        end
+      end
+
+      strings.first[0...common_length]
+    end
+  end
+end

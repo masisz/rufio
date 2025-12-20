@@ -1,0 +1,34 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative '../lib/rufio'
+
+# プラグインを読み込む
+Rufio::PluginManager.load_all
+
+# コマンドライン引数の処理
+if ARGV.include?('--check-health') || ARGV.include?('-c')
+  # ヘルスチェック実行
+  health_checker = Rufio::HealthChecker.new
+  success = health_checker.run_check
+  exit(success ? 0 : 1)
+elsif ARGV.include?('--help')
+  puts "rufio - Terminal-based file manager"
+  puts ""
+  puts "Usage:"
+  puts "  rufio [DIRECTORY]     Start rufio in specified directory"
+  puts "  rufio -c, --check-health  Check system dependencies"
+  puts "  rufio --help          Show this help message"
+  puts ""
+  puts "Examples:"
+  puts "  rufio                 # Start in current directory"
+  puts "  rufio /path/to/dir    # Start in specific directory"
+  puts "  rufio -c              # Check if all dependencies are available"
+  exit(0)
+else
+  start_directory = ARGV[0] || Dir.pwd
+
+  # アプリケーション開始
+  app = Rufio::Application.new(start_directory)
+  app.run
+end
