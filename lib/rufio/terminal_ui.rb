@@ -60,6 +60,9 @@ module Rufio
       @running = true
       setup_terminal
 
+      # Show info notices if any
+      show_info_notices
+
       begin
         main_loop
       ensure
@@ -623,6 +626,58 @@ module Rufio
       @command_mode_ui.show_result(result) if result
 
       # 画面を再描画
+      draw_screen
+    end
+
+    # Show info notices from the info directory if any are unread
+    def show_info_notices
+      require_relative 'info_notice'
+      info_notice = InfoNotice.new
+      notices = info_notice.unread_notices
+
+      notices.each do |notice|
+        show_info_notice(notice, info_notice)
+      end
+    end
+
+    # Show a single info notice
+    # @param notice [Hash] Notice hash with :title and :content
+    # @param info_notice [InfoNotice] InfoNotice instance to mark as shown
+    def show_info_notice(notice, info_notice)
+      # Calculate window dimensions
+      width = [@screen_width - 10, 70].min
+      # Calculate height based on content length
+      content_length = notice[:content].length
+      height = [content_length + 4, @screen_height - 4].min # +4 for borders and title
+      x = (@screen_width - width) / 2
+      y = (@screen_height - height) / 2
+
+      # Display the notice window
+      @dialog_renderer.draw_floating_window(
+        x, y, width, height,
+        notice[:title],
+        notice[:content],
+        {
+          border_color: "\e[36m",  # Cyan
+          title_color: "\e[1;36m", # Bold cyan
+          content_color: "\e[37m"  # White
+        }
+      )
+
+      # Force flush to ensure display
+      $stdout.flush
+
+      # Wait for any key press
+      require 'io/console'
+      IO.console.getch
+
+      # Mark as shown
+      info_notice.mark_as_shown(notice[:file])
+
+      # Clear the notice window
+      @dialog_renderer.clear_area(x, y, width, height)
+
+      # Redraw the screen
       draw_screen
     end
   end
