@@ -149,8 +149,8 @@ module Rufio
         delete_selected_files
       when 'p'  # p - project mode
         enter_project_mode
-      when 'b'  # b - bookmark operations
-        show_bookmark_menu
+      when 'b'  # b - add bookmark
+        add_bookmark
       when 'z'  # z - zoxide history navigation
         show_zoxide_menu
       when '1', '2', '3', '4', '5', '6', '7', '8', '9'  # number keys - go to bookmark
@@ -864,6 +864,61 @@ module Rufio
       else
         show_error_and_wait('bookmark.navigate_failed', bookmark[:name])
       end
+    end
+
+    def add_bookmark
+      current_path = @directory_listing&.current_path || Dir.pwd
+
+      # カレントディレクトリが既にブックマークされているかチェック
+      bookmarks = @bookmark_manager.list
+      existing = bookmarks.find { |b| b[:path] == current_path }
+
+      if existing
+        # 既に存在する場合はメッセージを表示して終了
+        content_lines = [
+          '',
+          'This directory is already bookmarked',
+          "Name: #{existing[:name]}",
+          '',
+          'Press any key to continue...'
+        ]
+
+        title = 'Bookmark Exists'
+        width = 50
+        height = content_lines.length + 4
+        x, y = @dialog_renderer.calculate_center(width, height)
+
+        @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+          border_color: "\e[33m",    # Yellow
+          title_color: "\e[1;33m",   # Bold yellow
+          content_color: "\e[37m"    # White
+        })
+
+        STDIN.getch
+        @dialog_renderer.clear_area(x, y, width, height)
+        @terminal_ui&.refresh_display
+        return false
+      end
+
+      # ディレクトリ名を取得
+      dir_name = File.basename(current_path)
+
+      # ダイアログレンダラーを使用して入力ダイアログを表示
+      title = "Add Bookmark: #{dir_name}"
+      prompt = "Enter bookmark name:"
+      bookmark_name = @dialog_renderer.show_input_dialog(title, prompt, {
+        border_color: "\e[32m",    # Green
+        title_color: "\e[1;32m",   # Bold green
+        content_color: "\e[37m"    # White
+      })
+
+      return false if bookmark_name.nil? || bookmark_name.empty?
+
+      # ブックマークを追加
+      result = @bookmark_manager.add(current_path, bookmark_name)
+
+      @terminal_ui&.refresh_display if @terminal_ui
+      result
     end
 
     # ヘルパーメソッド
