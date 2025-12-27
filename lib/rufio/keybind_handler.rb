@@ -388,12 +388,15 @@ module Rufio
     def create_file
       current_path = @directory_listing&.current_path || Dir.pwd
 
-      # カーソルを画面下部に移動して入力プロンプトを表示
-      move_to_input_line
-      print ConfigLoader.message('keybind.input_filename')
-      STDOUT.flush
+      # ダイアログレンダラーを使用して入力ダイアログを表示
+      title = "Create File"
+      prompt = "Enter file name:"
+      filename = @dialog_renderer.show_input_dialog(title, prompt, {
+        border_color: "\e[32m",    # Green
+        title_color: "\e[1;32m",   # Bold green
+        content_color: "\e[37m"    # White
+      })
 
-      filename = read_line_with_escape
       return false if filename.nil? || filename.empty?
 
       # FileOperationsを使用してファイルを作成
@@ -409,22 +412,22 @@ module Rufio
         @current_index = new_file_index if new_file_index
       end
 
-      # 結果を表示
-      puts "\n#{result.message}"
-      print ConfigLoader.message('keybind.press_any_key')
-      STDIN.getch
+      @terminal_ui&.refresh_display
       result.success
     end
 
     def create_directory
       current_path = @directory_listing&.current_path || Dir.pwd
 
-      # カーソルを画面下部に移動して入力プロンプトを表示
-      move_to_input_line
-      print ConfigLoader.message('keybind.input_dirname')
-      STDOUT.flush
+      # ダイアログレンダラーを使用して入力ダイアログを表示
+      title = "Create Directory"
+      prompt = "Enter directory name:"
+      dirname = @dialog_renderer.show_input_dialog(title, prompt, {
+        border_color: "\e[34m",    # Blue
+        title_color: "\e[1;34m",   # Bold blue
+        content_color: "\e[37m"    # White
+      })
 
-      dirname = read_line_with_escape
       return false if dirname.nil? || dirname.empty?
 
       # FileOperationsを使用してディレクトリを作成
@@ -440,10 +443,7 @@ module Rufio
         @current_index = new_dir_index if new_dir_index
       end
 
-      # 結果を表示
-      puts "\n#{result.message}"
-      print ConfigLoader.message('keybind.press_any_key')
-      STDIN.getch
+      @terminal_ui&.refresh_display
       result.success
     end
 
@@ -478,8 +478,6 @@ module Rufio
         @current_index = new_index if new_index
       end
 
-      # 結果を表示
-      show_operation_result(result)
       @terminal_ui&.refresh_display
       result.success
     end
@@ -548,8 +546,6 @@ module Rufio
         @current_index = 0 if @current_index < 0
       end
 
-      # 結果を表示
-      show_operation_result(result)
       @terminal_ui&.refresh_display
       result.success
     end
