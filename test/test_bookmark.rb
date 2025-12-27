@@ -229,5 +229,79 @@ module Rufio
       assert_equal 'MFolder', list[1][:name]
       assert_equal 'ZFolder', list[2][:name]
     end
+
+    def test_rename_bookmark
+      # 実際に存在するテスト用ディレクトリを作成
+      path = File.join(@test_config_dir, 'documents')
+      FileUtils.mkdir_p(path)
+      old_name = 'Documents'
+      new_name = 'MyDocs'
+
+      @bookmark.add(path, old_name)
+      result = @bookmark.rename(old_name, new_name)
+
+      assert result
+      assert_equal 1, @bookmark.list.length
+      assert_equal new_name, @bookmark.list.first[:name]
+      assert_equal File.expand_path(path), @bookmark.list.first[:path]
+    end
+
+    def test_rename_nonexistent_bookmark
+      result = @bookmark.rename('NonExistent', 'NewName')
+
+      refute result
+    end
+
+    def test_rename_to_existing_name
+      # 実際に存在するテスト用ディレクトリを作成
+      path1 = File.join(@test_config_dir, 'documents')
+      path2 = File.join(@test_config_dir, 'downloads')
+      FileUtils.mkdir_p(path1)
+      FileUtils.mkdir_p(path2)
+
+      @bookmark.add(path1, 'Documents')
+      @bookmark.add(path2, 'Downloads')
+
+      result = @bookmark.rename('Documents', 'Downloads')
+
+      refute result
+      assert_equal 2, @bookmark.list.length
+    end
+
+    def test_add_bookmark_strips_whitespace
+      # 実際に存在するテスト用ディレクトリを作成
+      path = File.join(@test_config_dir, 'documents')
+      FileUtils.mkdir_p(path)
+      name_with_spaces = '  Documents  '
+
+      result = @bookmark.add(path, name_with_spaces)
+
+      assert result
+      assert_equal 'Documents', @bookmark.list.first[:name]
+    end
+
+    def test_rename_strips_whitespace
+      # 実際に存在するテスト用ディレクトリを作成
+      path = File.join(@test_config_dir, 'documents')
+      FileUtils.mkdir_p(path)
+
+      @bookmark.add(path, 'OldName')
+      result = @bookmark.rename('OldName', '  NewName  ')
+
+      assert result
+      assert_equal 'NewName', @bookmark.list.first[:name]
+    end
+
+    def test_rename_to_empty_name_after_strip
+      # 実際に存在するテスト用ディレクトリを作成
+      path = File.join(@test_config_dir, 'documents')
+      FileUtils.mkdir_p(path)
+
+      @bookmark.add(path, 'Documents')
+      result = @bookmark.rename('Documents', '   ')
+
+      refute result
+      assert_equal 'Documents', @bookmark.list.first[:name]
+    end
   end
 end
