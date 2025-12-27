@@ -86,11 +86,10 @@ module Rufio
 
     # ログファイルは時系列で表示される
     def test_log_files_sorted_by_time
-      sleep 0.01
       @project_log.save('project1', 'cmd1', 'output1')
-      sleep 0.01
+      sleep 1.1
       @project_log.save('project2', 'cmd2', 'output2')
-      sleep 0.01
+      sleep 1.1
       @project_log.save('project3', 'cmd3', 'output3')
 
       list = @project_log.list_log_files

@@ -9,6 +9,13 @@ module Rufio
       @temp_dir = Dir.mktmpdir
       @config_file = File.join(@temp_dir, 'bookmarks.json')
       @log_dir = File.join(@temp_dir, 'logs')
+
+      # テスト用のプロジェクトディレクトリを作成
+      @project1_dir = File.join(@temp_dir, 'project1')
+      @project2_dir = File.join(@temp_dir, 'project2')
+      FileUtils.mkdir_p(@project1_dir)
+      FileUtils.mkdir_p(@project2_dir)
+
       @bookmark = Bookmark.new(@config_file)
       @project_mode = ProjectMode.new(@bookmark, @log_dir)
     end
@@ -26,8 +33,8 @@ module Rufio
 
     # プロジェクトモードでブックマーク一覧が表示される
     def test_list_bookmarks_in_project_mode
-      @bookmark.add('/path/to/project1', 'project1')
-      @bookmark.add('/path/to/project2', 'project2')
+      @bookmark.add(@project1_dir, 'project1')
+      @bookmark.add(@project2_dir, 'project2')
 
       @project_mode.activate
       bookmarks = @project_mode.list_bookmarks
@@ -39,13 +46,13 @@ module Rufio
 
     # spaceキーでディレクトリを選択
     def test_select_bookmark
-      @bookmark.add('/path/to/project', 'project')
+      @bookmark.add(@project1_dir, 'project')
 
       @project_mode.activate
       result = @project_mode.select_bookmark(1)
 
       assert_equal true, result
-      assert_equal '/path/to/project', @project_mode.selected_path
+      assert_equal @project1_dir, @project_mode.selected_path
       assert_equal 'project', @project_mode.selected_name
     end
 
@@ -70,7 +77,7 @@ module Rufio
 
     # プロジェクトモードが非アクティブの時にブックマーク選択は失敗する
     def test_cannot_select_when_inactive
-      @bookmark.add('/path/to/project', 'project')
+      @bookmark.add(@project1_dir, 'project')
       result = @project_mode.select_bookmark(1)
 
       assert_equal false, result

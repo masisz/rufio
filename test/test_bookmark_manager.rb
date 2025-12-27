@@ -8,6 +8,15 @@ module Rufio
     def setup
       @temp_dir = Dir.mktmpdir
       @config_file = File.join(@temp_dir, 'bookmarks.json')
+
+      # テスト用のプロジェクトディレクトリを作成
+      @project1_dir = File.join(@temp_dir, 'project1')
+      @project2_dir = File.join(@temp_dir, 'project2')
+      @myproject_dir = File.join(@temp_dir, 'myproject')
+      FileUtils.mkdir_p(@project1_dir)
+      FileUtils.mkdir_p(@project2_dir)
+      FileUtils.mkdir_p(@myproject_dir)
+
       @bookmark = Bookmark.new(@config_file)
       @bookmark_manager = BookmarkManager.new(@bookmark)
     end
@@ -18,8 +27,8 @@ module Rufio
 
     # ブックマーク一覧が左画面に表示される
     def test_display_bookmarks_on_left_pane
-      @bookmark.add('/path/to/project1', 'project1')
-      @bookmark.add('/path/to/project2', 'project2')
+      @bookmark.add(@project1_dir, 'project1')
+      @bookmark.add(@project2_dir, 'project2')
 
       display_data = @bookmark_manager.get_left_pane_data
 
@@ -37,12 +46,12 @@ module Rufio
 
     # 選択したブックマークの詳細が右画面に表示される
     def test_display_bookmark_detail_on_right_pane
-      @bookmark.add('/path/to/project', 'myproject')
+      @bookmark.add(@myproject_dir, 'myproject')
 
       detail = @bookmark_manager.get_right_pane_data(1)
 
       assert_includes detail, 'myproject'
-      assert_includes detail, '/path/to/project'
+      assert_includes detail, @myproject_dir
     end
 
     # 無効な番号の場合は空文字列を返す
@@ -54,8 +63,8 @@ module Rufio
 
     # ブックマークの総数を取得
     def test_get_bookmark_count
-      @bookmark.add('/path/to/project1', 'project1')
-      @bookmark.add('/path/to/project2', 'project2')
+      @bookmark.add(@project1_dir, 'project1')
+      @bookmark.add(@project2_dir, 'project2')
 
       count = @bookmark_manager.count
 

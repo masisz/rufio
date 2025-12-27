@@ -262,6 +262,31 @@ module Rufio
       @bookmark.remove(name)
     end
 
+    # Get left pane display data for bookmarks
+    # @return [Array<String>] Formatted bookmark list
+    def get_left_pane_data
+      bookmarks = @bookmark.list
+      bookmarks.map.with_index(1) do |bookmark, index|
+        "#{index}. #{bookmark[:name]}"
+      end
+    end
+
+    # Get right pane display data for a selected bookmark
+    # @param number [Integer] Bookmark number (1-based)
+    # @return [String] Bookmark details
+    def get_right_pane_data(number)
+      bookmark = @bookmark.find_by_number(number)
+      return '' unless bookmark
+
+      "Name: #{bookmark[:name]}\nPath: #{bookmark[:path]}"
+    end
+
+    # Get bookmark count
+    # @return [Integer] Number of bookmarks
+    def count
+      @bookmark.list.length
+    end
+
     private
 
     # Show result dialog with success or error styling

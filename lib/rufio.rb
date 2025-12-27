@@ -28,6 +28,11 @@ require_relative "rufio/plugin_manager"
 require_relative "rufio/command_mode"
 require_relative "rufio/command_mode_ui"
 
+# プロジェクトモード
+require_relative "rufio/project_mode"
+require_relative "rufio/project_command"
+require_relative "rufio/project_log"
+
 module Rufio
   class Error < StandardError; end
 end
