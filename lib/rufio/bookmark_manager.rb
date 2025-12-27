@@ -158,7 +158,7 @@ module Rufio
       bookmark_to_rename = bookmarks[selected_number - 1]
       old_name = bookmark_to_rename[:name]
 
-      new_name = @dialog_renderer.show_input_dialog('Rename Bookmark', "Current: #{old_name}\nEnter new name:", {
+      new_name = @dialog_renderer.show_input_dialog("Rename: #{old_name}", "Enter new name:", {
         border_color: "\e[33m",    # Yellow
         title_color: "\e[1;33m",   # Bold yellow
         content_color: "\e[37m"    # White
@@ -167,13 +167,7 @@ module Rufio
       return false if new_name.nil? || new_name.empty?
 
       # Rename bookmark
-      if @bookmark.rename(old_name, new_name)
-        show_result_dialog('Bookmark Renamed', "Renamed: #{old_name} → #{new_name}", :success)
-        true
-      else
-        show_result_dialog('Rename Failed', 'Failed to rename bookmark (name may already exist)', :error)
-        false
-      end
+      @bookmark.rename(old_name, new_name)
     end
 
     # Remove a bookmark interactively
@@ -238,13 +232,7 @@ module Rufio
       # Confirm deletion
       bookmark_to_remove = bookmarks[selected_number - 1]
       if show_remove_confirmation(bookmark_to_remove[:name])
-        if @bookmark.remove(bookmark_to_remove[:name])
-          show_result_dialog('Bookmark Deleted', "Deleted: #{bookmark_to_remove[:name]}", :success)
-          true
-        else
-          show_result_dialog('Delete Failed', 'Failed to delete bookmark', :error)
-          false
-        end
+        @bookmark.remove(bookmark_to_remove[:name])
       else
         false
       end
