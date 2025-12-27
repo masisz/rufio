@@ -44,6 +44,14 @@ module Rufio
       @bookmark_manager = BookmarkManager.new(Bookmark.new, @dialog_renderer)
       @zoxide_integration = ZoxideIntegration.new(@dialog_renderer)
 
+      # Project mode
+      log_dir = File.expand_path('~/.config/rufio/logs')
+      @project_mode = ProjectMode.new(@bookmark_manager.instance_variable_get(:@bookmark), log_dir)
+      @project_command = ProjectCommand.new(log_dir)
+      @project_log = ProjectLog.new(log_dir)
+      @in_project_mode = false
+      @in_log_mode = false
+
       # Legacy fields for backward compatibility
       @base_directory = nil
     end
@@ -71,6 +79,11 @@ module Rufio
 
     def handle_key(key)
       return false unless @directory_listing
+
+      # プロジェクトモード中の特別処理
+      if @in_project_mode
+        return handle_project_mode_key(key)
+      end
 
       # フィルターモード中は他のキーバインドを無効化
       return handle_filter_input(key) if @filter_manager.filter_mode
@@ -126,10 +139,12 @@ module Rufio
         create_directory
       when 'm'  # m - move selected files to base directory
         move_selected_to_base
-      when 'p'  # p - copy selected files to base directory
+      when 'C'  # C - copy selected files to base directory
         copy_selected_to_base
       when 'x'  # x - delete selected files
         delete_selected_files
+      when 'p'  # p - project mode
+        enter_project_mode
       when 'b'  # b - bookmark operations
         show_bookmark_menu
       when 'z'  # z - zoxide history navigation
@@ -713,6 +728,10 @@ module Rufio
         else
           false
         end
+      when :rename
+        @bookmark_manager.rename_interactive
+        @terminal_ui&.refresh_display
+        true
       when :remove
         @bookmark_manager.remove_interactive
         @terminal_ui&.refresh_display
@@ -832,6 +851,127 @@ module Rufio
           end
         end
       end
+    end
+
+    # プロジェクトモード中のキー処理
+    def handle_project_mode_key(key)
+      case key
+      when "\e" # ESC - ログモードならプロジェクトモードに戻る、そうでなければ終了
+        if @in_log_mode
+          exit_log_mode
+        else
+          exit_project_mode
+        end
+      when ' ' # Space - ブックマーク選択
+        if @in_log_mode
+          # ログモード中は何もしない
+          false
+        else
+          entries = @project_mode.list_bookmarks
+          return false if entries.empty? || @current_index >= entries.length
+
+          @project_mode.select_bookmark(@current_index + 1)
+          @terminal_ui&.show_project_selected if @terminal_ui
+          true
+        end
+      when 'l' # l - ログディレクトリに移動
+        if @in_log_mode
+          # すでにログモードの場合は何もしない
+          false
+        else
+          @in_log_mode = true
+          @current_index = 0  # ログモードに入るときインデックスをリセット
+          @terminal_ui&.enter_log_mode(@project_log) if @terminal_ui
+          true
+        end
+      when 'j' # 下に移動
+        move_down_in_project_mode
+      when 'k' # 上に移動
+        move_up_in_project_mode
+      when 'g' # 先頭に移動
+        @current_index = 0
+        true
+      when 'G' # 末尾に移動
+        entries = get_project_mode_entries
+        @current_index = [entries.length - 1, 0].max
+        true
+      when ':' # コマンドモード
+        activate_project_command_mode
+      else
+        false
+      end
+    end
+
+    # プロジェクトモード用のエントリ数取得
+    def get_project_mode_entries
+      if @in_log_mode
+        @project_log.list_log_files
+      else
+        @project_mode.list_bookmarks
+      end
+    end
+
+    # プロジェクトモード用の下移動
+    def move_down_in_project_mode
+      entries = get_project_mode_entries
+      @current_index = [@current_index + 1, entries.length - 1].min
+      true
+    end
+
+    # プロジェクトモード用の上移動
+    def move_up_in_project_mode
+      @current_index = [@current_index - 1, 0].max
+      true
+    end
+
+    # プロジェクトモードに入る
+    def enter_project_mode
+      @project_mode.activate
+      @in_project_mode = true
+      @current_index = 0  # プロジェクトモードに入るときインデックスをリセット
+      @terminal_ui&.set_project_mode(@project_mode, @project_command, @project_log) if @terminal_ui
+      true
+    end
+
+    # プロジェクトモードを終了
+    def exit_project_mode
+      @project_mode.deactivate
+      @in_project_mode = false
+      @in_log_mode = false
+      @current_index = 0  # 通常モードに戻るときインデックスをリセット
+      @terminal_ui&.exit_project_mode if @terminal_ui
+      refresh
+      true
+    end
+
+    # プロジェクトモードでコマンドモードを起動
+    def activate_project_command_mode
+      # 選択されたプロジェクトがあるかチェック
+      if @project_mode.selected_path.nil?
+        @terminal_ui&.show_project_not_selected_message if @terminal_ui
+        return false
+      end
+
+      @terminal_ui&.activate_project_command_mode(@project_mode, @project_command, @project_log) if @terminal_ui
+      true
+    end
+
+    # ログモードを終了してプロジェクトモードに戻る
+    def exit_log_mode
+      @in_log_mode = false
+      @current_index = 0  # プロジェクトモードに戻るときインデックスをリセット
+      @terminal_ui&.exit_log_mode if @terminal_ui
+      true
+    end
+
+    # プロジェクトモード中かどうか
+    def in_project_mode?
+      @in_project_mode
+    end
+
+    # ログモード中かどうか
+    def in_log_mode?
+      @in_log_mode
     end
   end
 end

@@ -22,6 +22,7 @@ module Rufio
         '',
         '[A]dd current directory to bookmarks',
         '[L]ist bookmarks',
+        'Re[n]ame bookmark',
         '[R]emove bookmark',
         '',
         'Press 1-9 to go to bookmark directly',
@@ -50,6 +51,9 @@ module Rufio
         when 'l'
           @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
           return { action: :list }
+        when 'n'
+          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
+          return { action: :rename }
         when 'r'
           @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
           return { action: :remove }
@@ -87,6 +91,87 @@ module Rufio
         true
       else
         show_result_dialog('Add Failed', 'Failed to add bookmark', :error)
+        false
+      end
+    end
+
+    # Rename a bookmark interactively
+    # @return [Boolean] Success status
+    def rename_interactive
+      bookmarks = @bookmark.list
+
+      if bookmarks.empty?
+        show_result_dialog('No Bookmarks', 'No bookmarks found', :error)
+        return false
+      end
+
+      return false unless @dialog_renderer
+
+      # Build content lines for bookmark selection
+      content_lines = ['', 'Select bookmark to rename:', '']
+      bookmarks.each_with_index do |bookmark, index|
+        # Truncate path if too long
+        display_path = bookmark[:path]
+        if display_path.start_with?(Dir.home)
+          display_path = display_path.sub(Dir.home, '~')
+        end
+        if display_path.length > 35
+          display_path = "...#{display_path[-32..]}"
+        end
+        content_lines << "  #{index + 1}. #{bookmark[:name]}"
+        content_lines << "      #{display_path}"
+      end
+      content_lines << ''
+      content_lines << 'Press 1-9 to select, ESC to cancel'
+
+      title = 'Rename Bookmark'
+      width = 60
+      height = [content_lines.length + 4, 20].min
+      x, y = @dialog_renderer.calculate_center(width, height)
+
+      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+        border_color: "\e[33m",    # Yellow
+        title_color: "\e[1;33m",   # Bold yellow
+        content_color: "\e[37m"    # White
+      })
+
+      # Wait for selection
+      selected_number = nil
+      loop do
+        input = STDIN.getch.downcase
+
+        if input >= '1' && input <= '9'
+          number = input.to_i
+          if number > 0 && number <= bookmarks.length
+            selected_number = number
+            break
+          end
+        elsif input == "\e" # ESC
+          @dialog_renderer.clear_area(x, y, width, height)
+          return false
+        end
+      end
+
+      @dialog_renderer.clear_area(x, y, width, height)
+
+      # Get new name
+      bookmark_to_rename = bookmarks[selected_number - 1]
+      old_name = bookmark_to_rename[:name]
+
+      new_name = @dialog_renderer.show_input_dialog('Rename Bookmark', "Current: #{old_name}\nEnter new name:", {
+        border_color: "\e[33m",    # Yellow
+        title_color: "\e[1;33m",   # Bold yellow
+        content_color: "\e[37m"    # White
+      })
+
+      return false if new_name.nil? || new_name.empty?
+
+      # Rename bookmark
+      if @bookmark.rename(old_name, new_name)
+        show_result_dialog('Bookmark Renamed', "Renamed: #{old_name} → #{new_name}", :success)
+        true
+      else
+        show_result_dialog('Rename Failed', 'Failed to rename bookmark (name may already exist)', :error)
         false
       end
     end

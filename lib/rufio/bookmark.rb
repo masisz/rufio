@@ -15,12 +15,14 @@ module Rufio
     end
 
     def add(path, name)
+      trimmed_name = name.strip
+      return false if trimmed_name.empty?
       return false if @bookmarks.length >= MAX_BOOKMARKS
-      return false if exists_by_name?(name)
+      return false if exists_by_name?(trimmed_name)
       return false if exists_by_path?(path)
       return false unless Dir.exist?(path)
 
-      @bookmarks << { path: File.expand_path(path), name: name }
+      @bookmarks << { path: File.expand_path(path), name: trimmed_name }
       save
       true
     end
@@ -28,13 +30,27 @@ module Rufio
     def remove(name)
       initial_length = @bookmarks.length
       @bookmarks.reject! { |bookmark| bookmark[:name] == name }
-      
+
       if @bookmarks.length < initial_length
         save
         true
       else
         false
       end
+    end
+
+    def rename(old_name, new_name)
+      trimmed_new_name = new_name.strip
+      return false if trimmed_new_name.empty?
+      return false if old_name == trimmed_new_name
+      return false if exists_by_name?(trimmed_new_name)
+
+      bookmark = @bookmarks.find { |b| b[:name] == old_name }
+      return false unless bookmark
+
+      bookmark[:name] = trimmed_new_name
+      save
+      true
     end
 
     def get_path(name)
