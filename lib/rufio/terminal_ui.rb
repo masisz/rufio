@@ -778,12 +778,15 @@ module Rufio
         line_num = CONTENT_START_LINE + index
         break if index >= height
 
-        name = bookmark[:name].ljust(width - 2)
+        # 選択マーク（通常モードと同じ）
+        is_selected = @keybind_handler.is_bookmark_selected?(bookmark[:name])
+        selection_mark = is_selected ? '*' : ' '
+        name = bookmark[:name].ljust(width - 3)
 
         if index == current_index
-          print "\e[#{line_num};1H\e[7m #{name[0...width-2]}\e[0m"
+          print "\e[#{line_num};1H\e[7m#{selection_mark} #{name[0...width-3]}\e[0m"
         else
-          print "\e[#{line_num};1H #{name[0...width-2]}"
+          print "\e[#{line_num};1H#{selection_mark} #{name[0...width-3]}"
         end
       end
 

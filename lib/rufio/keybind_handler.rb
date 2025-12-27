@@ -1024,17 +1024,12 @@ module Rufio
         else
           exit_project_mode
         end
-      when ' ' # Space - ブックマーク選択
+      when ' ' # Space - ブックマークの複数選択トグル
         if @in_log_mode
           # ログモード中は何もしない
           false
         else
-          entries = @project_mode.list_bookmarks
-          return false if entries.empty? || @current_index >= entries.length
-
-          @project_mode.select_bookmark(@current_index + 1)
-          @terminal_ui&.show_project_selected if @terminal_ui
-          true
+          toggle_bookmark_selection
         end
       when 'l' # l - ログディレクトリに移動
         if @in_log_mode
@@ -1229,6 +1224,22 @@ module Rufio
 
       @terminal_ui&.refresh_display if @terminal_ui
       result
+    end
+
+    # プロジェクトモードでブックマークの選択をトグル
+    def toggle_bookmark_selection
+      bookmarks = @bookmark_manager.list
+      return false if bookmarks.empty? || @current_index >= bookmarks.length
+
+      bookmark = bookmarks[@current_index]
+      # ブックマークをSelectionManagerで管理（nameをキーとして使用）
+      @selection_manager.toggle_selection({ name: bookmark[:name], type: :bookmark })
+      true
+    end
+
+    # ブックマークが選択されているかチェック
+    def is_bookmark_selected?(bookmark_name)
+      @selection_manager.selected?(bookmark_name)
     end
 
     # プロジェクトモード中かどうか
