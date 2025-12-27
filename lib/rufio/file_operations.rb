@@ -73,6 +73,72 @@ module Rufio
       )
     end
 
+    # Rename a file or directory
+    # @param directory [String] Directory path
+    # @param old_name [String] Current name
+    # @param new_name [String] New name
+    # @return [OperationResult]
+    def rename(directory, old_name, new_name)
+      # Validate new_name
+      if new_name.include?('/') || new_name.include?('\\')
+        return OperationResult.new(
+          success: false,
+          message: 'Invalid name: cannot contain path separators',
+          count: 0,
+          errors: []
+        )
+      end
+
+      if new_name.strip.empty?
+        return OperationResult.new(
+          success: false,
+          message: 'Invalid name: cannot be empty',
+          count: 0,
+          errors: []
+        )
+      end
+
+      old_path = File.join(directory, old_name)
+      new_path = File.join(directory, new_name)
+
+      # Check if old file exists
+      unless File.exist?(old_path)
+        return OperationResult.new(
+          success: false,
+          message: 'File not found',
+          count: 0,
+          errors: []
+        )
+      end
+
+      # Check if new name already exists
+      if File.exist?(new_path)
+        return OperationResult.new(
+          success: false,
+          message: 'File already exists with that name',
+          count: 0,
+          errors: []
+        )
+      end
+
+      begin
+        FileUtils.mv(old_path, new_path)
+        OperationResult.new(
+          success: true,
+          message: "Renamed: #{old_name} → #{new_name}",
+          count: 1,
+          errors: []
+        )
+      rescue StandardError => e
+        OperationResult.new(
+          success: false,
+          message: "Rename error: #{e.message}",
+          count: 0,
+          errors: [e.message]
+        )
+      end
+    end
+
     # Create a new file
     # @param directory [String] Directory path
     # @param filename [String] File name

@@ -101,8 +101,12 @@ module Rufio
         move_to_top
       when 'G'
         move_to_bottom
-      when 'r'
+      when 'R'  # R - refresh
         refresh
+      when 'r'  # r - rename file/directory
+        rename_current_file
+      when 'd'  # d - delete file/directory with confirmation
+        delete_current_file_with_confirmation
       when 'o'  # o
         open_current_file
       when 'e'  # e - open directory in file explorer
@@ -440,6 +444,113 @@ module Rufio
       puts "\n#{result.message}"
       print ConfigLoader.message('keybind.press_any_key')
       STDIN.getch
+      result.success
+    end
+
+    def rename_current_file
+      current_item = current_entry()
+      return false unless current_item
+
+      current_name = current_item[:name]
+      current_path = @directory_listing&.current_path || Dir.pwd
+
+      # ダイアログレンダラーを使用して入力ダイアログを表示
+      title = "Rename: #{current_name}"
+      prompt = "Enter new name:"
+      new_name = @dialog_renderer.show_input_dialog(title, prompt, {
+        border_color: "\e[33m",    # Yellow
+        title_color: "\e[1;33m",   # Bold yellow
+        content_color: "\e[37m"    # White
+      })
+
+      return false if new_name.nil? || new_name.empty?
+
+      # FileOperationsを使用してリネーム
+      result = @file_operations.rename(current_path, current_name, new_name)
+
+      # ディレクトリ表示を更新
+      if result.success
+        @directory_listing.refresh
+
+        # リネームしたファイルを選択状態にする
+        entries = @directory_listing.list_entries
+        new_index = entries.find_index { |entry| entry[:name] == new_name }
+        @current_index = new_index if new_index
+      end
+
+      # 結果を表示
+      show_operation_result(result)
+      @terminal_ui&.refresh_display
+      result.success
+    end
+
+    def delete_current_file_with_confirmation
+      current_item = current_entry()
+      return false unless current_item
+
+      current_name = current_item[:name]
+      current_path = @directory_listing&.current_path || Dir.pwd
+      is_directory = current_item[:type] == :directory
+
+      # 確認ダイアログを表示
+      type_text = is_directory ? 'directory' : 'file'
+      content_lines = [
+        '',
+        "Delete this #{type_text}?",
+        "  #{current_name}",
+        '',
+        '  [Y]es - Delete',
+        '  [N]o  - Cancel',
+        ''
+      ]
+
+      title = 'Confirm Delete'
+      width = [50, current_name.length + 10].max
+      height = content_lines.length + 4
+      x, y = @dialog_renderer.calculate_center(width, height)
+
+      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+        border_color: "\e[31m",    # Red (warning)
+        title_color: "\e[1;31m",   # Bold red
+        content_color: "\e[37m"    # White
+      })
+
+      # 確認を待つ
+      confirmed = false
+      loop do
+        input = STDIN.getch.downcase
+
+        case input
+        when 'y'
+          confirmed = true
+          break
+        when 'n', "\e" # n or ESC
+          confirmed = false
+          break
+        end
+      end
+
+      @dialog_renderer.clear_area(x, y, width, height)
+      @terminal_ui&.refresh_display
+
+      return false unless confirmed
+
+      # FileOperationsを使用して削除
+      result = @file_operations.delete([current_name], current_path)
+
+      # ディレクトリ表示を更新
+      if result.success
+        @directory_listing.refresh
+
+        # カーソル位置を調整
+        entries = @directory_listing.list_entries
+        @current_index = [@current_index, entries.length - 1].min if @current_index >= entries.length
+        @current_index = 0 if @current_index < 0
+      end
+
+      # 結果を表示
+      show_operation_result(result)
+      @terminal_ui&.refresh_display
       result.success
     end
 
@@ -897,13 +1008,13 @@ module Rufio
         true
       when ':' # コマンドモード
         activate_project_command_mode
-      when 'R' # R - ブックマークをリネーム
+      when 'r' # r - ブックマークをリネーム
         if @in_log_mode
           false
         else
           rename_bookmark_in_project_mode
         end
-      when 'D' # D - ブックマークを削除
+      when 'd' # d - ブックマークを削除
         if @in_log_mode
           false
         else
