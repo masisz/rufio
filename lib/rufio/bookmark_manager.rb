@@ -22,8 +22,8 @@ module Rufio
         '',
         '[A]dd current directory to bookmarks',
         '[L]ist bookmarks',
-        'Re[n]ame bookmark',
-        '[R]emove bookmark',
+        '[R]ename bookmark',
+        '[D]elete bookmark',
         '',
         'Press 1-9 to go to bookmark directly',
         '',
@@ -51,10 +51,10 @@ module Rufio
         when 'l'
           @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
           return { action: :list }
-        when 'n'
+        when 'r'
           @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
           return { action: :rename }
-        when 'r'
+        when 'd'
           @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
           return { action: :remove }
         when '1', '2', '3', '4', '5', '6', '7', '8', '9'
@@ -189,7 +189,7 @@ module Rufio
       return false unless @dialog_renderer
 
       # Build content lines for bookmark selection
-      content_lines = ['', 'Select bookmark to remove:', '']
+      content_lines = ['', 'Select bookmark to delete:', '']
       bookmarks.each_with_index do |bookmark, index|
         # Truncate path if too long
         display_path = bookmark[:path]
@@ -205,7 +205,7 @@ module Rufio
       content_lines << ''
       content_lines << 'Press 1-9 to select, ESC to cancel'
 
-      title = 'Remove Bookmark'
+      title = 'Delete Bookmark'
       width = 60
       height = [content_lines.length + 4, 20].min
       x, y = @dialog_renderer.calculate_center(width, height)
@@ -239,10 +239,10 @@ module Rufio
       bookmark_to_remove = bookmarks[selected_number - 1]
       if show_remove_confirmation(bookmark_to_remove[:name])
         if @bookmark.remove(bookmark_to_remove[:name])
-          show_result_dialog('Bookmark Removed', "Removed: #{bookmark_to_remove[:name]}", :success)
+          show_result_dialog('Bookmark Deleted', "Deleted: #{bookmark_to_remove[:name]}", :success)
           true
         else
-          show_result_dialog('Remove Failed', 'Failed to remove bookmark', :error)
+          show_result_dialog('Delete Failed', 'Failed to delete bookmark', :error)
           false
         end
       else
@@ -419,14 +419,14 @@ module Rufio
 
       content_lines = [
         '',
-        "Remove bookmark '#{bookmark_name}'?",
+        "Delete bookmark '#{bookmark_name}'?",
         '',
-        '  [Y]es - Remove',
+        '  [Y]es - Delete',
         '  [N]o  - Cancel',
         ''
       ]
 
-      title = 'Confirm Remove'
+      title = 'Confirm Delete'
       width = 50
       height = content_lines.length + 4
       x, y = @dialog_renderer.calculate_center(width, height)
