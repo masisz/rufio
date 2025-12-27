@@ -897,6 +897,18 @@ module Rufio
         true
       when ':' # コマンドモード
         activate_project_command_mode
+      when 'R' # R - ブックマークをリネーム
+        if @in_log_mode
+          false
+        else
+          rename_bookmark_in_project_mode
+        end
+      when 'D' # D - ブックマークを削除
+        if @in_log_mode
+          false
+        else
+          delete_bookmark_in_project_mode
+        end
       else
         false
       end
@@ -962,6 +974,28 @@ module Rufio
       @current_index = 0  # プロジェクトモードに戻るときインデックスをリセット
       @terminal_ui&.exit_log_mode if @terminal_ui
       true
+    end
+
+    # プロジェクトモードでブックマークをリネーム
+    def rename_bookmark_in_project_mode
+      success = @bookmark_manager.rename_interactive
+      @terminal_ui&.refresh_display if @terminal_ui
+      success
+    end
+
+    # プロジェクトモードでブックマークを削除
+    def delete_bookmark_in_project_mode
+      success = @bookmark_manager.remove_interactive
+      @terminal_ui&.refresh_display if @terminal_ui
+      # 削除後、選択されていたブックマークがなくなった場合は選択をクリア
+      if success && @project_mode.selected_path
+        # 削除されたブックマークが選択中だったかチェック
+        bookmark = @bookmark_manager.list.find { |b| b[:path] == @project_mode.selected_path }
+        if bookmark.nil?
+          @project_mode.clear_selection
+        end
+      end
+      success
     end
 
     # プロジェクトモード中かどうか

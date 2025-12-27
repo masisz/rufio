@@ -48,5 +48,11 @@ module Rufio
       @selected_name = bookmark[:name]
       true
     end
+
+    # 選択をクリア
+    def clear_selection
+      @selected_path = nil
+      @selected_name = nil
+    end
   end
 end
