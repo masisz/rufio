@@ -1085,24 +1085,95 @@ module Rufio
 
     # プロジェクトモードでブックマークをリネーム
     def rename_bookmark_in_project_mode
-      success = @bookmark_manager.rename_interactive
+      bookmarks = @bookmark_manager.list
+      return false if bookmarks.empty? || @current_index >= bookmarks.length
+
+      current_bookmark = bookmarks[@current_index]
+      old_name = current_bookmark[:name]
+
+      # ダイアログレンダラーを使用して入力ダイアログを表示
+      new_name = @dialog_renderer.show_input_dialog("Rename: #{old_name}", "Enter new name:", {
+        border_color: "\e[33m",    # Yellow
+        title_color: "\e[1;33m",   # Bold yellow
+        content_color: "\e[37m"    # White
+      })
+
+      return false if new_name.nil? || new_name.empty?
+
+      # Bookmarkを使用してリネーム
+      result = @bookmark_manager.instance_variable_get(:@bookmark).rename(old_name, new_name)
+
       @terminal_ui&.refresh_display if @terminal_ui
-      success
+      result
     end
 
     # プロジェクトモードでブックマークを削除
     def delete_bookmark_in_project_mode
-      success = @bookmark_manager.remove_interactive
-      @terminal_ui&.refresh_display if @terminal_ui
-      # 削除後、選択されていたブックマークがなくなった場合は選択をクリア
-      if success && @project_mode.selected_path
-        # 削除されたブックマークが選択中だったかチェック
-        bookmark = @bookmark_manager.list.find { |b| b[:path] == @project_mode.selected_path }
-        if bookmark.nil?
-          @project_mode.clear_selection
+      bookmarks = @bookmark_manager.list
+      return false if bookmarks.empty? || @current_index >= bookmarks.length
+
+      current_bookmark = bookmarks[@current_index]
+      bookmark_name = current_bookmark[:name]
+
+      # 確認ダイアログを表示
+      content_lines = [
+        '',
+        "Delete this bookmark?",
+        "  #{bookmark_name}",
+        '',
+        '  [Y]es - Delete',
+        '  [N]o  - Cancel',
+        ''
+      ]
+
+      title = 'Confirm Delete'
+      width = [50, bookmark_name.length + 10].max
+      height = content_lines.length + 4
+      x, y = @dialog_renderer.calculate_center(width, height)
+
+      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+        border_color: "\e[31m",    # Red (warning)
+        title_color: "\e[1;31m",   # Bold red
+        content_color: "\e[37m"    # White
+      })
+
+      # 確認を待つ
+      confirmed = false
+      loop do
+        input = STDIN.getch.downcase
+
+        case input
+        when 'y'
+          confirmed = true
+          break
+        when 'n', "\e" # n or ESC
+          confirmed = false
+          break
         end
       end
-      success
+
+      @dialog_renderer.clear_area(x, y, width, height)
+      @terminal_ui&.refresh_display
+
+      return false unless confirmed
+
+      # Bookmarkを使用して削除
+      result = @bookmark_manager.instance_variable_get(:@bookmark).remove(bookmark_name)
+
+      # 削除後、選択されていたブックマークがなくなった場合は選択をクリア
+      if result && @project_mode.selected_path == current_bookmark[:path]
+        @project_mode.clear_selection
+      end
+
+      # カーソル位置を調整
+      if result
+        bookmarks_after = @bookmark_manager.list
+        @current_index = [@current_index, bookmarks_after.length - 1].min if @current_index >= bookmarks_after.length
+        @current_index = 0 if @current_index < 0
+      end
+
+      @terminal_ui&.refresh_display if @terminal_ui
+      result
     end
 
     # プロジェクトモード中かどうか
