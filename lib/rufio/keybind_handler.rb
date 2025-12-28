@@ -967,8 +967,6 @@ module Rufio
       true
     end
 
-    private
-
     # カーソルを画面下部の入力行に移動
     def move_to_input_line
       # 画面の最終行にカーソルを移動
@@ -1024,12 +1022,12 @@ module Rufio
         else
           exit_project_mode
         end
-      when ' ' # Space - ブックマークの複数選択トグル
+      when ' ' # Space - ブックマークを選択
         if @in_log_mode
           # ログモード中は何もしない
           false
         else
-          toggle_bookmark_selection
+          select_bookmark_in_project_mode
         end
       when 'l' # l - ログディレクトリに移動
         if @in_log_mode
@@ -1227,19 +1225,14 @@ module Rufio
     end
 
     # プロジェクトモードでブックマークの選択をトグル
-    def toggle_bookmark_selection
+    def select_bookmark_in_project_mode
       bookmarks = @bookmark_manager.list
       return false if bookmarks.empty? || @current_index >= bookmarks.length
 
       bookmark = bookmarks[@current_index]
-      # ブックマークをSelectionManagerで管理（nameをキーとして使用）
-      @selection_manager.toggle_selection({ name: bookmark[:name], type: :bookmark })
+      # ブックマークをプロジェクトとして選択
+      @project_mode.select_bookmark(@current_index + 1)
       true
-    end
-
-    # ブックマークが選択されているかチェック
-    def is_bookmark_selected?(bookmark_name)
-      @selection_manager.selected?(bookmark_name)
     end
 
     # プロジェクトモード中かどうか

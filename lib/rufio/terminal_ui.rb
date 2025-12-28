@@ -747,15 +747,17 @@ module Rufio
         draw_bookmark_detail(right_width, content_height, left_width)
       end
 
-      # footer
+      # footer（通常モードと同じスタイル）
       footer_line = @screen_height
       print "\e[#{footer_line};1H"
       footer_text = if @in_log_mode
-        "ESC: Exit Log Mode | j/k: Navigate"
+        "ESC:exit log j/k:move"
       else
-        "SPACE: Select | l: Logs | :: Command | ESC: Exit | j/k: Navigate"
+        "SPACE:select l:logs ::cmd r:rename d:delete ESC:exit j/k:move"
       end
-      print "\e[100m\e[97m#{footer_text.ljust(@screen_width)}\e[0m"
+      # 文字列を確実に画面幅に合わせる
+      footer_content = footer_text.ljust(@screen_width)[0...@screen_width]
+      print "\e[7m#{footer_content}\e[0m"
 
       # move cursor to invisible position
       print "\e[#{@screen_height};#{@screen_width}H"
@@ -774,19 +776,33 @@ module Rufio
         return
       end
 
+      selected_name = @project_mode.selected_name
+
       bookmarks.each_with_index do |bookmark, index|
         line_num = CONTENT_START_LINE + index
         break if index >= height
 
         # 選択マーク（通常モードと同じ）
-        is_selected = @keybind_handler.is_bookmark_selected?(bookmark[:name])
-        selection_mark = is_selected ? '*' : ' '
-        name = bookmark[:name].ljust(width - 3)
+        is_project_selected = (bookmark[:name] == selected_name)
+        selection_mark = is_project_selected ? "✓ " : "  "
+
+        # ブックマーク名を表示
+        name = bookmark[:name]
+        max_name_length = width - 4  # selection_mark分を除く
+        display_name = name.length > max_name_length ? name[0...max_name_length - 3] + '...' : name
+        line_content = "#{selection_mark}#{display_name}".ljust(width)
 
         if index == current_index
-          print "\e[#{line_num};1H\e[7m#{selection_mark} #{name[0...width-3]}\e[0m"
+          # カーソル位置は選択色でハイライト
+          selected_color = ColorHelper.color_to_selected_ansi(ConfigLoader.colors[:selected])
+          print "\e[#{line_num};1H#{selected_color}#{line_content[0...width]}#{ColorHelper.reset}"
         else
-          print "\e[#{line_num};1H#{selection_mark} #{name[0...width-3]}"
+          # 選択済みブックマークは緑背景、黒文字
+          if is_project_selected
+            print "\e[#{line_num};1H\e[42m\e[30m#{line_content[0...width]}\e[0m"
+          else
+            print "\e[#{line_num};1H#{line_content[0...width]}"
+          end
         end
       end
 
@@ -842,18 +858,30 @@ module Rufio
         details << "  Directory does not exist"
       end
 
-      details.each_with_index do |line, index|
-        line_num = CONTENT_START_LINE + index
-        break if index >= height
+      # 各行にセパレータと内容を表示（通常モードと同じ）
+      height.times do |i|
+        line_num = CONTENT_START_LINE + i
 
-        print "\e[#{line_num};#{left_offset + 1}H#{line[0...width-2].ljust(width)}"
-      end
+        # セパレータを表示
+        cursor_position = left_offset + CURSOR_OFFSET
+        print "\e[#{line_num};#{cursor_position}H"
+        print '│'
 
-      # 残りの行をクリア
-      remaining_lines = height - details.length
-      remaining_lines.times do |i|
-        line_num = CONTENT_START_LINE + details.length + i
-        print "\e[#{line_num};#{left_offset + 1}H#{' ' * width}"
+        # 右画面の内容を表示
+        if i < details.length
+          line = details[i]
+          safe_width = width - 2
+          content = " #{line}"
+          content = content[0...safe_width] if content.length > safe_width
+          print content
+
+          # 残りをスペースで埋める
+          remaining = safe_width - content.length
+          print ' ' * remaining if remaining > 0
+        else
+          # 空行
+          print ' ' * (width - 2)
+        end
       end
     end
 
@@ -904,18 +932,30 @@ module Rufio
 
       lines = content.split("\n")
 
-      lines.each_with_index do |line, index|
-        line_num = CONTENT_START_LINE + index
-        break if index >= height
+      # 各行にセパレータと内容を表示（通常モードと同じ）
+      height.times do |i|
+        line_num = CONTENT_START_LINE + i
 
-        print "\e[#{line_num};#{left_offset + 1}H#{line[0...width-2].ljust(width)}"
-      end
+        # セパレータを表示
+        cursor_position = left_offset + CURSOR_OFFSET
+        print "\e[#{line_num};#{cursor_position}H"
+        print '│'
 
-      # 残りの行をクリア
-      remaining_lines = height - lines.length
-      remaining_lines.times do |i|
-        line_num = CONTENT_START_LINE + lines.length + i
-        print "\e[#{line_num};#{left_offset + 1}H#{' ' * width}"
+        # 右画面の内容を表示
+        if i < lines.length
+          line = lines[i]
+          safe_width = width - 2
+          content = " #{line}"
+          content = content[0...safe_width] if content.length > safe_width
+          print content
+
+          # 残りをスペースで埋める
+          remaining = safe_width - content.length
+          print ' ' * remaining if remaining > 0
+        else
+          # 空行
+          print ' ' * (width - 2)
+        end
       end
     end
 

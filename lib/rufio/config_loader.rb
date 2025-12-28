@@ -48,6 +48,14 @@ module Rufio
         Config.message(key, **interpolations)
       end
 
+      def scripts_dir
+        load_config[:scripts_dir] || default_scripts_dir
+      end
+
+      def default_scripts_dir
+        File.expand_path('~/.config/rufio/scripts')
+      end
+
       private
 
       def load_config_file
@@ -58,14 +66,19 @@ module Rufio
           colors: Object.const_get(:COLORS),
           keybinds: Object.const_get(:KEYBINDS)
         }
-        
+
         # Load language setting if defined
         if Object.const_defined?(:LANGUAGE)
           language = Object.const_get(:LANGUAGE)
           config[:language] = language
           Config.current_language = language if Config.available_languages.include?(language.to_s)
         end
-        
+
+        # Load scripts directory if defined
+        if Object.const_defined?(:SCRIPTS_DIR)
+          config[:scripts_dir] = Object.const_get(:SCRIPTS_DIR)
+        end
+
         config
       rescue StandardError => e
         warn "Failed to load config file: #{e.message}"

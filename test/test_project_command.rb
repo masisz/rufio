@@ -11,7 +11,8 @@ module Rufio
       FileUtils.mkdir_p(@project_dir)
 
       @log_dir = File.join(@temp_dir, 'logs')
-      @command = ProjectCommand.new(@log_dir)
+      @scripts_dir = File.join(@temp_dir, 'scripts')
+      @command = ProjectCommand.new(@log_dir, @scripts_dir)
     end
 
     def teardown
@@ -87,6 +88,80 @@ module Rufio
       assert_equal 2, display_data.length
       assert_includes display_data[0], 'build'
       assert_includes display_data[1], 'test'
+    end
+
+    # スクリプトディレクトリが存在しなければ自動作成される
+    def test_scripts_directory_auto_creation
+      assert Dir.exist?(@scripts_dir), 'Scripts directory should be auto-created'
+    end
+
+    # サンプルスクリプトが自動生成される
+    def test_sample_script_creation
+      sample_script = File.join(@scripts_dir, 'hello.rb')
+      assert File.exist?(sample_script), 'Sample script hello.rb should be created'
+      assert File.executable?(sample_script), 'Sample script should be executable'
+    end
+
+    # スクリプトディレクトリ内のRubyファイルを一覧表示できる
+    def test_list_scripts
+      # 追加のスクリプトを作成
+      File.write(File.join(@scripts_dir, 'test_script.rb'), '# test script')
+      File.write(File.join(@scripts_dir, 'another.rb'), '# another script')
+
+      scripts = @command.list_scripts
+
+      assert_includes scripts, 'hello.rb'
+      assert_includes scripts, 'test_script.rb'
+      assert_includes scripts, 'another.rb'
+      assert_equal 3, scripts.length
+    end
+
+    # スクリプト一覧はソートされている
+    def test_list_scripts_sorted
+      File.write(File.join(@scripts_dir, 'zzz.rb'), '# z script')
+      File.write(File.join(@scripts_dir, 'aaa.rb'), '# a script')
+
+      scripts = @command.list_scripts
+
+      assert_equal 'aaa.rb', scripts[0]
+      assert scripts.index('aaa.rb') < scripts.index('zzz.rb')
+    end
+
+    # スクリプトを実行できる
+    def test_execute_script
+      # テスト用スクリプトを作成
+      test_script = File.join(@scripts_dir, 'test.rb')
+      File.write(test_script, 'puts "Script executed"')
+
+      result = @command.execute_script('test.rb', @project_dir)
+
+      assert result[:success]
+      assert_equal "Script executed\n", result[:output]
+    end
+
+    # 存在しないスクリプトを実行するとエラー
+    def test_execute_nonexistent_script
+      result = @command.execute_script('nonexistent.rb', @project_dir)
+
+      assert_equal false, result[:success]
+      assert_includes result[:error], 'Script not found'
+    end
+
+    # スクリプトは選択したディレクトリで実行される
+    def test_script_executed_in_selected_directory
+      # カレントディレクトリを確認するスクリプト
+      test_script = File.join(@scripts_dir, 'pwd.rb')
+      File.write(test_script, 'puts Dir.pwd')
+
+      result = @command.execute_script('pwd.rb', @project_dir)
+
+      assert result[:success]
+      assert_includes result[:output], @project_dir
+    end
+
+    # スクリプトディレクトリのパスを取得できる
+    def test_scripts_dir_path
+      assert_equal @scripts_dir, @command.scripts_dir
     end
   end
 end
