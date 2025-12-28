@@ -35,7 +35,6 @@ class TestFileOperations
       handler = Rufio::KeybindHandler.new
       directory_listing = Rufio::DirectoryListing.new(@test_dir)
       handler.set_directory_listing(directory_listing)
-      handler.set_base_directory(@base_dir)
       
       entries = directory_listing.list_entries
       return puts "✗ selection_functionality - エントリがありません" if entries.empty?
@@ -57,7 +56,7 @@ class TestFileOperations
       end
       
     rescue NoMethodError => e
-      puts "期待通りエラー: #{e.message} - selected_items, set_base_directoryメソッドが未実装"
+      puts "期待通りエラー: #{e.message} - selected_itemsメソッドが未実装"
     end
   end
 
@@ -66,7 +65,6 @@ class TestFileOperations
       handler = Rufio::KeybindHandler.new
       directory_listing = Rufio::DirectoryListing.new(@test_dir)
       handler.set_directory_listing(directory_listing)
-      handler.set_base_directory(@base_dir)
       
       entries = directory_listing.list_entries
       return puts "✗ multiple_selection - エントリが不足" if entries.length < 2
@@ -89,64 +87,12 @@ class TestFileOperations
     end
   end
 
-  def test_move_to_base_directory
-    begin
-      handler = Rufio::KeybindHandler.new
-      directory_listing = Rufio::DirectoryListing.new(@test_dir)
-      handler.set_directory_listing(directory_listing)
-      handler.set_base_directory(@base_dir)
-      
-      entries = directory_listing.list_entries
-      return puts "✗ move_to_base_directory - エントリがありません" if entries.empty?
-      
-      # ファイルを選択してベースディレクトリに移動
-      handler.select_index(0)
-      handler.handle_key(' ')  # Space (選択)
-      
-      # 確認ダイアログの動作確認（実際の入力なしでメソッド存在確認のみ）
-      if handler.respond_to?(:move_selected_to_base, true)
-        puts "✓ move_to_base_directory - 移動機能が実装されています"
-      else
-        puts "✗ move_to_base_directory - 移動機能が未実装"
-      end
-      
-    rescue NoMethodError => e
-      puts "期待通りエラー: #{e.message} - handle_key('m')が未実装"
-    end
-  end
-
-  def test_copy_to_base_directory
-    begin
-      handler = Rufio::KeybindHandler.new
-      directory_listing = Rufio::DirectoryListing.new(@test_dir)
-      handler.set_directory_listing(directory_listing)
-      handler.set_base_directory(@base_dir)
-      
-      entries = directory_listing.list_entries
-      return puts "✗ copy_to_base_directory - エントリがありません" if entries.empty?
-      
-      # ファイルを選択してベースディレクトリにコピー
-      handler.select_index(0)
-      handler.handle_key(' ')  # Space (選択)
-      
-      # 確認ダイアログの動作確認（実際の入力なしでメソッド存在確認のみ）
-      if handler.respond_to?(:copy_selected_to_base, true)
-        puts "✓ copy_to_base_directory - コピー機能が実装されています"
-      else
-        puts "✗ copy_to_base_directory - コピー機能が未実装"
-      end
-      
-    rescue NoMethodError => e
-      puts "期待通りエラー: #{e.message} - handle_key('p')が未実装"
-    end
-  end
 
   def test_confirmation_dialog
     begin
       handler = Rufio::KeybindHandler.new
       directory_listing = Rufio::DirectoryListing.new(@test_dir)
       handler.set_directory_listing(directory_listing)
-      handler.set_base_directory(@base_dir)
       
       # 確認ダイアログのテスト（実際の実装後は詳細テストを追加）
       if handler.respond_to?(:show_confirmation_dialog)
@@ -160,32 +106,12 @@ class TestFileOperations
     end
   end
 
-  def test_base_directory_display
-    begin
-      handler = Rufio::KeybindHandler.new
-      directory_listing = Rufio::DirectoryListing.new(@test_dir)
-      terminal_ui = Rufio::TerminalUI.new
-      handler.set_directory_listing(directory_listing)
-      handler.set_base_directory(@base_dir)
-      
-      # TerminalUIがベースディレクトリを表示できるかテスト
-      if terminal_ui.respond_to?(:draw_base_directory_info, true)
-        puts "✓ base_directory_display - ベースディレクトリ表示機能が実装済み"
-      else
-        puts "期待通り：draw_base_directory_infoメソッドが未実装"
-      end
-      
-    rescue NoMethodError
-      puts "期待通り：ベースディレクトリ表示機能が未実装"
-    end
-  end
 
   def test_delete_selected_files
     begin
       handler = Rufio::KeybindHandler.new
       directory_listing = Rufio::DirectoryListing.new(@test_dir)
       handler.set_directory_listing(directory_listing)
-      handler.set_base_directory(@base_dir)
       
       # テスト用ファイルを作成
       test_file = File.join(@test_dir, "test_delete_file.txt")
@@ -224,7 +150,6 @@ class TestFileOperations
       handler = Rufio::KeybindHandler.new
       directory_listing = Rufio::DirectoryListing.new(@test_dir)
       handler.set_directory_listing(directory_listing)
-      handler.set_base_directory(@base_dir)
       
       # 削除確認ダイアログのテスト
       if handler.respond_to?(:show_delete_confirmation, true)
@@ -243,20 +168,13 @@ class TestFileOperations
       # 実際のファイル操作テスト（実装後に詳細テストを追加予定）
       test_file = File.join(@test_dir, "test_move_file.txt")
       File.write(test_file, "test content")
-      
+
       if File.exist?(test_file)
         puts "✓ file_system_operations - テストファイル作成成功"
-        
-        # 移動先ディレクトリ存在確認
-        if Dir.exist?(@base_dir)
-          puts "✓ file_system_operations - ベースディレクトリ存在確認"
-        else
-          puts "✗ file_system_operations - ベースディレクトリが存在しません"
-        end
       else
         puts "✗ file_system_operations - テストファイル作成失敗"
       end
-      
+
     rescue StandardError => e
       puts "✗ file_system_operations - #{e.message}"
     end
@@ -266,10 +184,7 @@ class TestFileOperations
     puts "=== Rufio File Operations テスト開始 ==="
     test_selection_functionality
     test_multiple_selection
-    test_move_to_base_directory
-    test_copy_to_base_directory
     test_confirmation_dialog
-    test_base_directory_display
     test_delete_selected_files
     test_delete_confirmation
     test_file_system_operations

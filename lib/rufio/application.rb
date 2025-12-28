@@ -15,7 +15,6 @@ module Rufio
       # 各コンポーネントを初期化
       directory_listing = DirectoryListing.new(@start_directory)
       keybind_handler = KeybindHandler.new
-      keybind_handler.set_base_directory(@start_directory)
       file_preview = FilePreview.new
       terminal_ui = TerminalUI.new
 

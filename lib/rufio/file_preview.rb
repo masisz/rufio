@@ -175,7 +175,7 @@ module Rufio
         modified: modified_time,
         encoding: "binary"
       }
-    rescue => e
+    rescue => _e
       {
         type: "binary",
         message: "#{ConfigLoader.message('file.binary_file')} - #{ConfigLoader.message('file.cannot_preview')}",

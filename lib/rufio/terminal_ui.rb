@@ -5,9 +5,9 @@ require 'io/console'
 module Rufio
   class TerminalUI
     # Layout constants
-    HEADER_HEIGHT = 2              # Header占有行数
+    HEADER_HEIGHT = 1              # Header占有行数
     FOOTER_HEIGHT = 1              # Footer占有行数
-    HEADER_FOOTER_MARGIN = 4       # Header + Footer分のマージン
+    HEADER_FOOTER_MARGIN = 3       # Header + Footer分のマージン
 
     # Panel layout ratios
     LEFT_PANEL_RATIO = 0.5         # 左パネルの幅比率
@@ -17,8 +17,6 @@ module Rufio
     DEFAULT_SCREEN_WIDTH = 80      # デフォルト画面幅
     DEFAULT_SCREEN_HEIGHT = 24     # デフォルト画面高さ
     HEADER_PADDING = 2             # ヘッダーのパディング
-    BASE_INFO_RESERVED_WIDTH = 20  # ベースディレクトリ表示の予約幅
-    BASE_INFO_MIN_WIDTH = 10       # ベースディレクトリ表示の最小幅
     FILTER_TEXT_RESERVED = 15      # フィルタテキスト表示の予約幅
 
     # File display constants
@@ -31,7 +29,7 @@ module Rufio
     GIGABYTE = MEGABYTE * 1024
 
     # Line offsets
-    CONTENT_START_LINE = 3         # コンテンツ開始行（ヘッダー2行スキップ）
+    CONTENT_START_LINE = 2         # コンテンツ開始行（ヘッダー1行スキップ）
 
     def initialize
       console = IO.console
@@ -125,9 +123,8 @@ module Rufio
         return
       end
 
-      # header (2 lines)
+      # header (1 line)
       draw_header
-      draw_base_directory_info
 
       # main content (left: directory list, right: preview)
       entries = get_display_entries
@@ -184,42 +181,6 @@ module Rufio
       puts "\e[7m#{header.ljust(@screen_width)}\e[0m" # reverse display
     end
 
-    def draw_base_directory_info
-      # 強制的に表示 - デバッグ用に安全チェックを緩和
-      if @keybind_handler && @keybind_handler.instance_variable_get(:@base_directory)
-        base_dir = @keybind_handler.instance_variable_get(:@base_directory)
-        selected_count = @keybind_handler.selected_items.length
-        base_info = "📋 Base Directory: #{base_dir}"
-        
-        # 選択されたアイテム数を表示
-        if selected_count > 0
-          base_info += " | Selected: #{selected_count} item(s)"
-        end
-      else
-        # keybind_handlerがない場合、またはbase_directoryが設定されていない場合
-        base_info = "📋 Base Directory: #{Dir.pwd}"
-      end
-      
-      # 長すぎる場合は省略
-      if base_info.length > @screen_width - HEADER_PADDING
-        if base_info.include?(" | Selected:")
-          selected_part = base_info.split(" | Selected:").last
-          available_length = @screen_width - BASE_INFO_RESERVED_WIDTH - " | Selected:#{selected_part}".length
-        else
-          available_length = @screen_width - BASE_INFO_RESERVED_WIDTH
-        end
-        
-        if available_length > BASE_INFO_MIN_WIDTH
-          # パスの最後の部分を表示
-          dir_part = base_info.split(": ").last.split(" | ").first
-          short_base_dir = "...#{dir_part[-available_length..-1]}"
-          base_info = base_info.gsub(dir_part, short_base_dir)
-        end
-      end
-      
-      # 2行目に確実に表示
-      print "\e[2;1H\e[44m\e[37m#{base_info.ljust(@screen_width)}\e[0m"
-    end
 
 
     def draw_directory_list(entries, width, height)
@@ -434,7 +395,7 @@ module Rufio
       width = 0
       string.each_char do |char|
         # 全角文字の判定
-        width += if char.ord > 127 || char.match?(/[あ-ん ア-ン 一-龯]/)
+        width += if char.ord > 127 || char.match?(/[あ-んア-ン一-龯]/)
                    2
                  else
                    1
@@ -451,7 +412,7 @@ module Rufio
       result = ''
 
       string.each_char do |char|
-        char_width = char.ord > 127 || char.match?(/[あ-ん ア-ン 一-龯]/) ? 2 : 1
+        char_width = char.ord > 127 || char.match?(/[あ-んア-ン一-龯]/) ? 2 : 1
 
         if current_width + char_width > max_width
           # "..."を追加できるかチェック
@@ -477,7 +438,7 @@ module Rufio
       punct_break_point = nil
 
       line.each_char.with_index do |char, index|
-        char_width = char.ord > 127 || char.match?(/[あ-ん ア-ン 一-龯]/) ? 2 : 1
+        char_width = char.ord > 127 || char.match?(/[あ-んア-ン一-龯]/) ? 2 : 1
 
         break if current_width + char_width > max_width
 
@@ -579,7 +540,7 @@ module Rufio
       end
 
       # キーバインドハンドラーに処理を委譲
-      result = @keybind_handler.handle_key(input)
+      _result = @keybind_handler.handle_key(input)
 
       # 終了処理（qキーのみ）
       if input == 'q'

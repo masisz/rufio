@@ -51,9 +51,6 @@ module Rufio
       @project_log = ProjectLog.new(log_dir)
       @in_project_mode = false
       @in_log_mode = false
-
-      # Legacy fields for backward compatibility
-      @base_directory = nil
     end
 
     def set_directory_listing(directory_listing)
@@ -65,15 +62,18 @@ module Rufio
       @terminal_ui = terminal_ui
     end
 
-    def set_base_directory(base_dir)
-      @base_directory = File.expand_path(base_dir)
-    end
-
     def selected_items
       @selection_manager.selected_items
     end
 
     def is_selected?(entry_name)
+      # Only show as selected if we're in the same directory where selection happened
+      current_path = @directory_listing&.current_path || Dir.pwd
+      source_path = @selection_manager.source_directory
+
+      # If no source directory or different directory, nothing is selected
+      return false if source_path.nil? || current_path != source_path
+
       @selection_manager.selected?(entry_name)
     end
 
@@ -141,10 +141,10 @@ module Rufio
         create_file
       when 'A'  # A
         create_directory
-      when 'm'  # m - move selected files to base directory
-        move_selected_to_base
-      when 'C'  # C - copy selected files to base directory
-        copy_selected_to_base
+      when 'm'  # m - move selected files to current directory
+        move_selected_to_current
+      when 'c'  # c - copy selected files to current directory
+        copy_selected_to_current
       when 'x'  # x - delete selected files
         delete_selected_files
       when 'p'  # p - project mode
@@ -483,11 +483,29 @@ module Rufio
     end
 
     def delete_current_file_with_confirmation
+      current_path = @directory_listing&.current_path || Dir.pwd
+
+      # Check if there are selected items
+      if !@selection_manager.empty?
+        # Delete multiple selected items
+        source_path = @selection_manager.source_directory || current_path
+
+        if show_delete_confirmation(@selection_manager.count, source_path)
+          result = @file_operations.delete(@selection_manager.selected_items, source_path)
+          @selection_manager.clear
+          @directory_listing.refresh if @directory_listing
+          @terminal_ui&.refresh_display
+          return result.success
+        else
+          return false
+        end
+      end
+
+      # Single file deletion (current item)
       current_item = current_entry()
       return false unless current_item
 
       current_name = current_item[:name]
-      current_path = @directory_listing&.current_path || Dir.pwd
       is_directory = current_item[:type] == :directory
 
       # 確認ダイアログを表示
@@ -554,19 +572,24 @@ module Rufio
       entry = current_entry
       return false unless entry
 
-      @selection_manager.toggle_selection(entry)
+      current_path = @directory_listing&.current_path || Dir.pwd
+      @selection_manager.toggle_selection(entry, current_path)
       true
     end
 
-    def move_selected_to_base
-      return false if @selection_manager.empty? || @base_directory.nil?
 
-      if show_confirmation_dialog('Move', @selection_manager.count)
-        current_path = @directory_listing&.current_path || Dir.pwd
-        result = @file_operations.move(@selection_manager.selected_items, current_path, @base_directory)
+    def move_selected_to_current
+      return false if @selection_manager.empty?
 
-        # Show result and refresh
-        show_operation_result(result)
+      current_path = @directory_listing&.current_path || Dir.pwd
+      source_path = @selection_manager.source_directory || current_path
+
+      # Move selected files/directories from source directory to current directory
+      # This allows moving files even after navigating to a different directory
+      if show_move_confirmation(@selection_manager.count, source_path, current_path)
+        result = @file_operations.move(@selection_manager.selected_items, source_path, current_path)
+
+        # Clear selection and refresh
         @selection_manager.clear
         @directory_listing.refresh if @directory_listing
         true
@@ -575,15 +598,18 @@ module Rufio
       end
     end
 
-    def copy_selected_to_base
-      return false if @selection_manager.empty? || @base_directory.nil?
+    def copy_selected_to_current
+      return false if @selection_manager.empty?
 
-      if show_confirmation_dialog('Copy', @selection_manager.count)
-        current_path = @directory_listing&.current_path || Dir.pwd
-        result = @file_operations.copy(@selection_manager.selected_items, current_path, @base_directory)
+      current_path = @directory_listing&.current_path || Dir.pwd
+      source_path = @selection_manager.source_directory || current_path
 
-        # Show result and refresh
-        show_operation_result(result)
+      # Copy selected files/directories from source directory to current directory
+      # This allows copying files even after navigating to a different directory
+      if show_copy_confirmation(@selection_manager.count, source_path, current_path)
+        result = @file_operations.copy(@selection_manager.selected_items, source_path, current_path)
+
+        # Clear selection and refresh
         @selection_manager.clear
         @directory_listing.refresh if @directory_listing
         true
@@ -631,12 +657,30 @@ module Rufio
       show_floating_delete_confirmation(count)
     end
 
-    def show_floating_delete_confirmation(count)
+    def show_move_confirmation(count, source_path, dest_path)
+      show_floating_move_confirmation(count, source_path, dest_path)
+    end
+
+    def show_copy_confirmation(count, source_path, dest_path)
+      show_floating_copy_confirmation(count, source_path, dest_path)
+    end
+
+    def show_delete_confirmation(count, source_path)
+      show_floating_delete_confirmation(count, source_path)
+    end
+
+    def show_floating_delete_confirmation(count, source_path)
       # コンテンツの準備
       title = 'Delete Confirmation'
+
+      # パスの短縮表示
+      source_display = shorten_path(source_path, 35)
+
       content_lines = [
         '',
         "Delete #{count} item(s)?",
+        '',
+        "From: #{source_display}",
         '',
         '  [Y]es - Delete',
         '  [N]o  - Cancel',
@@ -683,6 +727,128 @@ module Rufio
         end
         # 無効なキー入力の場合は再度ループ
       end
+    end
+
+    def show_floating_move_confirmation(count, source_path, dest_path)
+      # コンテンツの準備
+      title = 'Move Confirmation'
+
+      # パスの短縮表示
+      source_display = shorten_path(source_path, 35)
+      dest_display = shorten_path(dest_path, 35)
+
+      content_lines = [
+        '',
+        "Move #{count} item(s)?",
+        '',
+        "From: #{source_display}",
+        "To:   #{dest_display}",
+        '',
+        '  [Y]es - Move',
+        '  [N]o  - Cancel',
+        ''
+      ]
+
+      # ダイアログのサイズ設定
+      dialog_width = CONFIRMATION_DIALOG_WIDTH
+      dialog_height = DIALOG_BORDER_HEIGHT + content_lines.length
+
+      # ダイアログの位置を中央に設定
+      x, y = @dialog_renderer.calculate_center(dialog_width, dialog_height)
+
+      # ダイアログの描画（移動は青色で表示）
+      @dialog_renderer.draw_floating_window(x, y, dialog_width, dialog_height, title, content_lines, {
+                             border_color: "\e[34m", # 青色（情報）
+                             title_color: "\e[1;34m",   # 太字青色
+                             content_color: "\e[37m"    # 白色
+                           })
+
+      # キー入力待機
+      loop do
+        input = STDIN.getch.downcase
+
+        case input
+        when 'y'
+          # ダイアログをクリア
+          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
+          @terminal_ui&.refresh_display # 画面を再描画
+          return true
+        when 'n', "\e", "\x03" # n, ESC, Ctrl+C
+          # ダイアログをクリア
+          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
+          @terminal_ui&.refresh_display # 画面を再描画
+          return false
+        when 'q' # qキーでもキャンセル
+          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
+          @terminal_ui&.refresh_display
+          return false
+        end
+        # 無効なキー入力の場合は再度ループ
+      end
+    end
+
+    def show_floating_copy_confirmation(count, source_path, dest_path)
+      # コンテンツの準備
+      title = 'Copy Confirmation'
+
+      # パスの短縮表示
+      source_display = shorten_path(source_path, 35)
+      dest_display = shorten_path(dest_path, 35)
+
+      content_lines = [
+        '',
+        "Copy #{count} item(s)?",
+        '',
+        "From: #{source_display}",
+        "To:   #{dest_display}",
+        '',
+        '  [Y]es - Copy',
+        '  [N]o  - Cancel',
+        ''
+      ]
+
+      # ダイアログのサイズ設定
+      dialog_width = CONFIRMATION_DIALOG_WIDTH
+      dialog_height = DIALOG_BORDER_HEIGHT + content_lines.length
+
+      # ダイアログの位置を中央に設定
+      x, y = @dialog_renderer.calculate_center(dialog_width, dialog_height)
+
+      # ダイアログの描画（コピーは緑色で表示）
+      @dialog_renderer.draw_floating_window(x, y, dialog_width, dialog_height, title, content_lines, {
+                             border_color: "\e[32m", # 緑色（安全な操作）
+                             title_color: "\e[1;32m",   # 太字緑色
+                             content_color: "\e[37m"    # 白色
+                           })
+
+      # キー入力待機
+      loop do
+        input = STDIN.getch.downcase
+
+        case input
+        when 'y'
+          # ダイアログをクリア
+          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
+          @terminal_ui&.refresh_display # 画面を再描画
+          return true
+        when 'n', "\e", "\x03" # n, ESC, Ctrl+C
+          # ダイアログをクリア
+          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
+          @terminal_ui&.refresh_display # 画面を再描画
+          return false
+        when 'q' # qキーでもキャンセル
+          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
+          @terminal_ui&.refresh_display
+          return false
+        end
+        # 無効なキー入力の場合は再度ループ
+      end
+    end
+
+    # パスを指定した長さに短縮
+    def shorten_path(path, max_length)
+      return path if path.length <= max_length
+      "...#{path[-(max_length - 3)..-1]}"
     end
 
     def perform_delete_operation(items)
@@ -1229,7 +1395,6 @@ module Rufio
       bookmarks = @bookmark_manager.list
       return false if bookmarks.empty? || @current_index >= bookmarks.length
 
-      bookmark = bookmarks[@current_index]
       # ブックマークをプロジェクトとして選択
       @project_mode.select_bookmark(@current_index + 1)
       true

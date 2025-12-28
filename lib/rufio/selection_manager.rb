@@ -3,20 +3,28 @@
 module Rufio
   # Manages selected items (files/directories) for bulk operations
   class SelectionManager
+    attr_reader :source_directory
+
     def initialize
       @selected_items = []
+      @source_directory = nil
     end
 
     # Toggle selection for an entry
     # @param entry [Hash] Entry with :name key
+    # @param current_directory [String, nil] Current directory path (optional)
     # @return [Boolean] true if now selected, false if unselected
-    def toggle_selection(entry)
+    def toggle_selection(entry, current_directory = nil)
       return false unless entry
 
       if @selected_items.include?(entry[:name])
         @selected_items.delete(entry[:name])
+        # Clear source_directory if no items are selected
+        @source_directory = nil if @selected_items.empty?
         false
       else
+        # Set source directory on first selection
+        @source_directory = current_directory if @selected_items.empty? && current_directory
         @selected_items << entry[:name]
         true
       end
@@ -38,6 +46,7 @@ module Rufio
     # Clear all selections
     def clear
       @selected_items.clear
+      @source_directory = nil
     end
 
     # Check if any items are selected

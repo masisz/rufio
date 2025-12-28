@@ -14,8 +14,7 @@ rufio is a terminal-based file manager inspired by Yazi. It's implemented in Rub
 - **Intuitive Operation**: Vim-like key bindings
 - **Plugin System**: Extensible plugin architecture
 - **File Preview**: View text file contents on the fly
-- **File Selection & Operations**: Select multiple files, move, copy, and delete
-- **Base Directory Operations**: Batch file operations to startup directory
+- **File Selection & Operations**: Select multiple files, move, and delete
 - **Real-time Filter**: Filter files by name using s key
 - **Advanced Search**: Powerful search using fzf and rga
 - **Multi-platform**: Runs on macOS, Linux, and Windows
@@ -85,8 +84,8 @@ rufio --help           # Show help message
 | Key     | Function                                    |
 | ------- | ------------------------------------------- |
 | `Space` | Select/deselect files and directories      |
-| `m`     | Move selected items to base directory      |
-| `p`     | Copy selected items to base directory      |
+| `m`     | Move selected items to current directory   |
+| `c`     | Copy selected items to current directory   |
 | `x`     | Delete selected items                       |
 
 #### Real-time Filter
@@ -132,16 +131,13 @@ rufio --help           # Show help message
 - **Select/Deselect**: Use `Space` key to select or deselect files and directories
 - **Multiple Selection**: Select multiple files and directories simultaneously
 - **Visual Display**: Selected items are marked with ✓ and highlighted in green
-- **Selection Counter**: The number of selected items is shown on the second line of the screen
 
-#### Base Directory Operations
-
-The directory where rufio starts becomes the **base directory**, which serves as the destination for move and copy operations.
+#### File Operations
 
 | Operation | Key | Function                                |
 | --------- | --- | --------------------------------------- |
-| **Move**  | `m` | Move selected items to base directory  |
-| **Copy**  | `p` | Copy selected items to base directory  |
+| **Move**  | `m` | Move selected items to current directory |
+| **Copy**  | `c` | Copy selected items to current directory |
 | **Delete** | `x` | Delete selected items                   |
 
 #### Delete Operation Details
@@ -159,8 +155,8 @@ The directory where rufio starts becomes the **base directory**, which serves as
 ```
 1. Space → Select files/directories (multiple selection possible)
 2. Choose operation key:
-   - m → Move to base directory
-   - p → Copy to base directory
+   - m → Move to current directory
+   - c → Copy to current directory
    - x → Delete
 3. Floating Dialog → Confirm with Y/N, ESC to cancel
 4. Result Display → Review operation results in floating window
