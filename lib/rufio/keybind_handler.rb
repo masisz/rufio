@@ -653,10 +653,6 @@ module Rufio
       end
     end
 
-    def show_delete_confirmation(count)
-      show_floating_delete_confirmation(count)
-    end
-
     def show_move_confirmation(count, source_path, dest_path)
       show_floating_move_confirmation(count, source_path, dest_path)
     end

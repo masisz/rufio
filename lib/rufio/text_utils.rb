@@ -104,5 +104,54 @@ module Rufio
 
       space_break_point || punct_break_point || best_break_point
     end
+
+    # Wrap preview lines to fit within max_width
+    # @param lines [Array<String>] Lines to wrap
+    # @param max_width [Integer] Maximum width for each line
+    # @return [Array<String>] Wrapped lines
+    def wrap_preview_lines(lines, max_width)
+      return lines if max_width <= 0
+
+      wrapped = []
+      lines.each do |line|
+        # Remove trailing whitespace
+        line = line.rstrip
+
+        # If line is empty, keep it
+        if line.empty?
+          wrapped << ''
+          next
+        end
+
+        # If line fits within max_width, keep it as is
+        if display_width(line) <= max_width
+          wrapped << line
+          next
+        end
+
+        # Split long lines
+        current_line = []
+        current_width = 0
+
+        line.each_char do |char|
+          char_width = display_width(char)
+
+          if current_width + char_width > max_width
+            # Start a new line
+            wrapped << current_line.join
+            current_line = [char]
+            current_width = char_width
+          else
+            current_line << char
+            current_width += char_width
+          end
+        end
+
+        # Add remaining characters
+        wrapped << current_line.join unless current_line.empty?
+      end
+
+      wrapped
+    end
   end
 end

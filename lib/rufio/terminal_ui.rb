@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'io/console'
+require_relative 'text_utils'
 
 module Rufio
   class TerminalUI
@@ -313,7 +314,7 @@ module Rufio
         elsif selected_entry && selected_entry[:type] == 'file' && i >= 2
           # ファイルプレビュー（折り返し対応）
           preview_content = get_preview_content(selected_entry)
-          wrapped_lines = wrap_preview_lines(preview_content, safe_width - 1) # スペース分を除く
+          wrapped_lines = TextUtils.wrap_preview_lines(preview_content, safe_width - 1) # スペース分を除く
           display_line_index = i - 2
 
           if display_line_index < wrapped_lines.length
@@ -331,16 +332,16 @@ module Rufio
         if safe_width <= 0
           # 表示スペースがない場合は何も出力しない
           next
-        elsif display_width(content_to_print) > safe_width
+        elsif TextUtils.display_width(content_to_print) > safe_width
           # 表示幅ベースで切り詰める
-          content_to_print = truncate_to_width(content_to_print, safe_width)
+          content_to_print = TextUtils.truncate_to_width(content_to_print, safe_width)
         end
 
         # 出力（パディングなし、はみ出し防止のため）
         print content_to_print
 
         # 残りのスペースを埋める（ただし安全な範囲内のみ）
-        remaining_space = safe_width - display_width(content_to_print)
+        remaining_space = safe_width - TextUtils.display_width(content_to_print)
         print ' ' * remaining_space if remaining_space > 0
       end
     end
@@ -363,98 +364,6 @@ module Rufio
       ["(#{ConfigLoader.message('file.preview_error')})"]
     end
 
-    def wrap_preview_lines(lines, max_width)
-      return [] if lines.empty? || max_width <= 0
-
-      wrapped_lines = []
-
-      lines.each do |line|
-        if display_width(line) <= max_width
-          # 短い行はそのまま追加
-          wrapped_lines << line
-        else
-          # 長い行は折り返し
-          remaining_line = line
-          while display_width(remaining_line) > max_width
-            # 単語境界で折り返すことを試みる
-            break_point = find_break_point(remaining_line, max_width)
-            wrapped_lines << remaining_line[0...break_point]
-            remaining_line = remaining_line[break_point..-1]
-          end
-          # 残りの部分を追加
-          wrapped_lines << remaining_line if remaining_line.length > 0
-        end
-      end
-
-      wrapped_lines
-    end
-
-    def display_width(string)
-      # 文字列の表示幅を計算する
-      # 日本語文字（全角）は幅2、ASCII文字（半角）は幅1として計算
-      width = 0
-      string.each_char do |char|
-        # 全角文字の判定
-        width += if char.ord > 127 || char.match?(/[あ-んア-ン一-龯]/)
-                   2
-                 else
-                   1
-                 end
-      end
-      width
-    end
-
-    def truncate_to_width(string, max_width)
-      # 表示幅を指定して文字列を切り詰める
-      return string if display_width(string) <= max_width
-
-      current_width = 0
-      result = ''
-
-      string.each_char do |char|
-        char_width = char.ord > 127 || char.match?(/[あ-んア-ン一-龯]/) ? 2 : 1
-
-        if current_width + char_width > max_width
-          # "..."を追加できるかチェック
-          result += '...' if max_width >= 3 && current_width <= max_width - 3
-          break
-        end
-
-        result += char
-        current_width += char_width
-      end
-
-      result
-    end
-
-    def find_break_point(line, max_width)
-      # 最大幅以内で適切な折り返し位置を見つける
-      return line.length if display_width(line) <= max_width
-
-      # 文字ごとに幅を計算しながら適切な位置を探す
-      current_width = 0
-      best_break_point = 0
-      space_break_point = nil
-      punct_break_point = nil
-
-      line.each_char.with_index do |char, index|
-        char_width = char.ord > 127 || char.match?(/[あ-んア-ン一-龯]/) ? 2 : 1
-
-        break if current_width + char_width > max_width
-
-        current_width += char_width
-        best_break_point = index + 1
-
-        # スペースで区切れる位置を記録
-        space_break_point = index + 1 if char == ' ' && current_width > max_width * 0.5
-
-        # 日本語の句読点で区切れる位置を記録
-        punct_break_point = index + 1 if char.match?(/[、。，．！？]/) && current_width > max_width * 0.5
-      end
-
-      # 最適な折り返し位置を選択
-      space_break_point || punct_break_point || best_break_point
-    end
 
     def get_display_entries
       if @keybind_handler.filter_active?
