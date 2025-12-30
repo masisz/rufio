@@ -51,6 +51,14 @@ module Rufio
       @project_log = ProjectLog.new(log_dir)
       @in_project_mode = false
       @in_log_mode = false
+
+      # Help mode
+      @in_help_mode = false
+      @pre_help_directory = nil
+
+      # Preview pane focus and scroll
+      @preview_focused = false
+      @preview_scroll_offset = 0
     end
 
     def set_directory_listing(directory_listing)
@@ -85,6 +93,16 @@ module Rufio
         return handle_project_mode_key(key)
       end
 
+      # プレビューペインフォーカス中の特別処理
+      if @preview_focused
+        return handle_preview_focus_key(key)
+      end
+
+      # ヘルプモード中のESCキー特別処理
+      if @in_help_mode && key == "\e"
+        return exit_help_mode
+      end
+
       # フィルターモード中は他のキーバインドを無効化
       return handle_filter_input(key) if @filter_manager.filter_mode
 
@@ -94,9 +112,11 @@ module Rufio
       when 'k'
         move_up
       when 'h'
-        navigate_parent
-      when 'l', "\r", "\n" # l, Enter
+        navigate_parent_with_restriction
+      when 'l'  # l - navigate into directory
         navigate_enter
+      when "\r", "\n"  # Enter - focus preview pane or navigate
+        handle_enter_key
       when 'g'
         move_to_top
       when 'G'
@@ -153,8 +173,12 @@ module Rufio
         add_bookmark
       when 'z'  # z - zoxide history navigation
         show_zoxide_menu
+      when '0'  # 0 - go to start directory
+        goto_start_directory
       when '1', '2', '3', '4', '5', '6', '7', '8', '9'  # number keys - go to bookmark
         goto_bookmark(key.to_i)
+      when '?'  # ? - enter help mode
+        enter_help_mode
       when ':'  # : - command mode
         activate_command_mode
       else
@@ -184,16 +208,197 @@ module Rufio
       end
     end
 
+    # ヘルプモード関連メソッド
+
+    # ヘルプモード中かどうか
+    def help_mode?
+      @in_help_mode
+    end
+
+    # ヘルプモードに入る
+    def enter_help_mode
+      return false unless @directory_listing
+
+      # 現在のディレクトリを保存
+      @pre_help_directory = @directory_listing.current_path
+
+      # info ディレクトリに移動
+      rufio_root = File.expand_path('../..', __dir__)
+      info_dir = File.join(rufio_root, 'info')
+
+      # info ディレクトリが存在することを確認
+      return false unless Dir.exist?(info_dir)
+
+      # ヘルプモードを有効化
+      @in_help_mode = true
+
+      # info ディレクトリに移動
+      navigate_to_directory(info_dir)
+
+      true
+    end
+
+    # ヘルプモードを終了
+    def exit_help_mode
+      return false unless @in_help_mode
+      return false unless @pre_help_directory
+
+      # ヘルプモードを無効化
+      @in_help_mode = false
+
+      # 元のディレクトリに戻る
+      navigate_to_directory(@pre_help_directory)
+
+      # 保存したディレクトリをクリア
+      @pre_help_directory = nil
+
+      true
+    end
+
+    # ヘルプモード時の制限付き親ディレクトリナビゲーション
+    def navigate_parent_with_restriction
+      if @in_help_mode
+        # info ディレクトリより上には移動できない
+        rufio_root = File.expand_path('../..', __dir__)
+        info_dir = File.join(rufio_root, 'info')
+
+        current_path = @directory_listing.current_path
+
+        # 現在のパスが info ディレクトリ以下でない場合は移動を許可しない
+        unless current_path.start_with?(info_dir)
+          return false
+        end
+
+        # 現在のパスが info ディレクトリそのものの場合は移動を許可しない
+        if current_path == info_dir
+          return false
+        end
+
+        # info ディレクトリ配下であれば、通常のナビゲーションを実行
+        navigate_parent
+      else
+        # ヘルプモード外では通常のナビゲーション
+        navigate_parent
+      end
+    end
+
+    # プレビューペイン関連メソッド
+
+    # プレビューペインがフォーカスされているか
+    def preview_focused?
+      @preview_focused
+    end
+
+    # プレビューペインにフォーカスを移す
+    def focus_preview_pane
+      # ファイルが選択されている場合のみフォーカス可能
+      entry = current_entry
+      return false unless entry
+      return false unless entry[:type] == 'file'
+
+      @preview_focused = true
+      @preview_scroll_offset = 0  # フォーカス時にスクロール位置をリセット
+      true
+    end
+
+    # プレビューペインのフォーカスを解除
+    def unfocus_preview_pane
+      return false unless @preview_focused
+
+      @preview_focused = false
+      true
+    end
+
+    # 現在のプレビュースクロールオフセット
+    def preview_scroll_offset
+      @preview_scroll_offset
+    end
+
+    # プレビューを1行下にスクロール
+    def scroll_preview_down
+      return false unless @preview_focused
+
+      @preview_scroll_offset += 1
+      true
+    end
+
+    # プレビューを1行上にスクロール
+    def scroll_preview_up
+      return false unless @preview_focused
+
+      @preview_scroll_offset = [@preview_scroll_offset - 1, 0].max
+      true
+    end
+
+    # プレビューを半画面下にスクロール（Ctrl+D）
+    def scroll_preview_page_down
+      return false unless @preview_focused
+
+      # 半画面分スクロール（仮に20行とする）
+      page_size = 20
+      @preview_scroll_offset += page_size
+      true
+    end
+
+    # プレビューを半画面上にスクロール（Ctrl+U）
+    def scroll_preview_page_up
+      return false unless @preview_focused
+
+      # 半画面分スクロール（仮に20行とする）
+      page_size = 20
+      @preview_scroll_offset = [@preview_scroll_offset - page_size, 0].max
+      true
+    end
+
+    # プレビュースクロール位置をリセット（ファイル変更時など）
+    def reset_preview_scroll
+      @preview_scroll_offset = 0
+    end
+
     private
+
+    # Enterキーの処理：ファイルならプレビューフォーカス、ディレクトリならナビゲート
+    def handle_enter_key
+      entry = current_entry
+      return false unless entry
+
+      if entry[:type] == 'file'
+        # ファイルの場合はプレビューペインにフォーカス
+        focus_preview_pane
+      else
+        # ディレクトリの場合は通常のナビゲーション
+        navigate_enter
+      end
+    end
+
+    # プレビューペインフォーカス中のキー処理
+    def handle_preview_focus_key(key)
+      case key
+      when 'j', "\e[B"  # j or Down arrow
+        scroll_preview_down
+      when 'k', "\e[A"  # k or Up arrow
+        scroll_preview_up
+      when "\x04"  # Ctrl+D
+        scroll_preview_page_down
+      when "\x15"  # Ctrl+U
+        scroll_preview_page_up
+      when "\e"  # ESC
+        unfocus_preview_pane
+      else
+        false  # Unknown key in preview mode
+      end
+    end
 
     def move_down
       entries = get_active_entries
       @current_index = [@current_index + 1, entries.length - 1].min
+      reset_preview_scroll  # ファイル変更時にスクロール位置をリセット
       true
     end
 
     def move_up
       @current_index = [@current_index - 1, 0].max
+      reset_preview_scroll  # ファイル変更時にスクロール位置をリセット
       true
     end
 
@@ -1012,20 +1217,22 @@ module Rufio
       end
     end
 
+    def goto_start_directory
+      start_dir = @directory_listing&.start_directory
+      return false unless start_dir
+
+      # 起動ディレクトリに移動
+      navigate_to_directory(start_dir)
+    end
+
     def goto_bookmark(number)
       bookmark = @bookmark_manager.find_by_number(number)
 
-      return show_error_and_wait('bookmark.not_found', number) unless bookmark
-      return show_error_and_wait('bookmark.path_not_exist', bookmark[:path]) unless @bookmark_manager.path_exists?(bookmark)
+      return false unless bookmark
+      return false unless @bookmark_manager.path_exists?(bookmark)
 
       # ディレクトリに移動
-      if navigate_to_directory(bookmark[:path])
-        puts "\n#{ConfigLoader.message('bookmark.navigated') || 'Navigated to bookmark'}: #{bookmark[:name]}"
-        sleep(0.5) # 短時間表示
-        true
-      else
-        show_error_and_wait('bookmark.navigate_failed', bookmark[:name])
-      end
+      navigate_to_directory(bookmark[:path])
     end
 
     def add_bookmark
@@ -1404,6 +1611,12 @@ module Rufio
     # ログモード中かどうか
     def in_log_mode?
       @in_log_mode
+    end
+
+    # ヘルプダイアログを表示
+    def show_help_dialog
+      @terminal_ui&.show_help_dialog if @terminal_ui
+      true
     end
   end
 end

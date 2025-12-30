@@ -83,5 +83,21 @@ module Rufio
       assert_equal false, result
       assert_nil @project_mode.selected_path
     end
+
+    # ブックマーク一覧には番号が含まれる（1から始まる）
+    def test_bookmark_list_includes_numbers
+      @bookmark.add(@project1_dir, 'project1')
+      @bookmark.add(@project2_dir, 'project2')
+
+      @project_mode.activate
+      bookmarks = @project_mode.list_bookmarks
+
+      # ブックマークには番号が暗黙的に含まれる（1-based index）
+      assert_equal 2, bookmarks.length
+      # 1番目のブックマークは index 0 だが、表示上は "1. project1" となる
+      assert_equal 'project1', bookmarks[0][:name]
+      # 2番目のブックマークは index 1 だが、表示上は "2. project2" となる
+      assert_equal 'project2', bookmarks[1][:name]
+    end
   end
 end

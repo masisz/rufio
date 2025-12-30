@@ -7,7 +7,7 @@ module Rufio
   class TerminalUI
     # Layout constants
     HEADER_HEIGHT = 1              # Header占有行数
-    FOOTER_HEIGHT = 1              # Footer占有行数
+    FOOTER_HEIGHT = 1              # Footer占有行数（ブックマーク一覧 + ステータス情報）
     HEADER_FOOTER_MARGIN = 3       # Header + Footer分のマージン
 
     # Panel layout ratios
@@ -115,6 +115,9 @@ module Rufio
     end
 
     def draw_screen
+      # 処理時間測定開始
+      start_time = Time.now
+
       # move cursor to top of screen (don't clear)
       print "\e[H"
 
@@ -142,8 +145,9 @@ module Rufio
       draw_directory_list(entries, left_width, content_height)
       draw_file_preview(selected_entry, right_width, content_height, left_width)
 
-      # footer
-      draw_footer
+      # footer (統合されたステータス情報を含む)
+      render_time = Time.now - start_time
+      draw_footer(render_time)
 
       # コマンドモードがアクティブな場合はコマンド入力ウィンドウを表示
       if @command_mode_active
@@ -161,6 +165,11 @@ module Rufio
       current_path = @directory_listing.current_path
       header = "📁 rufio - #{current_path}"
 
+      # Add help mode indicator if in help mode
+      if @keybind_handler.help_mode?
+        header += " [Help Mode - Press ESC to exit]"
+      end
+
       # Add filter indicator if in filter mode
       if @keybind_handler.filter_active?
         filter_text = " [Filter: #{@keybind_handler.filter_query}]"
@@ -169,7 +178,12 @@ module Rufio
 
       # abbreviate if path is too long
       if header.length > @screen_width - HEADER_PADDING
-        if @keybind_handler.filter_active?
+        if @keybind_handler.help_mode?
+          # prioritize showing help mode indicator
+          help_text = " [Help Mode - Press ESC to exit]"
+          base_length = @screen_width - help_text.length - FILTER_TEXT_RESERVED
+          header = "📁 rufio - ...#{current_path[-base_length..-1]}#{help_text}"
+        elsif @keybind_handler.filter_active?
           # prioritize showing filter when active
           filter_text = " [Filter: #{@keybind_handler.filter_query}]"
           base_length = @screen_width - filter_text.length - FILTER_TEXT_RESERVED
@@ -310,12 +324,19 @@ module Rufio
         if selected_entry && i == 0
           # プレビューヘッダー
           header = " #{selected_entry[:name]} "
+          # プレビューフォーカス中は表示を追加
+          if @keybind_handler&.preview_focused?
+            header += "[PREVIEW MODE]"
+          end
           content_to_print = header
         elsif selected_entry && selected_entry[:type] == 'file' && i >= 2
           # ファイルプレビュー（折り返し対応）
           preview_content = get_preview_content(selected_entry)
           wrapped_lines = TextUtils.wrap_preview_lines(preview_content, safe_width - 1) # スペース分を除く
-          display_line_index = i - 2
+
+          # スクロールオフセットを適用
+          scroll_offset = @keybind_handler&.preview_scroll_offset || 0
+          display_line_index = i - 2 + scroll_offset
 
           if display_line_index < wrapped_lines.length
             line = wrapped_lines[display_line_index] || ''
@@ -376,9 +397,9 @@ module Rufio
       end
     end
 
-    def draw_footer
-      # 最下行から1行上に表示してスクロールを避ける
-      footer_line = @screen_height - FOOTER_HEIGHT
+    def draw_footer(render_time = nil)
+      # フッタは最下行に表示
+      footer_line = @screen_height - FOOTER_HEIGHT + 1
       print "\e[#{footer_line};1H"
 
       if @keybind_handler.filter_active?
@@ -387,14 +408,50 @@ module Rufio
         else
           help_text = "Filtered view active - Space to edit filter, ESC to clear filter"
         end
+        # フィルタモードでは通常のフッタを表示
+        footer_content = help_text.ljust(@screen_width)[0...@screen_width]
+        print "\e[7m#{footer_content}\e[0m"
       else
-        help_text = ConfigLoader.message('help.full')
-        help_text = ConfigLoader.message('help.short') if help_text.length > @screen_width
-      end
+        # 通常モードではブックマーク一覧、ステータス情報、?:helpを1行に表示
+        require_relative 'bookmark'
+        bookmark = Bookmark.new
+        bookmarks = bookmark.list
 
-      # 文字列を確実に画面幅に合わせる
-      footer_content = help_text.ljust(@screen_width)[0...@screen_width]
-      print "\e[7m#{footer_content}\e[0m"
+        # 起動ディレクトリを取得
+        start_dir = @directory_listing&.start_directory
+        start_dir_name = if start_dir
+                           File.basename(start_dir)
+                         else
+                           "start"
+                         end
+
+        # ブックマーク一覧を作成（0.起動dir を先頭に追加）
+        bookmark_parts = ["0.#{start_dir_name}"]
+        unless bookmarks.empty?
+          bookmark_parts.concat(bookmarks.take(9).map.with_index(1) { |bm, idx| "#{idx}.#{bm[:name]}" })
+        end
+        bookmark_text = bookmark_parts.join(" ")
+
+        # ステータス情報を作成
+        time_info = render_time ? "#{(render_time * 1000).round(1)}ms" : "-ms"
+
+        # 右側の情報: 処理時間 | ?:help
+        right_info = "#{time_info} | ?:help"
+
+        # ブックマーク一覧を利用可能な幅に収める
+        available_width = @screen_width - right_info.length - 3
+        if bookmark_text.length > available_width && available_width > 3
+          bookmark_text = bookmark_text[0...available_width - 3] + "..."
+        elsif available_width <= 3
+          bookmark_text = ""
+        end
+
+        # フッタ全体を構築
+        padding = @screen_width - bookmark_text.length - right_info.length
+        footer_content = "#{bookmark_text}#{' ' * padding}#{right_info}"
+        footer_content = footer_content.ljust(@screen_width)[0...@screen_width]
+        print "\e[7m#{footer_content}\e[0m"
+      end
     end
 
     def handle_input
@@ -656,11 +713,12 @@ module Rufio
         is_project_selected = (bookmark[:name] == selected_name)
         selection_mark = is_project_selected ? "✓ " : "  "
 
-        # ブックマーク名を表示
+        # ブックマーク名を表示（番号付き）
+        number = index + 1  # 1-based index
         name = bookmark[:name]
-        max_name_length = width - 4  # selection_mark分を除く
+        max_name_length = width - 8  # selection_mark(2) + number(1-2) + ". "(2) + padding
         display_name = name.length > max_name_length ? name[0...max_name_length - 3] + '...' : name
-        line_content = "#{selection_mark}#{display_name}".ljust(width)
+        line_content = "#{selection_mark}#{number}. #{display_name}".ljust(width)
 
         if index == current_index
           # カーソル位置は選択色でハイライト
@@ -852,6 +910,69 @@ module Rufio
       @dialog_renderer.draw_floating_window(x, y, width, height, 'No Project Selected', content_lines, {
         border_color: "\e[33m",    # Yellow (warning)
         title_color: "\e[1;33m",   # Bold yellow
+        content_color: "\e[37m"    # White
+      })
+
+      require 'io/console'
+      IO.console.getch
+      @dialog_renderer.clear_area(x, y, width, height)
+
+      # 画面を再描画
+      refresh_display
+      draw_screen
+    end
+
+    # ヘルプダイアログを表示
+    def show_help_dialog
+      content_lines = [
+        '',
+        "rufio v#{VERSION}",
+        '',
+        'Key Bindings:',
+        '',
+        'j/k      - Move up/down',
+        'h/l      - Navigate back/enter',
+        'g/G      - Go to top/bottom',
+        'o        - Open file',
+        'f        - Filter files',
+        's        - Search with fzf',
+        'F        - Content search (rga)',
+        'a/A      - Create file/directory',
+        'm/c/x    - Move/Copy/Delete',
+        'b        - Add bookmark',
+        'z        - Zoxide navigation',
+        '0        - Go to start directory',
+        '1-9      - Go to bookmark',
+        'p        - Project mode',
+        ':        - Command mode',
+        'q        - Quit',
+        ''
+      ]
+
+      # お知らせ情報を追加
+      require_relative 'info_notice'
+      info_notice = InfoNotice.new
+      all_notices = Dir.glob(File.join(info_notice.info_dir, '*.txt'))
+
+      if !all_notices.empty?
+        content_lines << 'Recent Updates:'
+        content_lines << ''
+        all_notices.take(3).each do |file|
+          title = info_notice.extract_title(file)
+          content_lines << "  • #{title}"
+        end
+        content_lines << ''
+      end
+
+      content_lines << 'Press any key to continue...'
+
+      width = 60
+      height = [content_lines.length + 4, @screen_height - 4].min
+      x, y = @dialog_renderer.calculate_center(width, height)
+
+      @dialog_renderer.draw_floating_window(x, y, width, height, 'rufio - Help', content_lines, {
+        border_color: "\e[36m",    # Cyan
+        title_color: "\e[1;36m",   # Bold cyan
         content_color: "\e[37m"    # White
       })
 

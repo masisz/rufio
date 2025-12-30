@@ -4,10 +4,11 @@ require 'fileutils'
 
 module Rufio
   class DirectoryListing
-    attr_reader :current_path
+    attr_reader :current_path, :start_directory
 
     def initialize(path = Dir.pwd)
       @current_path = File.expand_path(path)
+      @start_directory = @current_path  # 起動時のディレクトリを保存
       @entries = []
       refresh
     end
