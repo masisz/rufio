@@ -1,0 +1,41 @@
+.PHONY: build-preview build-textutils build-all clean test
+
+# Detect OS
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+    EXT := so
+endif
+ifeq ($(UNAME_S),Darwin)
+    EXT := dylib
+endif
+ifeq ($(OS),Windows_NT)
+    EXT := dll
+endif
+
+build-preview:
+	@echo "🔨 Building file preview library..."
+	@mkdir -p lib/native
+	cd lib_go/preview && go mod download
+	go build -buildmode=c-shared -o lib/native/libpreview.$(EXT) lib_go/preview/preview.go
+	@echo "✅ Preview built: lib/native/libpreview.$(EXT)"
+
+build-textutils:
+	@echo "🔨 Building text utils library..."
+	@mkdir -p lib/native
+	cd lib_go/textutils && go mod download
+	go build -buildmode=c-shared -o lib/native/libtextutils.$(EXT) lib_go/textutils/textutils.go
+	@echo "✅ Text utils built: lib/native/libtextutils.$(EXT)"
+
+build-all: build-preview build-textutils
+	@echo "✅ All Phase 2 libraries built"
+
+clean:
+	@echo "🧹 Cleaning native libraries..."
+	@rm -rf lib/native
+	@echo "✅ Cleaned"
+
+test: build-all
+	@echo "🧪 Testing native preview..."
+	@ruby -Ilib test/test_native_preview.rb
+	@echo "🧪 Testing native text utils..."
+	@ruby -Ilib test/test_native_text_utils.rb
