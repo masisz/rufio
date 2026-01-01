@@ -45,6 +45,12 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.2'
+        bundler-cache: true
+
     - name: Download gem artifact
       uses: actions/download-artifact@v4
       with:
