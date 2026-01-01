@@ -46,6 +46,61 @@ rufio           # カレントディレクトリで起動
 rufio /path/to  # 指定したディレクトリで起動
 ```
 
+### ネイティブスキャナー（実験的機能）
+
+rufio v0.31.0以降では、高速なディレクトリスキャンのためのネイティブ実装（Rust/Go）をサポートしています。デフォルトは安定したRuby実装を使用し、オプションでネイティブ実装に切り替え可能です。
+
+#### 起動オプション
+
+```bash
+# デフォルト（Ruby実装 - 安定）
+rufio
+
+# ネイティブ実装を有効化（自動検出: Rust > Go > Ruby）
+rufio --native
+rufio --native=auto
+
+# Rust実装を強制使用
+rufio --native=rust
+rufio --native rust /path/to/dir
+
+# Go実装を強制使用
+rufio --native=go
+rufio --native go /path/to/dir
+
+# 環境変数でも制御可能
+RUFIO_NATIVE=rust rufio
+RUFIO_NATIVE=go rufio /path/to/dir
+```
+
+#### ネイティブ実装について
+
+- **Rust実装**: 最も高速でメモリ安全。推奨。
+- **Go実装**: 高速で並行処理に優れる。
+- **Ruby実装** (デフォルト): 依存なし、安定動作保証。
+
+#### ビルド方法
+
+ネイティブ実装を使用するには、事前にビルドが必要です：
+
+```bash
+# Rust実装のビルド
+cd lib_rust/scanner
+cargo build --release
+make install
+
+# Go実装のビルド
+cd lib_go/scanner
+make install
+```
+
+#### 注意事項
+
+- ネイティブ実装は実験的機能です
+- デフォルトではRuby実装を使用（`--native`オプションなし）
+- ネイティブライブラリがない場合、自動的にRuby実装にフォールバック
+- gemインストール時はネイティブライブラリが含まれます（ビルド不要）
+
 ### ヘルスチェック
 
 ```bash

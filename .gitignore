@@ -1,0 +1,65 @@
+# Ruby
+*.gem
+*.rbc
+/.config
+/coverage/
+/InstalledFiles
+/pkg/
+/spec/reports/
+/spec/examples.txt
+/test/tmp/
+/test/version_tmp/
+/tmp/
+.byebug_history
+.ruby-version
+.ruby-gemset
+.ruby-lsp/
+
+# Bundler
+/.bundle/
+/vendor/bundle
+Gemfile.lock
+
+# RDoc documentation
+/.yardoc/
+/_yardoc/
+/doc/
+/rdoc/
+
+# Environment variables
+.env
+.env.local
+
+# IDEs and editors
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Rust build artifacts
+lib_rust/scanner/target/
+lib_rust/scanner/Cargo.lock
+
+# Go build artifacts
+lib_go/scanner/*.dylib
+lib_go/scanner/*.so
+lib_go/scanner/*.dll
+lib_go/scanner/*.h
+
+# Native libraries (generated during build)
+lib/rufio/native/*.dylib
+lib/rufio/native/*.so
+lib/rufio/native/*.dll
+
+# Backup files
+*.bak
+*~
+
+# Logs
+*.log
+
+# rufio specific
+.rufio_bookmarks
+.rufio_history
