@@ -37,6 +37,11 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
 
+    # RubyGems Trusted Publishing requires these permissions
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
     - uses: actions/checkout@v4
 
@@ -50,14 +55,10 @@ jobs:
       with:
         name: gem
 
+    # RubyGems Trusted Publishing configuration required:
+    # 1. Go to https://rubygems.org/profile/edit
+    # 2. Navigate to "Trusted publishing" section
+    # 3. Add this GitHub repository (owner/rufio)
+    # 4. Configure: Repository owner, Repository name, Workflow filename (gem.yml)
     - name: Publish to RubyGems
-      run: |
-        mkdir -p ~/.gem
-        cat << EOF > ~/.gem/credentials
-        ---
-        :rubygems_api_key: ${RUBYGEMS_API_KEY}
-        EOF
-        chmod 0600 ~/.gem/credentials
-        gem push *.gem
-      env:
-        RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+      run: gem push *.gem --host https://rubygems.org
