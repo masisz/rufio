@@ -1,6 +1,6 @@
 # CHANGELOG - rufio v0.7.0
 
-**Release Date**: 2024-11-29
+**Release Date**: 2025-11-29
 
 ## 🚀 New Features
 

@@ -7,7 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.10.0] - 2025-01-XX
+## [0.31.0] - 2026-01-01
+
+### Added
+- **🚀 Experimental Native Scanner**: High-performance directory scanning with Rust/Go implementations
+- **Rust implementation** (`lib_rust/scanner/`): Fastest, memory-safe implementation
+- **Go implementation** (`lib_go/scanner/`): Fast with excellent concurrency
+- **NativeScanner abstraction layer**: Unified interface with automatic fallback to Ruby
+- **Launch options**: `--native`, `--native=rust`, `--native=go` for performance optimization
+- **Environment variable**: `RUFIO_NATIVE` for configuration
+
+### Changed
+- Default scanner remains Ruby implementation for stability
+- Auto-detection priority: Rust > Go > Ruby
+
+For detailed information, see [CHANGELOG_v0.31.0.md](./docs/CHANGELOG_v0.31.0.md)
+
+## [0.30.0] - 2025-12-30
+
+### Added
+- **📚 Help System Overhaul**: Full-screen help mode with Markdown documentation
+- **Preview Pane Scrolling**: `Enter` on files focuses preview pane, `j/k` for scrolling
+- **Help documentation**: `info/welcome.md`, `info/help.md`, `info/keybindings.md`
+- **Enhanced file preview**: `.docx`, `.xlsx`, `.pptx` preview support via `pandoc`
+
+### Changed
+- All help documentation converted to English and Markdown format
+- Help mode uses full file manager UI for browsing
+- Preview pane shows `[PREVIEW MODE]` indicator when focused
+
+For detailed information, see [CHANGELOG_v0.30.0.md](./docs/CHANGELOG_v0.30.0.md)
+
+## [0.21.0] - 2025-12-29
+
+### Added
+- **📋 Copy Feature**: `c` key to copy selected files with floating dialog UI
+- **Cross-directory selection**: Select files in one directory and copy/move to another
+- **Multiple selection delete**: Enhanced `x` key for deleting multiple files
+- **Code refactoring**: Extracted dialog confirmation logic to shared methods
+
+### Changed
+- Improved SelectionManager with source directory tracking
+- Unified confirmation dialog UI across copy/move/delete operations
+
+For detailed information, see [CHANGELOG_v0.21.0.md](./docs/CHANGELOG_v0.21.0.md)
+
+## [0.20.0] - 2025-12-28
+
+### Added
+- **🎯 Project Mode UI Unification**: Consistent UI between normal and project modes
+- **Script directory support**: Execute custom Ruby scripts from `~/.config/rufio/scripts`
+- **Bookmark rename feature**: `r` key in project mode to rename bookmarks
+- **Enhanced command mode**: `:` command with script execution
+
+### Changed
+- Project mode shows bookmark list with consistent UI
+- Improved bookmark management with rename capability
+
+For detailed information, see [CHANGELOG_v0.20.0.md](./docs/CHANGELOG_v0.20.0.md)
+
+## [0.10.0] - 2025-12-21
 
 ### 🎨 Enhanced - Bookmark UI Overhaul
 - **Floating input dialogs**: All bookmark operations now use modern floating window interface
@@ -31,9 +90,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New input dialog system with multi-byte character support
 - Enhanced BookmarkManager with private helper methods for dialogs
 - Improved cursor positioning calculations
-- **Detailed changelog**: [CHANGELOG_v0.10.0.md](./CHANGELOG_v0.10.0.md)
+- **Detailed changelog**: [CHANGELOG_v0.10.0.md](./docs/CHANGELOG_v0.10.0.md)
 
-## [0.9.0] - 2025-01-XX
+## [0.9.0] - 2025-12-13
 
 ### Added
 - **Escape key support for file/directory creation**: Press `Esc` to cancel file (`a`) or directory (`A`) creation prompts and return to the main view
@@ -47,8 +106,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New `read_line_with_escape` method for cancelable input handling
 - Comprehensive test suite for escape key functionality
 - Support for multi-byte characters (Japanese, etc.) in filename/directory input
+- **Detailed changelog**: [CHANGELOG_v0.9.0.md](./docs/CHANGELOG_v0.9.0.md)
 
-## [0.7.0] - 2024-11-29
+## [0.8.0] - 2025-12-06
+
+For detailed information, see [CHANGELOG_v0.8.0.md](./docs/CHANGELOG_v0.8.0.md)
+
+## [0.7.0] - 2025-11-29
 
 ### Added
 - **🔌 Plugin System**: Complete extensible plugin architecture for rufio
@@ -70,9 +134,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New `PluginConfig` for configuration file handling
 - Plugin directory structure: `lib/rufio/plugins/` and `~/.rufio/plugins/`
 - Case-insensitive plugin name matching in configuration
-- **Detailed changelog**: [CHANGELOG_v0.7.0.md](./CHANGELOG_v0.7.0.md)
+- **Detailed changelog**: [CHANGELOG_v0.7.0.md](./docs/CHANGELOG_v0.7.0.md)
 
-## [0.6.0] - 2025-01-XX
+## [0.6.0] - 2025-09-28
 
 ### Added
 - **🚀 zoxide Integration**: Complete zoxide directory history navigation functionality
@@ -95,7 +159,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extended `HealthChecker` with zoxide version checking
 - Comprehensive test suite for zoxide functionality
 - Safe path escaping using Ruby's Shellwords module
-- **Detailed changelog**: [CHANGELOG_v0.6.0.md](./CHANGELOG_v0.6.0.md)
+- **Detailed changelog**: [CHANGELOG_v0.6.0.md](./docs/CHANGELOG_v0.6.0.md)
 
 ## [0.5.0] - 2025-09-20
 
@@ -120,7 +184,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Maximum 9 bookmarks with automatic sorting
 - Floating window system for bookmark management
 - Integration with existing terminal UI components
-- **Detailed changelog**: [CHANGELOG_v0.5.0.md](./CHANGELOG_v0.5.0.md)
+- **Detailed changelog**: [CHANGELOG_v0.5.0.md](./docs/CHANGELOG_v0.5.0.md)
 
 ## [0.4.0] - 2025-09-13
 
@@ -153,7 +217,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Enhanced error handling** patterns throughout codebase
 - **Improved file system safety** checks and validation
 
-For detailed information, see [CHANGELOG_v0.4.0.md](./CHANGELOG_v0.4.0.md)
+For detailed information, see [CHANGELOG_v0.4.0.md](./docs/CHANGELOG_v0.4.0.md)
 
 ## [0.3.0] - 2025-09-06
 
@@ -189,9 +253,22 @@ For detailed information, see [CHANGELOG_v0.4.0.md](./CHANGELOG_v0.4.0.md)
 
 ## Release Links
 
-- [v0.6.0 Detailed Release Notes](./CHANGELOG_v0.6.0.md) - zoxide Integration and Enhanced Health Checking
-- [v0.5.0 Detailed Release Notes](./CHANGELOG_v0.5.0.md) - Bookmark System Implementation
-- [v0.4.0 Detailed Release Notes](./CHANGELOG_v0.4.0.md) - Comprehensive changelog with technical details
+### Detailed Release Notes
+
+- [v0.31.0](./docs/CHANGELOG_v0.31.0.md) - Experimental Native Scanner Implementation
+- [v0.30.0](./docs/CHANGELOG_v0.30.0.md) - Help System Overhaul
+- [v0.21.0](./docs/CHANGELOG_v0.21.0.md) - Copy Feature & Code Refactoring
+- [v0.20.0](./docs/CHANGELOG_v0.20.0.md) - Project Mode Enhancement & UI Unification
+- [v0.10.0](./docs/CHANGELOG_v0.10.0.md) - Bookmark UI Overhaul
+- [v0.9.0](./docs/CHANGELOG_v0.9.0.md) - Escape Key Support & Input Improvements
+- [v0.8.0](./docs/CHANGELOG_v0.8.0.md) - Additional Features
+- [v0.7.0](./docs/CHANGELOG_v0.7.0.md) - Plugin System
+- [v0.6.0](./docs/CHANGELOG_v0.6.0.md) - zoxide Integration
+- [v0.5.0](./docs/CHANGELOG_v0.5.0.md) - Bookmark System Implementation
+- [v0.4.0](./docs/CHANGELOG_v0.4.0.md) - Floating Dialog System & English Interface
+
+### External Links
+
 - [GitHub Releases](https://github.com/masisz/rufio/releases) - Download releases and view release history
 - [Installation Guide](./README.md#installation) - How to install rufio
 - [Usage Documentation](./README.md#usage) - Complete usage guide

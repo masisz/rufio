@@ -126,7 +126,7 @@ This release establishes rufio as a modern, English-focused file manager with:
 
 ---
 
-**Release Date**: 2025-01-13  
+**Release Date**: 2025-09-13  
 **Version**: 0.4.0  
 **Previous Version**: 0.3.0  
 **Compatibility**: Ruby 2.7.0+  
