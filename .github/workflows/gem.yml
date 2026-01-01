@@ -43,13 +43,6 @@ jobs:
       id-token: write
 
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Ruby
-      uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: '3.2'
-
     - name: Download gem artifact
       uses: actions/download-artifact@v4
       with:
@@ -60,5 +53,5 @@ jobs:
     # 2. Navigate to "Trusted publishing" section
     # 3. Add this GitHub repository (owner/rufio)
     # 4. Configure: Repository owner, Repository name, Workflow filename (gem.yml)
-    - name: Publish to RubyGems
-      run: gem push *.gem --host https://rubygems.org
+    - name: Publish to RubyGems using Trusted Publishing
+      uses: rubygems/release-gem@v1
