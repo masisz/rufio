@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'fileutils'
+
 module Rufio
   class Application
     # Error display constants
@@ -18,8 +20,14 @@ module Rufio
       file_preview = FilePreview.new
       terminal_ui = TerminalUI.new
 
+      # バックグラウンドコマンド実行用の設定
+      log_dir = File.join(Dir.home, '.config', 'rufio', 'log')
+      FileUtils.mkdir_p(log_dir) unless Dir.exist?(log_dir)
+      command_logger = CommandLogger.new(log_dir)
+      background_executor = BackgroundCommandExecutor.new(command_logger)
+
       # アプリケーション開始
-      terminal_ui.start(directory_listing, keybind_handler, file_preview)
+      terminal_ui.start(directory_listing, keybind_handler, file_preview, background_executor)
     rescue Interrupt
       puts "\n\n#{ConfigLoader.message('app.interrupted')}"
     rescue StandardError => e

@@ -62,12 +62,16 @@ module Rufio
       @in_log_mode = false
     end
 
-    def start(directory_listing, keybind_handler, file_preview)
+    def start(directory_listing, keybind_handler, file_preview, background_executor = nil)
       @directory_listing = directory_listing
       @keybind_handler = keybind_handler
       @file_preview = file_preview
+      @background_executor = background_executor
       @keybind_handler.set_directory_listing(@directory_listing)
       @keybind_handler.set_terminal_ui(self)
+
+      # コマンドモードにバックグラウンドエグゼキュータを設定
+      @command_mode.background_executor = @background_executor if @background_executor
 
       @running = true
       setup_terminal
@@ -114,8 +118,29 @@ module Rufio
     end
 
     def main_loop
+      last_notification_check = Time.now
+      notification_message = nil
+      notification_time = nil
+
       while @running
-        draw_screen
+        # バックグラウンドコマンドの完了チェック（0.5秒ごと）
+        if @background_executor && (Time.now - last_notification_check) > 0.5
+          if !@background_executor.running? && @background_executor.get_completion_message
+            notification_message = @background_executor.get_completion_message
+            notification_time = Time.now
+            @background_executor.instance_variable_set(:@completion_message, nil)  # メッセージをクリア
+          end
+          last_notification_check = Time.now
+        end
+
+        # 通知メッセージを表示（3秒間）
+        if notification_message && (Time.now - notification_time) < 3.0
+          draw_screen_with_notification(notification_message)
+        else
+          notification_message = nil if notification_message
+          draw_screen
+        end
+
         handle_input
       end
     end
@@ -163,6 +188,23 @@ module Rufio
         # move cursor to invisible position
         print "\e[#{@screen_height};#{@screen_width}H"
       end
+    end
+
+    def draw_screen_with_notification(notification_message)
+      # 通常の画面を描画
+      draw_screen
+
+      # 通知メッセージを画面下部に表示
+      notification_line = @screen_height - 1
+      print "\e[#{notification_line};1H"  # カーソルを画面下部に移動
+
+      # 通知メッセージを反転表示で目立たせる
+      message_display = " #{notification_message} "
+      if message_display.length > @screen_width
+        message_display = message_display[0...(@screen_width - 3)] + "..."
+      end
+
+      print "\e[7m#{message_display.ljust(@screen_width)}\e[0m"
     end
 
     def draw_header

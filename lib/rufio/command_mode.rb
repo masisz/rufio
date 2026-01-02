@@ -5,8 +5,11 @@ require 'open3'
 module Rufio
   # コマンドモード - プラグインコマンドを実行するためのインターフェース
   class CommandMode
-    def initialize
+    attr_accessor :background_executor
+
+    def initialize(background_executor = nil)
       @commands = {}
+      @background_executor = background_executor
       load_plugin_commands
     end
 
@@ -17,7 +20,19 @@ module Rufio
 
       # シェルコマンドの実行 (! で始まる場合)
       if command_string.strip.start_with?('!')
-        return execute_shell_command(command_string.strip[1..-1])
+        shell_command = command_string.strip[1..-1]
+
+        # バックグラウンドエグゼキュータが利用可能な場合は非同期実行
+        if @background_executor
+          if @background_executor.execute_async(shell_command)
+            return "🔄 バックグラウンドで実行中: #{shell_command.split.first}"
+          else
+            return "⚠️  既にコマンドが実行中です"
+          end
+        else
+          # バックグラウンドエグゼキュータがない場合は同期実行
+          return execute_shell_command(shell_command)
+        end
       end
 
       # コマンド名を取得 (前後の空白を削除)
