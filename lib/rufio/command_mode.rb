@@ -13,6 +13,11 @@ module Rufio
       # 空のコマンドは無視
       return nil if command_string.nil? || command_string.strip.empty?
 
+      # シェルコマンドの実行 (! で始まる場合)
+      if command_string.strip.start_with?('!')
+        return execute_shell_command(command_string.strip[1..-1])
+      end
+
       # コマンド名を取得 (前後の空白を削除)
       command_name = command_string.strip.to_sym
 
@@ -47,6 +52,26 @@ module Rufio
     end
 
     private
+
+    # シェルコマンドを実行する
+    def execute_shell_command(shell_command)
+      # コマンドが空の場合
+      return { success: false, error: "コマンドが指定されていません" } if shell_command.strip.empty?
+
+      begin
+        # シェルコマンドを実行し、出力を取得
+        output = `#{shell_command} 2>&1`
+        exit_status = $?.exitstatus
+
+        if exit_status == 0
+          { success: true, output: output.strip }
+        else
+          { success: false, error: "コマンドが失敗しました (終了コード: #{exit_status})", output: output.strip }
+        end
+      rescue StandardError => e
+        { success: false, error: "コマンド実行エラー: #{e.message}" }
+      end
+    end
 
     # プラグインからコマンドを読み込む
     def load_plugin_commands
