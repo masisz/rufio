@@ -18,6 +18,15 @@ rufio is a terminal-based file manager inspired by Yazi. It's implemented in Rub
   - Command history (navigate with arrow keys)
   - Intelligent Tab completion (with candidate list display)
   - Extensible commands via Ruby plugins
+- **Background Command Execution** (v0.33.0):
+  - Execute shell commands asynchronously with `:!command`
+  - rufio remains operational during execution
+  - Displays completion notification
+  - Automatically saves execution results to log files
+- **Execution Log Viewer** (v0.33.0):
+  - View command execution logs with `L` key
+  - Timestamp-based log file management
+  - Intuitive UI similar to help mode
 - **File Preview**: View text file contents on the fly
 - **File Selection & Operations**: Select multiple files, move, copy, and delete
 - **Real-time Filter**: Filter files by name using f key
@@ -115,6 +124,7 @@ rufio --help           # Show help message
 | Key     | Function                        |
 | ------- | ------------------------------- |
 | `b`     | Show bookmark menu              |
+| `P`     | Enter project mode (Changed in v0.33.0) |
 | `1`-`9` | Go to corresponding bookmark    |
 
 #### zoxide Integration
@@ -141,10 +151,25 @@ rufio --help           # Show help message
 :!pwd             # Print working directory
 ```
 
+**Background Execution** (v0.33.0):
+- Execute shell commands asynchronously with `:!command`
+- rufio remains operational during execution
+- Displays completion notification for 3 seconds
+- Execution results automatically saved to `~/.config/rufio/log/`
+
 **Ruby Commands** (v0.32.0):
 ```
 :hello            # Execute Hello plugin
 ```
+
+#### Log Viewer (v0.33.0)
+
+| Key   | Function                     |
+| ----- | ---------------------------- |
+| `L`   | View command execution logs  |
+| `ESC` | Exit log viewer mode         |
+
+Command execution logs are saved to `~/.config/rufio/log/` and can be viewed with the `L` key.
 
 #### System Operations
 
