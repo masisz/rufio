@@ -87,16 +87,23 @@ module Rufio
     end
 
     # コマンド実行結果をフローティングウィンドウで表示
-    # @param result [String, nil] コマンド実行結果
+    # @param result [String, Hash, nil] コマンド実行結果
     def show_result(result)
       # nil または空文字列の場合は何も表示しない
       return if result.nil? || result.empty?
 
-      # 結果を行に分割
-      result_lines = result.split("\n")
+      # Hash形式の結果を処理
+      if result.is_a?(Hash)
+        result_text = format_hash_result(result)
+        is_error = !result[:success]
+      else
+        # 文字列形式の結果（従来の動作）
+        result_text = result
+        is_error = result.include?("⚠️") || result.include?("エラー")
+      end
 
-      # エラーメッセージかどうかを判定
-      is_error = result.include?("⚠️") || result.include?("エラー")
+      # 結果を行に分割
+      result_lines = result_text.split("\n")
 
       # ウィンドウの色設定
       if is_error
@@ -163,6 +170,42 @@ module Rufio
       end
 
       strings.first[0...common_length]
+    end
+
+    # Hash形式の結果を文字列に変換
+    # @param result [Hash] コマンド実行結果
+    # @return [String] フォーマットされた結果
+    def format_hash_result(result)
+      lines = []
+
+      # エラーメッセージがある場合
+      if result[:error]
+        lines << result[:error]
+        lines << ""
+      end
+
+      # 標準出力
+      if result[:output] && !result[:output].empty?
+        lines << result[:output]
+      end
+
+      # 標準エラー出力（空でない場合のみ）
+      if result[:stderr] && !result[:stderr].empty?
+        lines << "" if lines.any?
+        lines << "--- stderr ---"
+        lines << result[:stderr]
+      end
+
+      # 何も出力がない場合
+      if lines.empty?
+        if result[:success]
+          lines << "コマンドが正常に実行されました"
+        else
+          lines << "コマンドが失敗しました"
+        end
+      end
+
+      lines.join("\n")
     end
   end
 end
