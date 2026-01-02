@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-01-02
+
+### Added
+- **🎯 Shell Command Execution**: Execute shell commands with `!` prefix (e.g., `:!ls`, `:!git status`)
+- **📜 Command History**: Navigate command history with arrow keys, persistent storage
+- **⌨️ Intelligent Tab Completion**: Smart completion with candidate list display
+- **🔌 Hello Plugin**: Example Ruby plugin demonstrating command implementation
+- **⚙️ Command History Configuration**: Configurable history size (default: 1000)
+
+### Changed
+- Command mode UI improvements: cleaner interface, better visual feedback
+- Tab completion now shows candidate list when multiple matches exist
+- Plugin system now auto-loads from `lib/rufio/plugins/`
+
+### Fixed
+- Tab completion not working for shell commands
+- Command input display showing candidates unnecessarily
+
+For detailed information, see [CHANGELOG_v0.32.0.md](./docs/CHANGELOG_v0.32.0.md)
+
 ## [0.31.0] - 2026-01-01
 
 ### Added

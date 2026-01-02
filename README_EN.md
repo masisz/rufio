@@ -13,9 +13,14 @@ rufio is a terminal-based file manager inspired by Yazi. It's implemented in Rub
 - **Lightweight & Simple**: A lightweight file manager written in Ruby
 - **Intuitive Operation**: Vim-like key bindings
 - **Plugin System**: Extensible plugin architecture
+- **Powerful Command Mode** (v0.32.0):
+  - Shell command execution (`!ls`, `!git status`, etc.)
+  - Command history (navigate with arrow keys)
+  - Intelligent Tab completion (with candidate list display)
+  - Extensible commands via Ruby plugins
 - **File Preview**: View text file contents on the fly
-- **File Selection & Operations**: Select multiple files, move, and delete
-- **Real-time Filter**: Filter files by name using s key
+- **File Selection & Operations**: Select multiple files, move, copy, and delete
+- **Real-time Filter**: Filter files by name using f key
 - **Advanced Search**: Powerful search using fzf and rga
 - **Multi-platform**: Runs on macOS, Linux, and Windows
 - **External Editor Integration**: Open files with your favorite editor
@@ -117,6 +122,29 @@ rufio --help           # Show help message
 | Key | Function                           |
 | --- | ---------------------------------- |
 | `z` | Select directory from zoxide history |
+
+#### Command Mode (v0.32.0 Enhanced)
+
+| Key     | Function                                  |
+| ------- | ----------------------------------------- |
+| `:`     | Activate command mode                     |
+| `Tab`   | Command completion / Show candidate list  |
+| `↑`     | Previous command (in command mode)        |
+| `↓`     | Next command (in command mode)            |
+| `Enter` | Execute command (in command mode)         |
+| `ESC`   | Cancel command mode (in command mode)     |
+
+**Shell Command Execution** (v0.32.0):
+```
+:!ls -la          # List files with details
+:!git status      # Check git status
+:!pwd             # Print working directory
+```
+
+**Ruby Commands** (v0.32.0):
+```
+:hello            # Execute Hello plugin
+```
 
 #### System Operations
 
