@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'open3'
+
 module Rufio
   # コマンドモード - プラグインコマンドを実行するためのインターフェース
   class CommandMode
@@ -59,15 +61,23 @@ module Rufio
       return { success: false, error: "コマンドが指定されていません" } if shell_command.strip.empty?
 
       begin
-        # シェルコマンドを実行し、出力を取得
-        output = `#{shell_command} 2>&1`
-        exit_status = $?.exitstatus
+        # Open3を使って標準出力と標準エラーを分離して取得
+        stdout, stderr, status = Open3.capture3(shell_command)
 
-        if exit_status == 0
-          { success: true, output: output.strip }
-        else
-          { success: false, error: "コマンドが失敗しました (終了コード: #{exit_status})", output: output.strip }
+        result = {
+          success: status.success?,
+          output: stdout.strip,
+          stderr: stderr.strip
+        }
+
+        # コマンドが失敗した場合、エラーメッセージを追加
+        unless status.success?
+          result[:error] = "コマンドが失敗しました (終了コード: #{status.exitstatus})"
         end
+
+        result
+      rescue Errno::ENOENT => e
+        { success: false, error: "コマンドが見つかりません: #{e.message}" }
       rescue StandardError => e
         { success: false, error: "コマンド実行エラー: #{e.message}" }
       end
