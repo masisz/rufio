@@ -168,4 +168,48 @@ class TestCommandCompletion < Minitest::Test
 
     assert_equal "xyz", common_prefix
   end
+
+  # === シェルコマンド補完の統合テスト ===
+
+  def test_complete_shell_command
+    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
+
+    completion = Rufio::CommandCompletion.new
+
+    # ! で始まる入力はシェルコマンドとして補完
+    candidates = completion.complete("!l")
+
+    # PATH上の l で始まるコマンドが含まれる
+    assert candidates.any? { |c| c.start_with?("!l") }
+    # lsは通常存在する
+    assert_includes candidates, "!ls" if system("which ls > /dev/null 2>&1")
+  end
+
+  def test_complete_shell_command_with_space
+    completion = Rufio::CommandCompletion.new
+
+    # コマンド + スペース + パスの場合、パス補完を行う
+    Dir.mktmpdir do |tmpdir|
+      File.write(File.join(tmpdir, "test.txt"), "test")
+
+      candidates = completion.complete("!ls #{tmpdir}/t")
+
+      # ファイルパスの補完候補が含まれる
+      assert candidates.any? { |c| c.include?("test.txt") }
+    end
+  end
+
+  def test_normal_command_not_affected_by_shell_completion
+    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
+
+    completion = Rufio::CommandCompletion.new
+
+    # ! なしの通常のコマンドは従来通り動作
+    candidates = completion.complete("he")
+
+    assert_includes candidates, "hello"
+    assert_includes candidates, "help"
+    # シェルコマンドは含まれない（!で始まらない）
+    refute candidates.any? { |c| c.start_with?("!") }
+  end
 end
