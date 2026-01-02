@@ -27,7 +27,7 @@ class TestLogMode < Minitest::Test
   end
 
   def test_log_mode_not_active_by_default
-    refute @keybind_handler.log_mode?, "ログモードがデフォルトでアクティブになっています"
+    refute @keybind_handler.log_viewer_mode?, "ログモードがデフォルトでアクティブになっています"
   end
 
   def test_enter_log_mode_with_L_key
@@ -36,7 +36,7 @@ class TestLogMode < Minitest::Test
 
     result = @keybind_handler.handle_key('L')
 
-    assert @keybind_handler.log_mode?, "Lキーでログモードに入れません"
+    assert @keybind_handler.log_viewer_mode?, "Lキーでログモードに入れません"
   end
 
   def test_log_mode_changes_directory_to_log_dir
@@ -61,21 +61,19 @@ class TestLogMode < Minitest::Test
 
   def test_exit_log_mode_with_ESC
     @keybind_handler.instance_variable_set(:@log_dir, @log_dir)
-    @keybind_handler.instance_variable_set(:@original_path, @tmpdir)
 
     # Enter log mode
     @keybind_handler.handle_key('L')
-    assert @keybind_handler.log_mode?
+    assert @keybind_handler.log_viewer_mode?
 
     # Exit with ESC
     @keybind_handler.handle_key("\e")
 
-    refute @keybind_handler.log_mode?, "ESCキーでログモードを終了できません"
+    refute @keybind_handler.log_viewer_mode?, "ESCキーでログモードを終了できません"
   end
 
   def test_exit_log_mode_returns_to_original_directory
     @keybind_handler.instance_variable_set(:@log_dir, @log_dir)
-    @keybind_handler.instance_variable_set(:@original_path, @tmpdir)
 
     # Enter log mode
     @keybind_handler.handle_key('L')
@@ -113,8 +111,10 @@ class TestLogMode < Minitest::Test
     @keybind_handler.handle_key('L')
 
     # Navigate to subdir
-    @directory_listing.reload
-    @directory_listing.select_entry('subdir')
+    @directory_listing.refresh
+    entries = @directory_listing.list_entries
+    subdir_index = entries.index { |e| e[:name] == 'subdir' }
+    @keybind_handler.instance_variable_set(:@current_index, subdir_index)
     @keybind_handler.handle_key('l')
 
     # Should be in subdir
@@ -132,13 +132,13 @@ class TestLogMode < Minitest::Test
 
   def test_normal_navigation_not_restricted_outside_log_mode
     # Not in log mode
-    refute @keybind_handler.log_mode?
+    refute @keybind_handler.log_viewer_mode?
 
     # Should be able to navigate normally
     parent_dir = File.dirname(@tmpdir)
 
     # This should work (not restricted)
-    @directory_listing.move_to_parent
+    @directory_listing.navigate_to_parent
 
     # Path should have changed
     refute_equal @tmpdir, @directory_listing.current_path,

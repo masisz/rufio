@@ -56,6 +56,11 @@ module Rufio
       @in_help_mode = false
       @pre_help_directory = nil
 
+      # Log viewer mode
+      @in_log_viewer_mode = false
+      @pre_log_viewer_directory = nil
+      @log_dir = File.join(Dir.home, '.config', 'rufio', 'log')
+
       # Preview pane focus and scroll
       @preview_focused = false
       @preview_scroll_offset = 0
@@ -101,6 +106,11 @@ module Rufio
       # ヘルプモード中のESCキー特別処理
       if @in_help_mode && key == "\e"
         return exit_help_mode
+      end
+
+      # ログビューワモード中のESCキー特別処理
+      if @in_log_viewer_mode && key == "\e"
+        return exit_log_viewer_mode
       end
 
       # フィルターモード中は他のキーバインドを無効化
@@ -179,6 +189,8 @@ module Rufio
         goto_bookmark(key.to_i)
       when '?'  # ? - enter help mode
         enter_help_mode
+      when 'L'  # L - enter log viewer mode
+        enter_log_viewer_mode
       when ':'  # : - command mode
         activate_command_mode
       else
@@ -255,6 +267,49 @@ module Rufio
       true
     end
 
+    # ログビューワモード関連メソッド
+
+    # ログビューワモード中かどうか
+    def log_viewer_mode?
+      @in_log_viewer_mode
+    end
+
+    # ログビューワモードに入る
+    def enter_log_viewer_mode
+      return false unless @directory_listing
+
+      # 現在のディレクトリを保存
+      @pre_log_viewer_directory = @directory_listing.current_path
+
+      # log ディレクトリを作成（存在しない場合）
+      FileUtils.mkdir_p(@log_dir) unless Dir.exist?(@log_dir)
+
+      # log ディレクトリに移動
+      navigate_to_directory(@log_dir)
+
+      # ログビューワモードを有効化
+      @in_log_viewer_mode = true
+
+      true
+    end
+
+    # ログビューワモードを終了
+    def exit_log_viewer_mode
+      return false unless @in_log_viewer_mode
+      return false unless @pre_log_viewer_directory
+
+      # ログビューワモードを無効化
+      @in_log_viewer_mode = false
+
+      # 元のディレクトリに戻る
+      navigate_to_directory(@pre_log_viewer_directory)
+
+      # 保存したディレクトリをクリア
+      @pre_log_viewer_directory = nil
+
+      true
+    end
+
     # ヘルプモード時の制限付き親ディレクトリナビゲーション
     def navigate_parent_with_restriction
       if @in_help_mode
@@ -276,8 +331,24 @@ module Rufio
 
         # info ディレクトリ配下であれば、通常のナビゲーションを実行
         navigate_parent
+      elsif @in_log_viewer_mode
+        # log ディレクトリより上には移動できない
+        current_path = @directory_listing.current_path
+
+        # 現在のパスが log ディレクトリ以下でない場合は移動を許可しない
+        unless current_path.start_with?(@log_dir)
+          return false
+        end
+
+        # 現在のパスが log ディレクトリそのものの場合は移動を許可しない
+        if current_path == @log_dir
+          return false
+        end
+
+        # log ディレクトリ配下であれば、通常のナビゲーションを実行
+        navigate_parent
       else
-        # ヘルプモード外では通常のナビゲーション
+        # ヘルプモード・ログビューワモード外では通常のナビゲーション
         navigate_parent
       end
     end
