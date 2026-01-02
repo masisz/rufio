@@ -36,6 +36,9 @@ require_relative "rufio/project_mode"
 require_relative "rufio/project_command"
 require_relative "rufio/project_log"
 
+# プラグインをロード
+Rufio::PluginManager.load_all
+
 module Rufio
   class Error < StandardError; end
 end
