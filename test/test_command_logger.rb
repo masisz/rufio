@@ -43,8 +43,8 @@ class TestCommandLogger < Minitest::Test
     log_files = Dir.glob(File.join(@log_dir, "*.log"))
     filename = File.basename(log_files.first)
 
-    # Format: yyyymmddhhmmss-command.log
-    assert_match(/^\d{14}-.+\.log$/, filename, "ログファイル名の形式が正しくありません")
+    # Format: yyyymmddhhmmssmmm-command.log (with milliseconds)
+    assert_match(/^\d{17}-.+\.log$/, filename, "ログファイル名の形式が正しくありません")
   end
 
   def test_log_content_includes_command

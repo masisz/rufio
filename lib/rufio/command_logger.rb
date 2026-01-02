@@ -55,7 +55,8 @@ module Rufio
     # @param timestamp [Time] タイムスタンプ
     # @return [String] ファイル名
     def generate_filename(command, timestamp)
-      timestamp_str = timestamp.strftime("%Y%m%d%H%M%S")
+      # ミリ秒を含めて一意性を確保
+      timestamp_str = timestamp.strftime("%Y%m%d%H%M%S") + sprintf("%03d", (timestamp.usec / 1000).to_i)
       command_part = sanitize_command(command)
       "#{timestamp_str}-#{command_part}.log"
     end
