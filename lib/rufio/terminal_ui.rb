@@ -550,7 +550,7 @@ module Rufio
         deactivate_command_mode
       when "\t"
         # Tab キーで補完
-        @command_input = @command_completion.common_prefix(@command_input)
+        handle_tab_completion
       when "\u007F", "\b"
         # Backspace
         @command_input.chop! unless @command_input.empty?
@@ -571,6 +571,84 @@ module Rufio
 
       # コマンド実行結果をフローティングウィンドウで表示
       @command_mode_ui.show_result(result) if result
+
+      # 画面を再描画
+      draw_screen
+    end
+
+    # Tab補完を処理
+    def handle_tab_completion
+      # 補完候補を取得
+      candidates = @command_completion.complete(@command_input)
+
+      # 候補がない場合は何もしない
+      return if candidates.empty?
+
+      # 候補が1つの場合はそれに補完
+      if candidates.size == 1
+        @command_input = candidates.first
+        return
+      end
+
+      # 複数の候補がある場合、共通プレフィックスまで補完
+      prefix = @command_completion.common_prefix(@command_input)
+
+      # 入力が変わる場合は補完して終了
+      if prefix != @command_input
+        @command_input = prefix
+        return
+      end
+
+      # 入力が変わらない場合は候補リストを表示
+      show_completion_candidates(candidates)
+    end
+
+    # 補完候補を一時的に表示
+    def show_completion_candidates(candidates)
+      title = "補完候補 (#{candidates.size}件)"
+
+      # 候補を表示用にフォーマット（最大20件）
+      display_candidates = candidates.first(20)
+      content_lines = [""]
+      display_candidates.each do |candidate|
+        content_lines << "  #{candidate}"
+      end
+
+      if candidates.size > 20
+        content_lines << ""
+        content_lines << "  ... 他 #{candidates.size - 20} 件"
+      end
+
+      content_lines << ""
+      content_lines << "Press any key to continue..."
+
+      # ウィンドウの色設定（黄色）
+      border_color = "\e[33m"
+      title_color = "\e[1;33m"
+      content_color = "\e[37m"
+
+      # ウィンドウサイズを計算
+      width, height = @dialog_renderer.calculate_dimensions(content_lines, {
+                                                               title: title,
+                                                               min_width: 40,
+                                                               max_width: 80
+                                                             })
+
+      # 中央位置を計算
+      x, y = @dialog_renderer.calculate_center(width, height)
+
+      # フローティングウィンドウを描画
+      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+                                               border_color: border_color,
+                                               title_color: title_color,
+                                               content_color: content_color
+                                             })
+
+      # キー入力を待つ
+      STDIN.getch
+
+      # ウィンドウをクリア
+      @dialog_renderer.clear_area(x, y, width, height)
 
       # 画面を再描画
       draw_screen
