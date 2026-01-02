@@ -75,6 +75,15 @@ class TestConfigLoader < Minitest::Test
     assert_equal({ hsl: [180, 60, 65] }, colors[:preview])
   end
 
+  def test_command_history_size_default
+    # COMMAND_HISTORY_SIZEが設定されていない場合、デフォルト値1000を返す
+    Rufio::ConfigLoader.instance_variable_set(:@config, nil)
+    Rufio::ConfigLoader.reload_config!
+
+    history_size = Rufio::ConfigLoader.command_history_size
+    assert_equal 1000, history_size
+  end
+
   def test_keybinds_method
     keybinds = Rufio::ConfigLoader.keybinds
     assert_instance_of Hash, keybinds
@@ -82,13 +91,34 @@ class TestConfigLoader < Minitest::Test
     assert_equal %w[o SPACE], keybinds[:open_file]
   end
 
+  def test_command_history_size_custom
+    # カスタム設定を作成
+    config_dir = File.join(@temp_dir, '.config', 'rufio')
+    FileUtils.mkdir_p(config_dir)
+    config_file = File.join(config_dir, 'config.rb')
+
+    File.write(config_file, <<~RUBY)
+      COMMAND_HISTORY_SIZE = 500
+      APPLICATIONS = { :default => 'open' }
+      COLORS = {}
+      KEYBINDS = {}
+    RUBY
+
+    # CONFIG_PATHを更新
+    Rufio::ConfigLoader.const_set(:CONFIG_PATH, config_file)
+    Rufio::ConfigLoader.instance_variable_set(:@config, nil)
+
+    history_size = Rufio::ConfigLoader.command_history_size
+    assert_equal 500, history_size
+  end
+
   def test_reload_config
     # 最初の読み込み
     config1 = Rufio::ConfigLoader.load_config
-    
+
     # リロード
     config2 = Rufio::ConfigLoader.reload_config!
-    
+
     # 設定が再読み込みされることを確認（同じ内容でも問題ない）
     assert_equal config1, config2
   end

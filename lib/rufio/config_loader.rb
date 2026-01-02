@@ -56,6 +56,10 @@ module Rufio
         File.expand_path('~/.config/rufio/scripts')
       end
 
+      def command_history_size
+        load_config[:command_history_size] || 1000
+      end
+
       private
 
       def load_config_file
@@ -77,6 +81,11 @@ module Rufio
         # Load scripts directory if defined
         if Object.const_defined?(:SCRIPTS_DIR)
           config[:scripts_dir] = Object.const_get(:SCRIPTS_DIR)
+        end
+
+        # Load command history size if defined
+        if Object.const_defined?(:COMMAND_HISTORY_SIZE)
+          config[:command_history_size] = Object.const_get(:COMMAND_HISTORY_SIZE)
         end
 
         config
