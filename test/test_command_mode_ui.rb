@@ -317,4 +317,95 @@ class TestCommandModeUI < Minitest::Test
     assert_respond_to ui, :complete_command
     assert_respond_to ui, :show_result
   end
+
+  # === Hash形式の結果表示テスト ===
+
+  def test_show_result_hash_success
+    # Hash形式の成功結果を表示
+    result = { success: true, output: "command output", stderr: "" }
+    draw_called = false
+
+    @dialog_renderer.stub :draw_floating_window, ->(x, y, w, h, title, content, opts) {
+      draw_called = true
+      assert_equal "コマンド実行結果", title
+      content_text = content.join("\n")
+      assert_includes content_text, "command output"
+      # 成功の場合は緑色
+      assert_equal "\e[32m", opts[:border_color]
+    } do
+      @dialog_renderer.stub :clear_area, ->(*) {} do
+        STDIN.stub :getch, "\r" do
+          @command_mode_ui.show_result(result)
+        end
+      end
+    end
+
+    assert draw_called, "draw_floating_window が呼ばれていません"
+  end
+
+  def test_show_result_hash_error
+    # Hash形式のエラー結果を表示
+    result = { success: false, error: "Command failed (exit code: 1)", output: "", stderr: "error message" }
+    draw_called = false
+
+    @dialog_renderer.stub :draw_floating_window, ->(x, y, w, h, title, content, opts) {
+      draw_called = true
+      content_text = content.join("\n")
+      assert_includes content_text, "Command failed"
+      assert_includes content_text, "error message"
+      # エラーの場合は赤色
+      assert_equal "\e[31m", opts[:border_color]
+    } do
+      @dialog_renderer.stub :clear_area, ->(*) {} do
+        STDIN.stub :getch, "\r" do
+          @command_mode_ui.show_result(result)
+        end
+      end
+    end
+
+    assert draw_called, "draw_floating_window が呼ばれていません"
+  end
+
+  def test_show_result_hash_with_stderr
+    # 標準エラー出力を含むHash結果を表示
+    result = { success: true, output: "stdout", stderr: "warning message" }
+    draw_called = false
+
+    @dialog_renderer.stub :draw_floating_window, ->(x, y, w, h, title, content, opts) {
+      draw_called = true
+      content_text = content.join("\n")
+      assert_includes content_text, "stdout"
+      assert_includes content_text, "warning message"
+    } do
+      @dialog_renderer.stub :clear_area, ->(*) {} do
+        STDIN.stub :getch, "\r" do
+          @command_mode_ui.show_result(result)
+        end
+      end
+    end
+
+    assert draw_called, "draw_floating_window が呼ばれていません"
+  end
+
+  def test_show_result_hash_multiline_output
+    # 複数行の出力を含むHash結果を表示
+    result = { success: true, output: "line1\nline2\nline3", stderr: "" }
+    draw_called = false
+
+    @dialog_renderer.stub :draw_floating_window, ->(x, y, w, h, title, content, opts) {
+      draw_called = true
+      content_text = content.join("\n")
+      assert_includes content_text, "line1"
+      assert_includes content_text, "line2"
+      assert_includes content_text, "line3"
+    } do
+      @dialog_renderer.stub :clear_area, ->(*) {} do
+        STDIN.stub :getch, "\r" do
+          @command_mode_ui.show_result(result)
+        end
+      end
+    end
+
+    assert draw_called, "draw_floating_window が呼ばれていません"
+  end
 end
