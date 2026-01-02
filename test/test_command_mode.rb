@@ -187,4 +187,78 @@ class TestCommandMode < Minitest::Test
     result = command_mode.execute("hello")
     assert_equal "Hello from TestPlugin!", result
   end
+
+  # 追加のエラーハンドリングテスト
+  def test_execute_shell_command_with_pipe
+    command_mode = Rufio::CommandMode.new
+
+    # パイプを使ったコマンドが正しく実行される
+    result = command_mode.execute("!echo hello | grep hello")
+
+    assert_kind_of Hash, result
+    assert_equal true, result[:success]
+    assert_match(/hello/, result[:output])
+  end
+
+  def test_execute_shell_command_with_quotes
+    command_mode = Rufio::CommandMode.new
+
+    # 引用符を含むコマンドが正しく実行される
+    result = command_mode.execute('!echo "hello world"')
+
+    assert_kind_of Hash, result
+    assert_equal true, result[:success]
+    assert_equal "hello world", result[:output]
+  end
+
+  def test_execute_shell_command_stderr_output
+    command_mode = Rufio::CommandMode.new
+
+    # 標準エラー出力を生成するコマンド
+    result = command_mode.execute("!ruby -e 'STDERR.puts \"error message\"'")
+
+    assert_kind_of Hash, result
+    assert_equal true, result[:success]
+    # 標準エラーが分離されている
+    assert result.key?(:stderr), "結果にstderrキーが含まれている必要があります"
+    assert_match(/error message/, result[:stderr])
+  end
+
+  def test_execute_shell_command_only_exclamation
+    command_mode = Rufio::CommandMode.new
+
+    # ! のみの場合、エラーを返す
+    result = command_mode.execute("!")
+
+    assert_kind_of Hash, result
+    assert_equal false, result[:success]
+    assert result[:error]
+  end
+
+  def test_execute_shell_command_with_exit_code
+    command_mode = Rufio::CommandMode.new
+
+    # 終了コード1で終了するコマンド
+    result = command_mode.execute("!ruby -e 'exit 1'")
+
+    assert_kind_of Hash, result
+    assert_equal false, result[:success]
+    assert result[:error]
+    assert_match(/終了コード.*1/, result[:error])
+  end
+
+  def test_execute_shell_command_separates_stdout_stderr
+    command_mode = Rufio::CommandMode.new
+
+    # 標準出力と標準エラーの両方を出力するコマンド
+    result = command_mode.execute("!ruby -e 'puts \"stdout\"; STDERR.puts \"stderr\"'")
+
+    assert_kind_of Hash, result
+    assert_equal true, result[:success]
+    # 標準出力と標準エラーが分離されている
+    assert result.key?(:output), "結果にoutputキーが含まれている必要があります"
+    assert result.key?(:stderr), "結果にstderrキーが含まれている必要があります"
+    assert_equal "stdout", result[:output]
+    assert_match(/stderr/, result[:stderr])
+  end
 end
