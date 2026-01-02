@@ -48,6 +48,12 @@ module Rufio
       @dialog_renderer = DialogRenderer.new
       @command_mode_ui = CommandModeUI.new(@command_mode, @dialog_renderer)
 
+      # コマンド履歴と補完
+      history_file = File.join(Dir.home, '.rufio', 'command_history.txt')
+      FileUtils.mkdir_p(File.dirname(history_file))
+      @command_history = CommandHistory.new(history_file, max_size: ConfigLoader.command_history_size)
+      @command_completion = CommandCompletion.new(@command_history)
+
       # Project mode
       @project_mode = nil
       @project_command = nil
@@ -151,10 +157,8 @@ module Rufio
 
       # コマンドモードがアクティブな場合はコマンド入力ウィンドウを表示
       if @command_mode_active
-        # 補完候補を取得
-        suggestions = @command_mode_ui.autocomplete(@command_input)
         # フローティングウィンドウで表示
-        @command_mode_ui.show_input_prompt(@command_input, suggestions)
+        @command_mode_ui.show_input_prompt(@command_input)
       else
         # move cursor to invisible position
         print "\e[#{@screen_height};#{@screen_width}H"
@@ -546,7 +550,7 @@ module Rufio
         deactivate_command_mode
       when "\t"
         # Tab キーで補完
-        @command_input = @command_mode_ui.complete_command(@command_input)
+        @command_input = @command_completion.common_prefix(@command_input)
       when "\u007F", "\b"
         # Backspace
         @command_input.chop! unless @command_input.empty?
@@ -559,6 +563,9 @@ module Rufio
     # コマンドを実行
     def execute_command(command_string)
       return if command_string.nil? || command_string.empty?
+
+      # コマンド履歴に追加
+      @command_history.add(command_string)
 
       result = @command_mode.execute(command_string)
 

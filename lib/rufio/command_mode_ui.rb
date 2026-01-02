@@ -51,16 +51,6 @@ module Rufio
       content_lines = [""]
       content_lines << "#{input}_"  # カーソルを_で表現
       content_lines << ""
-
-      # 補完候補がある場合は表示
-      unless suggestions.empty?
-        content_lines << "補完候補:"
-        suggestions.each do |suggestion|
-          content_lines << "  #{suggestion}"
-        end
-        content_lines << ""
-      end
-
       content_lines << "Tab: 補完 | Enter: 実行 | ESC: キャンセル"
 
       # ウィンドウの色設定（青）

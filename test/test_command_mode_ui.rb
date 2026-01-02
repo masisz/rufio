@@ -258,17 +258,19 @@ class TestCommandModeUI < Minitest::Test
   end
 
   def test_show_input_prompt_with_suggestions
-    # 補完候補付きの入力プロンプト
+    # 補完候補付きの入力プロンプト（補完候補は表示されない）
     input = "he"
     suggestions = ["hello", "help", "health"]
     draw_called = false
 
     @dialog_renderer.stub :draw_floating_window, ->(x, y, w, h, title, content, opts) {
       draw_called = true
-      # 補完候補が表示されることを確認
+      # 補完候補が表示されないことを確認
       content_text = content.join("\n")
+      refute_includes content_text, "補完候補"
+      # 個別の候補も表示されない
       suggestions.each do |suggestion|
-        assert_includes content_text, suggestion
+        refute_includes content_text, suggestion
       end
     } do
       @command_mode_ui.show_input_prompt(input, suggestions)
