@@ -132,4 +132,59 @@ class TestCommandMode < Minitest::Test
     # 初期化後、コマンドが利用可能になっている
     refute_empty command_mode.available_commands
   end
+
+  # シェルコマンド実行機能のテスト
+  def test_execute_shell_command_with_exclamation
+    command_mode = Rufio::CommandMode.new
+
+    # ! で始まるコマンドはシェルコマンドとして実行される
+    result = command_mode.execute("!echo 'Hello Shell'")
+
+    assert_kind_of Hash, result
+    assert_equal true, result[:success]
+    assert_match(/Hello Shell/, result[:output])
+  end
+
+  def test_execute_shell_command_returns_output
+    command_mode = Rufio::CommandMode.new
+
+    # シェルコマンドの出力を取得できる
+    result = command_mode.execute("!pwd")
+
+    assert_kind_of Hash, result
+    assert_equal true, result[:success]
+    refute_empty result[:output]
+  end
+
+  def test_execute_shell_command_error_handling
+    command_mode = Rufio::CommandMode.new
+
+    # 存在しないコマンドを実行した場合、エラーを返す
+    result = command_mode.execute("!nonexistent_command_xyz_123")
+
+    assert_kind_of Hash, result
+    assert_equal false, result[:success]
+    assert result[:error]
+  end
+
+  def test_execute_shell_command_with_arguments
+    command_mode = Rufio::CommandMode.new
+
+    # 引数を含むシェルコマンドを実行できる
+    result = command_mode.execute("!ls -la")
+
+    assert_kind_of Hash, result
+    assert_equal true, result[:success]
+    refute_empty result[:output]
+  end
+
+  def test_normal_command_still_works_after_shell_support
+    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
+
+    command_mode = Rufio::CommandMode.new
+
+    # ! なしの通常のコマンドも引き続き動作する
+    result = command_mode.execute("hello")
+    assert_equal "Hello from TestPlugin!", result
+  end
 end
