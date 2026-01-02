@@ -28,6 +28,7 @@ require_relative "rufio/plugin_manager"
 require_relative "rufio/command_mode"
 require_relative "rufio/command_mode_ui"
 require_relative "rufio/command_history"
+require_relative "rufio/command_completion"
 
 # プロジェクトモード
 require_relative "rufio/project_mode"
