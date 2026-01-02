@@ -1028,7 +1028,7 @@ module Rufio
         'z        - Zoxide navigation',
         '0        - Go to start directory',
         '1-9      - Go to bookmark',
-        'p        - Project mode',
+        'P        - Project mode',
         ':        - Command mode',
         'q        - Quit',
         ''

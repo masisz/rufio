@@ -167,7 +167,7 @@ module Rufio
         copy_selected_to_current
       when 'x'  # x - delete selected files
         delete_selected_files
-      when 'p'  # p - project mode
+      when 'P'  # P - project mode
         enter_project_mode
       when 'b'  # b - add bookmark
         add_bookmark
