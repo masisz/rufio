@@ -22,18 +22,11 @@ module Rufio
 
       @entries = []
 
-      Dir.entries(@current_path).each do |name|
-        next if name == '.'
-
-        full_path = File.join(@current_path, name)
-        entry = {
-          name: name,
-          path: full_path,
-          type: determine_file_type(full_path),
-          size: safe_file_size(full_path),
-          modified: safe_file_mtime(full_path)
-        }
-        @entries << entry
+      # NativeScannerが利用可能な場合は使用
+      if use_native_scanner?
+        scan_with_native_scanner
+      else
+        scan_with_ruby
       end
 
       sort_entries!
@@ -83,6 +76,61 @@ module Rufio
     end
 
     private
+
+    # NativeScannerを使用するかどうか
+    def use_native_scanner?
+      defined?(Rufio::NativeScanner) && Rufio::NativeScanner.mode != 'ruby'
+    end
+
+    # NativeScannerでスキャン
+    def scan_with_native_scanner
+      entries = Rufio::NativeScanner.scan_directory(@current_path)
+
+      entries.each do |entry|
+        next if entry[:name] == '.'
+
+        full_path = File.join(@current_path, entry[:name])
+
+        # NativeScannerのエントリをDirectoryListingの形式に変換
+        converted_entry = {
+          name: entry[:name],
+          path: full_path,
+          type: convert_type(entry[:type], entry[:executable]),
+          size: entry[:size] || 0,
+          modified: entry[:mtime] ? Time.at(entry[:mtime]) : Time.now
+        }
+        @entries << converted_entry
+      end
+    rescue StandardError => e
+      # エラーが発生した場合はRubyでスキャン
+      Logger.debug "NativeScanner failed: #{e.message}, falling back to Ruby" if defined?(Logger)
+      scan_with_ruby
+    end
+
+    # Rubyの標準機能でスキャン
+    def scan_with_ruby
+      Dir.entries(@current_path).each do |name|
+        next if name == '.'
+
+        full_path = File.join(@current_path, name)
+        entry = {
+          name: name,
+          path: full_path,
+          type: determine_file_type(full_path),
+          size: safe_file_size(full_path),
+          modified: safe_file_mtime(full_path)
+        }
+        @entries << entry
+      end
+    end
+
+    # NativeScannerのタイプをDirectoryListingのタイプに変換
+    def convert_type(type, executable)
+      return type if type == 'directory'
+      return 'executable' if executable
+
+      'file'
+    end
 
     def determine_file_type(path)
       return 'directory' if File.directory?(path)
