@@ -59,7 +59,7 @@ module Rufio
               @current_library = nil
             end
           else
-            original_mode=(value)
+            send(:original_mode=, value)
           end
         end
 
@@ -185,7 +185,7 @@ module Rufio
               @current_library = nil
             end
           else
-            original_auto_mode(value)
+            send(:original_auto_mode, value)
           end
         end
       end

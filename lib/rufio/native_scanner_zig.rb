@@ -153,7 +153,12 @@ module Rufio
 
         def available_libraries
           original = original_available_libraries
-          original.merge(zig: NativeScannerZigLoader.available?)
+          result = original.merge(zig: NativeScannerZigLoader.available?)
+          # magnusが既に追加されていなければ追加
+          if defined?(NativeScannerMagnusLoader) && !result.key?(:magnus)
+            result = result.merge(magnus: NativeScannerMagnusLoader.available?)
+          end
+          result
         end
 
         # autoモードの優先順位を更新（magnus > zig > rust > go > ruby）
@@ -190,10 +195,10 @@ module Rufio
               @mode = 'magnus'
               @current_library = nil
             else
-              original_mode=(value)
+              send(:original_mode=, value)
             end
           else
-            original_mode=(value)
+            send(:original_mode=, value)
           end
         end
       end

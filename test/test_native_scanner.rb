@@ -21,17 +21,27 @@ class TestNativeScanner < Minitest::Test
 
   def test_mode_setting
     # モードを設定できることを確認
-    Rufio::NativeScanner.mode = 'rust'
-    assert_equal 'rust', Rufio::NativeScanner.mode
+    available = Rufio::NativeScanner.available_libraries
 
-    Rufio::NativeScanner.mode = 'go'
-    assert_equal 'go', Rufio::NativeScanner.mode
+    # Rustライブラリが利用可能な場合のみテスト
+    if available[:rust]
+      Rufio::NativeScanner.mode = 'rust'
+      assert_equal 'rust', Rufio::NativeScanner.mode
+    end
 
+    # Goライブラリが利用可能な場合のみテスト
+    if available[:go]
+      Rufio::NativeScanner.mode = 'go'
+      assert_equal 'go', Rufio::NativeScanner.mode
+    end
+
+    # Rubyモードは常にテスト
     Rufio::NativeScanner.mode = 'ruby'
     assert_equal 'ruby', Rufio::NativeScanner.mode
 
+    # autoモードは利用可能なライブラリにフォールバック
     Rufio::NativeScanner.mode = 'auto'
-    assert_includes ['rust', 'go', 'ruby'], Rufio::NativeScanner.mode
+    assert_includes ['magnus', 'zig', 'rust', 'go', 'ruby'], Rufio::NativeScanner.mode
   end
 
   def test_invalid_mode
@@ -101,10 +111,12 @@ class TestNativeScanner < Minitest::Test
     assert_kind_of Hash, available
     assert available.key?(:rust)
     assert available.key?(:go)
+    assert available.key?(:magnus)
+    assert available.key?(:zig)
 
-    # 少なくとも1つのライブラリが利用可能であることを確認
-    assert(available[:rust] || available[:go],
-           "At least one native library should be available")
+    # ネイティブライブラリが存在しない環境（CI環境など）でも正常に動作することを確認
+    # 少なくともRubyモードは常に利用可能
+    assert_equal 'ruby', Rufio::NativeScanner.mode if available.values.none?
   end
 
   def test_fallback_to_ruby
