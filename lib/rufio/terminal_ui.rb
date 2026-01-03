@@ -352,15 +352,22 @@ module Rufio
     end
 
     def draw_file_preview(selected_entry, width, height, left_offset)
+      # 事前計算（ループの外で一度だけ）
+      cursor_position = left_offset + CURSOR_OFFSET
+      max_chars_from_cursor = @screen_width - cursor_position
+      safe_width = [max_chars_from_cursor - 2, width - 2, 0].max
+
+      # プレビューコンテンツとWrapped linesを一度だけ計算
+      preview_content = nil
+      wrapped_lines = nil
+
+      if selected_entry && selected_entry[:type] == 'file'
+        preview_content = get_preview_content(selected_entry)
+        wrapped_lines = TextUtils.wrap_preview_lines(preview_content, safe_width - 1) if safe_width > 0
+      end
+
       (0...height).each do |i|
         line_num = i + CONTENT_START_LINE
-        # カーソル位置を左パネルの右端に設定
-        cursor_position = left_offset + CURSOR_OFFSET
-
-        # 画面の境界を厳密に計算
-        max_chars_from_cursor = @screen_width - cursor_position
-        # 区切り線（│）分を除いて、さらに安全マージンを取る
-        safe_width = [max_chars_from_cursor - 2, width - 2, 0].max
 
         print "\e[#{line_num};#{cursor_position}H" # カーソル位置設定
         print '│' # 区切り線
@@ -375,11 +382,8 @@ module Rufio
             header += "[PREVIEW MODE]"
           end
           content_to_print = header
-        elsif selected_entry && selected_entry[:type] == 'file' && i >= 2
+        elsif wrapped_lines && i >= 2
           # ファイルプレビュー（折り返し対応）
-          preview_content = get_preview_content(selected_entry)
-          wrapped_lines = TextUtils.wrap_preview_lines(preview_content, safe_width - 1) # スペース分を除く
-
           # スクロールオフセットを適用
           scroll_offset = @keybind_handler&.preview_scroll_offset || 0
           display_line_index = i - 2 + scroll_offset

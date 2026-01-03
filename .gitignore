@@ -41,6 +41,8 @@ Gemfile.lock
 # Rust build artifacts
 lib_rust/scanner/target/
 lib_rust/scanner/Cargo.lock
+lib_rust/rufio_native/target/
+lib_rust/rufio_native/Cargo.lock
 
 # Go build artifacts
 lib_go/scanner/*.dylib
@@ -48,10 +50,19 @@ lib_go/scanner/*.so
 lib_go/scanner/*.dll
 lib_go/scanner/*.h
 
+# Zig build artifacts
+lib_zig/rufio_native/.zig-cache/
+lib_zig/rufio_native/zig-out/
+lib_zig/rufio_native/*.o
+lib_zig/rufio_native/*.dylib
+lib_zig/rufio_native/*.so
+lib_zig/rufio_native/*.dll
+
 # Native libraries (generated during build)
 lib/rufio/native/*.dylib
 lib/rufio/native/*.so
 lib/rufio/native/*.dll
+lib/rufio/native/*.bundle
 
 # Backup files
 *.bak
@@ -63,3 +74,7 @@ lib/rufio/native/*.dll
 # rufio specific
 .rufio_bookmarks
 .rufio_history
+
+# Benchmark and test files (temporary)
+benchmark_*.rb
+test_performance_*.rb

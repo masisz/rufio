@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-01-03
+
+### Fixed
+- **🚨 CRITICAL: File Preview Performance Bug**: Fixed severe rendering delays (80ms → 1-2ms)
+  - Root cause: Redundant processing inside rendering loop (38x per frame)
+  - Impact: 97-99% improvement, 40-86x faster file preview
+  - All text file previews now render in < 2ms
+
+### Added
+- **⚡ Zig Native Scanner**: Experimental implementation with minimal binary size (52.6 KB)
+  - Direct Ruby C API integration (no FFI overhead)
+  - Competitive performance (within 6% of fastest implementations)
+  - 5.97x smaller than Rust/Magnus implementation
+- **📊 YJIT Performance Analysis**: Comprehensive benchmarking of JIT compiler impact
+  - Pure Ruby: 2-5% improvement with YJIT
+  - Native extensions: No significant impact
+- **📈 Performance Documentation**: Extensive benchmarking suite and analysis
+  - 7 new benchmark scripts
+  - 4 detailed performance reports
+  - Complete implementation comparison
+
+For detailed information, see [CHANGELOG_v0.33.0.md](./docs/CHANGELOG_v0.33.0.md)
+
 ## [0.32.0] - 2026-01-02
 
 ### Added
