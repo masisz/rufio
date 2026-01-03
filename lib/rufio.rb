@@ -33,6 +33,7 @@ require_relative "rufio/shell_command_completion"
 require_relative "rufio/command_logger"
 require_relative "rufio/background_command_executor"
 require_relative "rufio/native_scanner"
+require_relative "rufio/native_scanner_magnus"
 
 # プロジェクトモード
 require_relative "rufio/project_mode"
