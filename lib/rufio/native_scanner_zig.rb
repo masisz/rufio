@@ -115,6 +115,13 @@ module Rufio
           case @mode
           when 'zig'
             scan_directory_with_zig(path)
+          when 'magnus'
+            # magnusモードの場合は、native_scanner_magnus.rbで定義されたメソッドを呼ぶ
+            if defined?(NativeScannerMagnusLoader) && respond_to?(:scan_directory_with_magnus, true)
+              scan_directory_with_magnus(path)
+            else
+              original_scan_directory(path)
+            end
           else
             original_scan_directory(path)
           end
@@ -129,6 +136,13 @@ module Rufio
           case @mode
           when 'zig'
             scan_directory_fast_with_zig(path, max_entries)
+          when 'magnus'
+            # magnusモードの場合は、native_scanner_magnus.rbで定義されたメソッドを呼ぶ
+            if defined?(NativeScannerMagnusLoader) && respond_to?(:scan_directory_fast_with_magnus, true)
+              scan_directory_fast_with_magnus(path, max_entries)
+            else
+              original_scan_directory_fast(path, max_entries)
+            end
           else
             original_scan_directory_fast(path, max_entries)
           end

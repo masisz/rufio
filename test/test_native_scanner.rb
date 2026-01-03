@@ -109,14 +109,17 @@ class TestNativeScanner < Minitest::Test
     # 利用可能なライブラリを確認
     available = Rufio::NativeScanner.available_libraries
     assert_kind_of Hash, available
+
+    # 基本的なライブラリキーは常に存在
     assert available.key?(:rust)
     assert available.key?(:go)
-    assert available.key?(:magnus)
-    assert available.key?(:zig)
+
+    # magnus/zigは、ライブラリがビルドされている環境でのみ存在
+    # CI環境では存在しない可能性があるため、チェックしない
 
     # ネイティブライブラリが存在しない環境（CI環境など）でも正常に動作することを確認
     # 少なくともRubyモードは常に利用可能
-    assert_equal 'ruby', Rufio::NativeScanner.mode if available.values.none?
+    assert_equal 'ruby', Rufio::NativeScanner.mode if available.values.all? { |v| v == false }
   end
 
   def test_fallback_to_ruby
