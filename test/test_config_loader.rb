@@ -15,7 +15,8 @@ class TestConfigLoader < Minitest::Test
   end
 
   def teardown
-    # CONFIG_PATHを元に戻す
+    # CONFIG_PATHを元に戻す（警告を避けるため remove_const してから const_set）
+    Rufio::ConfigLoader.send(:remove_const, :CONFIG_PATH) if Rufio::ConfigLoader.const_defined?(:CONFIG_PATH)
     Rufio::ConfigLoader.const_set(:CONFIG_PATH, @original_config_path)
     # HOME環境変数を復元
     ENV['HOME'] = @original_home
@@ -27,7 +28,8 @@ class TestConfigLoader < Minitest::Test
 
   def test_load_default_config_when_no_file_exists
     # 設定ファイルが存在しない場合のテスト
-    # パスを一時的に存在しないパスに変更
+    # パスを一時的に存在しないパスに変更（警告を避けるため remove_const してから const_set）
+    Rufio::ConfigLoader.send(:remove_const, :CONFIG_PATH) if Rufio::ConfigLoader.const_defined?(:CONFIG_PATH)
     Rufio::ConfigLoader.const_set(:CONFIG_PATH, "/tmp/nonexistent_config.rb")
     # キャッシュをクリアして再読み込みを強制
     Rufio::ConfigLoader.instance_variable_set(:@config, nil)

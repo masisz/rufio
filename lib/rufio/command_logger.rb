@@ -27,6 +27,9 @@ module Rufio
 
       content = format_log_content(command, output, timestamp, success, error)
 
+      # ディレクトリが存在しない場合は作成（バックグラウンドスレッドでの実行時の競合を防ぐ）
+      FileUtils.mkdir_p(@log_dir) unless Dir.exist?(@log_dir)
+
       File.write(filepath, content)
     end
 
