@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.33.0] - 2026-01-10
+## [0.34.0] - 2026-01-10
 
 ### Added
 - **🚀 Async Scanner Architecture**: Complete async/parallel scanning implementation
@@ -23,15 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Promise-style interface with method chaining
     - Fiber integration with Async library
     - Parallel scanner with thread pool optimization
-- **💎 AsyncScannerPromise**: Promise風インターフェース
+- **💎 AsyncScannerPromise**: Promise-style interface
   - Method chaining with `.then()` callbacks
   - Automatic resource cleanup on completion
   - Works with both Ruby and Zig backends
-- **🧵 AsyncScannerFiberWrapper**: Async/Fiber統合
+- **🧵 AsyncScannerFiberWrapper**: Async/Fiber integration
   - Non-blocking I/O with Ruby's Async library
   - Concurrent scanning support
   - Progress reporting with fiber-aware sleep
-- **⚡ ParallelScanner**: 並列スキャン最適化
+- **⚡ ParallelScanner**: Parallel scanning optimization
   - Thread pool management (configurable max_workers)
   - Batch directory scanning with result merging
   - Error handling with partial failure support
@@ -70,7 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Thread Safety**: Pthread mutex protection for all shared state
 - **GVL Freedom**: Native threads run independently of Ruby's GVL
 
-For detailed information, see [CHANGELOG_v0.33.0.md](./docs/CHANGELOG_v0.33.0.md)
+For detailed information, see [CHANGELOG_v0.34.0.md](./docs/CHANGELOG_v0.34.0.md)
 
 ## [0.32.0] - 2026-01-02
 
