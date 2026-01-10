@@ -1,0 +1,205 @@
+const std = @import("std");
+const c = @cImport({
+    @cInclude("dirent.h");
+    @cInclude("sys/stat.h");
+    @cInclude("string.h");
+    @cInclude("stdlib.h");
+});
+
+/// ディレクトリエントリ情報（内部保持用）
+const DirEntry = struct {
+    name: []u8,
+    is_dir: bool,
+    size: u64,
+    mtime: i64,
+    executable: bool,
+    hidden: bool,
+
+    fn deinit(self: *DirEntry) void {
+        c.free(self.name.ptr);
+    }
+};
+
+/// スキャナーコア（状態を保持）
+const Scanner = struct {
+    entries: []DirEntry,
+    capacity: usize,
+    count: usize,
+
+    fn init() !*Scanner {
+        const self = @as(?*Scanner, @ptrCast(@alignCast(c.malloc(@sizeOf(Scanner))))) orelse return error.OutOfMemory;
+        self.*.capacity = 64;
+        const entries_size = self.*.capacity * @sizeOf(DirEntry);
+        const entries_ptr = c.malloc(entries_size) orelse {
+            c.free(self);
+            return error.OutOfMemory;
+        };
+        self.*.entries = @as([*]DirEntry, @ptrCast(@alignCast(entries_ptr)))[0..self.*.capacity];
+        self.*.count = 0;
+        return self;
+    }
+
+    fn deinit(self: *Scanner) void {
+        // 各エントリの名前を解放
+        for (self.entries[0..self.count]) |*entry| {
+            entry.deinit();
+        }
+        // エントリ配列を解放
+        c.free(self.entries.ptr);
+        // 自身を解放
+        c.free(self);
+    }
+
+    fn clear(self: *Scanner) void {
+        // 既存のエントリをクリア
+        for (self.entries[0..self.count]) |*entry| {
+            entry.deinit();
+        }
+        self.count = 0;
+    }
+
+    fn ensureCapacity(self: *Scanner, needed: usize) !void {
+        if (needed <= self.capacity) return;
+
+        const new_capacity = @max(needed, self.capacity * 2);
+        const new_size = new_capacity * @sizeOf(DirEntry);
+        const new_ptr = c.realloc(self.entries.ptr, new_size) orelse return error.OutOfMemory;
+        self.entries = @as([*]DirEntry, @ptrCast(@alignCast(new_ptr)))[0..new_capacity];
+        self.capacity = new_capacity;
+    }
+
+    fn scan(self: *Scanner, path: [*:0]const u8, max_entries: usize) !void {
+        // 既存のエントリをクリア
+        self.clear();
+
+        const dir = c.opendir(path) orelse return error.CannotOpenDir;
+        defer _ = c.closedir(dir);
+
+        const path_len = c.strlen(path);
+        const path_slice = path[0..path_len];
+
+        while (c.readdir(dir)) |entry| {
+            // エントリ数制限チェック
+            if (max_entries > 0 and self.count >= max_entries) break;
+
+            const name_ptr = @as([*:0]const u8, @ptrCast(&entry.*.d_name));
+            const name_len = c.strlen(name_ptr);
+            const name_slice = name_ptr[0..name_len];
+
+            // "." と ".." をスキップ
+            if (std.mem.eql(u8, name_slice, ".") or std.mem.eql(u8, name_slice, "..")) {
+                continue;
+            }
+
+            // 容量確保
+            try self.ensureCapacity(self.count + 1);
+
+            // フルパスを構築
+            var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+            const full_path = std.fmt.bufPrintZ(&path_buf, "{s}/{s}", .{ path_slice, name_slice }) catch continue;
+
+            // ファイル情報を取得
+            var stat_buf: c.struct_stat = undefined;
+            if (c.lstat(full_path.ptr, &stat_buf) != 0) {
+                continue;
+            }
+
+            // 名前をコピー
+            const name_copy_ptr = c.malloc(name_len + 1) orelse return error.OutOfMemory;
+            const name_copy_bytes = @as([*]u8, @ptrCast(@alignCast(name_copy_ptr)));
+            const name_copy = name_copy_bytes[0..name_len];
+            @memcpy(name_copy, name_slice);
+            name_copy_bytes[name_len] = 0;
+
+            // エントリを追加
+            self.entries[self.count] = DirEntry{
+                .name = name_copy,
+                .is_dir = (stat_buf.st_mode & c.S_IFMT) == c.S_IFDIR,
+                .size = @intCast(stat_buf.st_size),
+                .mtime = @intCast(stat_buf.st_mtimespec.tv_sec),
+                .executable = (stat_buf.st_mode & c.S_IXUSR) != 0,
+                .hidden = name_slice[0] == '.',
+            };
+            self.count += 1;
+        }
+    }
+};
+
+// ============================================================
+// ABI Boundary: Ruby ABI非依存・ハンドルベース
+// ============================================================
+
+/// スキャナーを作成（ハンドル返却）
+export fn core_create() u64 {
+    const scanner = Scanner.init() catch return 0;
+    return @intFromPtr(scanner);
+}
+
+/// ディレクトリをスキャン
+export fn core_scan(handle: u64, path: [*:0]const u8) i32 {
+    if (handle == 0) return -1;
+
+    const scanner = @as(*Scanner, @ptrFromInt(handle));
+    scanner.scan(path, 0) catch return -1;
+    return 0;
+}
+
+/// 高速スキャン（エントリ数制限付き）
+export fn core_scan_fast(handle: u64, path: [*:0]const u8, max_entries: usize) i32 {
+    if (handle == 0) return -1;
+
+    const scanner = @as(*Scanner, @ptrFromInt(handle));
+    scanner.scan(path, max_entries) catch return -1;
+    return 0;
+}
+
+/// エントリ数を取得
+export fn core_get_count(handle: u64) usize {
+    if (handle == 0) return 0;
+
+    const scanner = @as(*Scanner, @ptrFromInt(handle));
+    return scanner.count;
+}
+
+/// 指定インデックスのエントリ名を取得
+export fn core_get_name(handle: u64, index: usize, buf: [*]u8, buf_size: usize) usize {
+    if (handle == 0) return 0;
+
+    const scanner = @as(*Scanner, @ptrFromInt(handle));
+    if (index >= scanner.count) return 0;
+
+    const entry = &scanner.entries[index];
+    const copy_len = @min(entry.name.len, buf_size - 1);
+    @memcpy(buf[0..copy_len], entry.name[0..copy_len]);
+    buf[copy_len] = 0;
+    return copy_len;
+}
+
+/// 指定インデックスのエントリ属性を取得
+export fn core_get_attrs(handle: u64, index: usize, is_dir: *u8, size: *u64, mtime: *i64, executable: *u8, hidden: *u8) i32 {
+    if (handle == 0) return -1;
+
+    const scanner = @as(*Scanner, @ptrFromInt(handle));
+    if (index >= scanner.count) return -1;
+
+    const entry = &scanner.entries[index];
+    is_dir.* = if (entry.is_dir) 1 else 0;
+    size.* = entry.size;
+    mtime.* = entry.mtime;
+    executable.* = if (entry.executable) 1 else 0;
+    hidden.* = if (entry.hidden) 1 else 0;
+    return 0;
+}
+
+/// スキャナーを破棄
+export fn core_destroy(handle: u64) void {
+    if (handle == 0) return;
+
+    const scanner = @as(*Scanner, @ptrFromInt(handle));
+    scanner.deinit();
+}
+
+/// バージョン情報
+export fn core_version() [*:0]const u8 {
+    return "3.0.0-handle-based";
+}

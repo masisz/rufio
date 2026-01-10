@@ -23,25 +23,19 @@ class TestNativeScanner < Minitest::Test
     # モードを設定できることを確認
     available = Rufio::NativeScanner.available_libraries
 
-    # Rustライブラリが利用可能な場合のみテスト
-    if available[:rust]
-      Rufio::NativeScanner.mode = 'rust'
-      assert_equal 'rust', Rufio::NativeScanner.mode
-    end
-
-    # Goライブラリが利用可能な場合のみテスト
-    if available[:go]
-      Rufio::NativeScanner.mode = 'go'
-      assert_equal 'go', Rufio::NativeScanner.mode
+    # Zigライブラリが利用可能な場合のみテスト
+    if available[:zig]
+      Rufio::NativeScanner.mode = 'zig'
+      assert_equal 'zig', Rufio::NativeScanner.mode
     end
 
     # Rubyモードは常にテスト
     Rufio::NativeScanner.mode = 'ruby'
     assert_equal 'ruby', Rufio::NativeScanner.mode
 
-    # autoモードは利用可能なライブラリにフォールバック
+    # autoモードは利用可能なライブラリにフォールバック（zig > ruby）
     Rufio::NativeScanner.mode = 'auto'
-    assert_includes ['magnus', 'zig', 'rust', 'go', 'ruby'], Rufio::NativeScanner.mode
+    assert_includes ['zig', 'ruby'], Rufio::NativeScanner.mode
   end
 
   def test_invalid_mode
@@ -110,11 +104,10 @@ class TestNativeScanner < Minitest::Test
     available = Rufio::NativeScanner.available_libraries
     assert_kind_of Hash, available
 
-    # 基本的なライブラリキーは常に存在
-    assert available.key?(:rust)
-    assert available.key?(:go)
+    # Rubyは常に利用可能
+    assert available.key?(:ruby)
 
-    # magnus/zigは、ライブラリがビルドされている環境でのみ存在
+    # Zigは、ライブラリがビルドされている環境でのみ存在
     # CI環境では存在しない可能性があるため、チェックしない
 
     # ネイティブライブラリが存在しない環境（CI環境など）でも正常に動作することを確認

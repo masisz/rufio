@@ -7,13 +7,14 @@ ZIG := zig
 RUBY_INCLUDE := $(shell $(RUBY) -e "puts RbConfig::CONFIG['rubyhdrdir']")
 RUBY_ARCH_INCLUDE := $(shell $(RUBY) -e "puts RbConfig::CONFIG['rubyarchhdrdir']")
 RUBY_LIB_DIR := $(shell $(RUBY) -e "puts RbConfig::CONFIG['libdir']")
+RUBY_VERSION := $(shell $(RUBY) -e "puts RbConfig::CONFIG['MAJOR'] + '.' + RbConfig::CONFIG['MINOR']")
 
 # コンパイルフラグ
 ZIG_FLAGS := -O ReleaseFast -dynamic -lc
 ZIG_FLAGS += -I$(RUBY_INCLUDE)
 ZIG_FLAGS += -I$(RUBY_ARCH_INCLUDE)
 ZIG_FLAGS += -L$(RUBY_LIB_DIR)
-ZIG_FLAGS += -lruby.3.4
+ZIG_FLAGS += -lruby.$(RUBY_VERSION)
 
 # ターゲット
 TARGET := librufio_zig.dylib

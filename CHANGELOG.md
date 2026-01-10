@@ -7,19 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.33.0] - 2026-01-03
-
-### Fixed
-- **🚨 CRITICAL: File Preview Performance Bug**: Fixed severe rendering delays (80ms → 1-2ms)
-  - Root cause: Redundant processing inside rendering loop (38x per frame)
-  - Impact: 97-99% improvement, 40-86x faster file preview
-  - All text file previews now render in < 2ms
+## [0.33.0] - 2026-01-10
 
 ### Added
+- **🚀 Async Scanner Architecture**: Complete async/parallel scanning implementation
+  - **Phase 1: Basic Async Scan**
+    - Zig pthread-based threading implementation
+    - State management (idle → scanning → done/cancelled/failed)
+    - Polling-based completion with progress tracking
+  - **Phase 2: Progress Reporting**
+    - Real-time progress API with mutex protection
+    - Thread-safe cancellation support
+    - Timeout handling for scan operations
+  - **Phase 3: Advanced Features**
+    - Promise-style interface with method chaining
+    - Fiber integration with Async library
+    - Parallel scanner with thread pool optimization
+- **💎 AsyncScannerPromise**: Promise風インターフェース
+  - Method chaining with `.then()` callbacks
+  - Automatic resource cleanup on completion
+  - Works with both Ruby and Zig backends
+- **🧵 AsyncScannerFiberWrapper**: Async/Fiber統合
+  - Non-blocking I/O with Ruby's Async library
+  - Concurrent scanning support
+  - Progress reporting with fiber-aware sleep
+- **⚡ ParallelScanner**: 並列スキャン最適化
+  - Thread pool management (configurable max_workers)
+  - Batch directory scanning with result merging
+  - Error handling with partial failure support
+  - Backend switching (Ruby/Zig)
 - **⚡ Zig Native Scanner**: Experimental implementation with minimal binary size (52.6 KB)
   - Direct Ruby C API integration (no FFI overhead)
   - Competitive performance (within 6% of fastest implementations)
   - 5.97x smaller than Rust/Magnus implementation
+  - Async-ready handle-based design
 - **📊 YJIT Performance Analysis**: Comprehensive benchmarking of JIT compiler impact
   - Pure Ruby: 2-5% improvement with YJIT
   - Native extensions: No significant impact
@@ -27,6 +48,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 7 new benchmark scripts
   - 4 detailed performance reports
   - Complete implementation comparison
+
+### Fixed
+- **🚨 CRITICAL: File Preview Performance Bug**: Fixed severe rendering delays (80ms → 1-2ms)
+  - Root cause: Redundant processing inside rendering loop (38x per frame)
+  - Impact: 97-99% improvement, 40-86x faster file preview
+  - All text file previews now render in < 2ms
+- **🔧 Zig Cancellation Handling**: Fixed cancelled state not properly propagating
+  - Changed error handling to preserve cancellation state
+  - Prevents "failed" state when scan is intentionally cancelled
+
+### Changed
+- **Ruby 4.0 Compatibility**: Added `fiddle` gem dependency (required in Ruby 4.0+)
+- **Async Library Integration**: Deprecated API warnings resolved
+  - Updated to use `Kernel#sleep` instead of `Async::Task#sleep`
+
+### Technical Details
+- **Test Coverage**: 483 tests, 1899 assertions (100% pass rate)
+- **Async Scanner Tests**: 8 fiber tests, 10 promise tests, 10 parallel tests
+- **Ruby ABI Independence**: Handle-based design (u64) avoids Ruby ABI coupling
+- **Thread Safety**: Pthread mutex protection for all shared state
+- **GVL Freedom**: Native threads run independently of Ruby's GVL
 
 For detailed information, see [CHANGELOG_v0.33.0.md](./docs/CHANGELOG_v0.33.0.md)
 
