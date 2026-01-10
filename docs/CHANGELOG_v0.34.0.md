@@ -1,10 +1,10 @@
 # rufio v0.33.0 - Critical Performance Fix & Native Extensions
 
-**Release Date**: 2026-01-03
+**Release Date**: 2026-01-10
 
 ## Overview
 
-Version 0.33.0 addresses a critical performance bug in file preview rendering that caused up to 80ms delays when viewing text files. This release also includes comprehensive native scanner implementation in Zig, YJIT performance analysis, and extensive performance benchmarking documentation.
+Version 0.34.0 addresses a critical performance bug in file preview rendering that caused up to 80ms delays when viewing text files. This release also includes comprehensive native scanner implementation in Zig, YJIT performance analysis, and extensive performance benchmarking documentation.
 
 ## 🚨 Critical Bug Fixes
 
