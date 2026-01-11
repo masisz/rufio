@@ -975,6 +975,8 @@ module Rufio
       when "\e"
         # Escape キーでコマンドモードをキャンセル
         deactivate_command_mode
+        # 画面を再描画してウィンドウを消す
+        refresh_display
       when "\t"
         # Tab キーで補完
         handle_tab_completion
