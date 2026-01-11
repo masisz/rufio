@@ -2,6 +2,17 @@
 
 module Rufio
   class ColorHelper
+    # 色変換結果のキャッシュ（毎フレームの計算を回避）
+    # クラスインスタンス変数として初期化
+    @color_to_ansi_cache = {}
+    @color_to_selected_ansi_cache = {}
+    @color_to_bg_ansi_cache = {}
+
+    # キャッシュへのアクセサメソッド
+    class << self
+      attr_accessor :color_to_ansi_cache, :color_to_selected_ansi_cache, :color_to_bg_ansi_cache
+    end
+
     # HSLからRGBへの変換
     def self.hsl_to_rgb(hue, saturation, lightness)
       h = hue.to_f / 360.0
@@ -32,9 +43,16 @@ module Rufio
       [(r * 255).round, (g * 255).round, (b * 255).round]
     end
 
-    # 色設定をANSIエスケープコードに変換
+    # 色設定をANSIエスケープコードに変換（キャッシュ対応）
     def self.color_to_ansi(color_config)
-      case color_config
+      # キャッシュキーを生成（Hashの場合はハッシュ値を使用）
+      cache_key = color_config.is_a?(Hash) ? color_config.hash : color_config
+
+      # キャッシュチェック
+      return @color_to_ansi_cache[cache_key] if @color_to_ansi_cache.key?(cache_key)
+
+      # キャッシュミス時のみ計算
+      result = case color_config
       when Hash
         if color_config[:hsl]
           # HSL形式: {hsl: [240, 100, 50]}
@@ -73,6 +91,10 @@ module Rufio
         # デフォルト（白）
         "\e[37m"
       end
+
+      # キャッシュに保存
+      @color_to_ansi_cache[cache_key] = result
+      result
     end
 
     # シンボルをANSIコードに変換
@@ -103,11 +125,22 @@ module Rufio
       symbol_to_ansi(name.to_sym)
     end
 
-    # 背景色用のANSIコードを生成
+    # 背景色用のANSIコードを生成（キャッシュ対応）
     def self.color_to_bg_ansi(color_config)
+      # キャッシュキーを生成
+      cache_key = color_config.is_a?(Hash) ? color_config.hash : color_config
+
+      # キャッシュチェック
+      return @color_to_bg_ansi_cache[cache_key] if @color_to_bg_ansi_cache.key?(cache_key)
+
+      # キャッシュミス時のみ計算
       ansi_code = color_to_ansi(color_config)
       # 前景色(38)を背景色(48)に変換
-      ansi_code.gsub('38;', '48;')
+      result = ansi_code.gsub('38;', '48;')
+
+      # キャッシュに保存
+      @color_to_bg_ansi_cache[cache_key] = result
+      result
     end
 
     # リセットコード
@@ -115,11 +148,31 @@ module Rufio
       "\e[0m"
     end
 
-    # 選択状態（反転表示）用のANSIコードを生成
+    # ANSI escape codes を文字列から除去
+    #
+    # @param str [String] ANSI codes を含む文字列
+    # @return [String] ANSI codes を除去した文字列
+    def self.strip_ansi(str)
+      return str if str.nil?
+      str.gsub(/\e\[[0-9;]*m/, '')
+    end
+
+    # 選択状態（反転表示）用のANSIコードを生成（キャッシュ対応）
     def self.color_to_selected_ansi(color_config)
+      # キャッシュキーを生成
+      cache_key = color_config.is_a?(Hash) ? color_config.hash : color_config
+
+      # キャッシュチェック
+      return @color_to_selected_ansi_cache[cache_key] if @color_to_selected_ansi_cache.key?(cache_key)
+
+      # キャッシュミス時のみ計算
       color_code = color_to_ansi(color_config)
       # 反転表示を追加
-      color_code.gsub("\e[", "\e[7;").gsub("m", ";7m")
+      result = color_code.gsub("\e[", "\e[7;").gsub("m", ";7m")
+
+      # キャッシュに保存
+      @color_to_selected_ansi_cache[cache_key] = result
+      result
     end
 
     # プリセットHSLカラー
