@@ -974,9 +974,11 @@ module Rufio
         deactivate_command_mode
       when "\e"
         # Escape キーでコマンドモードをキャンセル
+        # まずコマンドウィンドウをクリア
+        @command_mode_ui.clear_prompt
         deactivate_command_mode
-        # 画面を再描画してウィンドウを消す
-        refresh_display
+        # ファイラー画面を再描画
+        draw_screen
       when "\t"
         # Tab キーで補完
         handle_tab_completion

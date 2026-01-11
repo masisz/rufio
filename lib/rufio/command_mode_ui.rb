@@ -8,6 +8,8 @@ module Rufio
     def initialize(command_mode, dialog_renderer)
       @command_mode = command_mode
       @dialog_renderer = dialog_renderer
+      # 最後に表示したウィンドウの位置とサイズを保存
+      @last_window = nil
     end
 
     # 入力文字列に対する補完候補を取得
@@ -67,6 +69,9 @@ module Rufio
 
       # 中央位置を計算
       x, y = @dialog_renderer.calculate_center(width, height)
+
+      # ウィンドウの位置とサイズを保存
+      @last_window = { x: x, y: y, width: width, height: height }
 
       # フローティングウィンドウを描画
       @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
@@ -134,6 +139,19 @@ module Rufio
 
       # ウィンドウをクリア
       @dialog_renderer.clear_area(x, y, width, height)
+    end
+
+    # コマンド入力プロンプトをクリア
+    def clear_prompt
+      return unless @last_window
+
+      @dialog_renderer.clear_area(
+        @last_window[:x],
+        @last_window[:y],
+        @last_window[:width],
+        @last_window[:height]
+      )
+      @last_window = nil
     end
 
     private
