@@ -37,6 +37,8 @@ require_relative "rufio/native_scanner_zig"
 require_relative "rufio/async_scanner_promise"
 require_relative "rufio/async_scanner_fiber"
 require_relative "rufio/parallel_scanner"
+require_relative "rufio/screen"
+require_relative "rufio/renderer"
 
 # プロジェクトモード
 require_relative "rufio/project_mode"

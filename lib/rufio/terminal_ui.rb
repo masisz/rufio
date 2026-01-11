@@ -61,6 +61,16 @@ module Rufio
       @project_log = nil
       @in_project_mode = false
       @in_log_mode = false
+      @project_mode_needs_redraw = false
+
+      # Preview cache
+      @preview_cache = {}
+      @last_preview_path = nil
+
+      # Footer cache (bookmark list)
+      @cached_bookmarks = nil
+      @cached_bookmark_time = nil
+      @bookmark_cache_ttl = 1.0  # 1秒間キャッシュ
     end
 
     def start(directory_listing, keybind_handler, file_preview, background_executor = nil)
@@ -91,6 +101,27 @@ module Rufio
       # ウィンドウサイズを更新してから画面をクリアして再描画
       update_screen_size
       print "\e[2J\e[H"  # clear screen, cursor to home
+
+      # プレビューキャッシュをクリア（ディレクトリ変更やリフレッシュ時）
+      @preview_cache.clear
+      @last_preview_path = nil
+
+      # ブックマークキャッシュもクリア
+      @cached_bookmarks = nil
+      @cached_bookmark_time = nil
+
+      # バッファベースの描画が利用可能な場合は全画面を再描画
+      if @screen && @renderer
+        # レンダラーの前フレーム情報をリセット（差分レンダリングを強制的に全体描画にする）
+        @renderer.clear
+        @screen.clear
+        # プロジェクトモードの場合は再描画フラグを立てる
+        @project_mode_needs_redraw = true if @in_project_mode
+        draw_screen_to_buffer(@screen, nil, nil)
+        @renderer.render(@screen)
+        # カーソルを画面外に移動
+        print "\e[#{@screen_height};#{@screen_width}H"
+      end
     end
 
     private
@@ -252,8 +283,12 @@ module Rufio
       if @in_project_mode
         # プロジェクトモード用のバッファ描画は今後実装予定
         # 現在は既存のdraw_project_mode_screenを直接呼び出す
-        @renderer.clear  # 一旦クリア
-        draw_project_mode_screen
+        # 注: レンダラーのクリアは状態遷移時のみ行う（set_project_mode等）
+        # ちらつき防止: 再描画が必要な時だけ描画
+        if @project_mode_needs_redraw
+          draw_project_mode_screen
+          @project_mode_needs_redraw = false
+        end
         return
       end
 
@@ -562,13 +597,35 @@ module Rufio
       max_chars_from_cursor = @screen_width - cursor_position
       safe_width = [max_chars_from_cursor - 2, width - 2, 0].max
 
-      # プレビューコンテンツを計算
+      # プレビューコンテンツをキャッシュから取得（毎フレームのファイルI/Oを回避）
       preview_content = nil
       wrapped_lines = nil
 
       if selected_entry && selected_entry[:type] == 'file'
-        preview_content = get_preview_content(selected_entry)
-        wrapped_lines = TextUtils.wrap_preview_lines(preview_content, safe_width - 1) if safe_width > 0
+        # キャッシュチェック: 選択ファイルが変わった場合のみプレビューを更新
+        if @last_preview_path != selected_entry[:path]
+          preview_content = get_preview_content(selected_entry)
+          @preview_cache[selected_entry[:path]] = {
+            content: preview_content,
+            wrapped: {}  # 幅ごとにキャッシュ
+          }
+          @last_preview_path = selected_entry[:path]
+        else
+          # キャッシュから取得
+          cache_entry = @preview_cache[selected_entry[:path]]
+          preview_content = cache_entry[:content] if cache_entry
+        end
+
+        # 折り返し処理もキャッシュ
+        if preview_content && safe_width > 0
+          cache_entry = @preview_cache[selected_entry[:path]]
+          if cache_entry && cache_entry[:wrapped][safe_width]
+            wrapped_lines = cache_entry[:wrapped][safe_width]
+          else
+            wrapped_lines = TextUtils.wrap_preview_lines(preview_content, safe_width - 1)
+            cache_entry[:wrapped][safe_width] = wrapped_lines if cache_entry
+          end
+        end
       end
 
       (0...height).each do |i|
@@ -622,13 +679,35 @@ module Rufio
       max_chars_from_cursor = @screen_width - cursor_position
       safe_width = [max_chars_from_cursor - 2, width - 2, 0].max
 
-      # プレビューコンテンツとWrapped linesを一度だけ計算
+      # プレビューコンテンツをキャッシュから取得（毎フレームのファイルI/Oを回避）
       preview_content = nil
       wrapped_lines = nil
 
       if selected_entry && selected_entry[:type] == 'file'
-        preview_content = get_preview_content(selected_entry)
-        wrapped_lines = TextUtils.wrap_preview_lines(preview_content, safe_width - 1) if safe_width > 0
+        # キャッシュチェック: 選択ファイルが変わった場合のみプレビューを更新
+        if @last_preview_path != selected_entry[:path]
+          preview_content = get_preview_content(selected_entry)
+          @preview_cache[selected_entry[:path]] = {
+            content: preview_content,
+            wrapped: {}  # 幅ごとにキャッシュ
+          }
+          @last_preview_path = selected_entry[:path]
+        else
+          # キャッシュから取得
+          cache_entry = @preview_cache[selected_entry[:path]]
+          preview_content = cache_entry[:content] if cache_entry
+        end
+
+        # 折り返し処理もキャッシュ
+        if preview_content && safe_width > 0
+          cache_entry = @preview_cache[selected_entry[:path]]
+          if cache_entry && cache_entry[:wrapped][safe_width]
+            wrapped_lines = cache_entry[:wrapped][safe_width]
+          else
+            wrapped_lines = TextUtils.wrap_preview_lines(preview_content, safe_width - 1)
+            cache_entry[:wrapped][safe_width] = wrapped_lines if cache_entry
+          end
+        end
       end
 
       (0...height).each do |i|
@@ -725,9 +804,15 @@ module Rufio
         screen.put_string(0, y, footer_content, fg: "\e[7m")
       else
         # 通常モードではブックマーク一覧、ステータス情報、?:helpを1行に表示
-        require_relative 'bookmark'
-        bookmark = Bookmark.new
-        bookmarks = bookmark.list
+        # ブックマークをキャッシュ（毎フレームのファイルI/Oを回避）
+        current_time = Time.now
+        if @cached_bookmarks.nil? || @cached_bookmark_time.nil? || (current_time - @cached_bookmark_time) > @bookmark_cache_ttl
+          require_relative 'bookmark'
+          bookmark = Bookmark.new
+          @cached_bookmarks = bookmark.list
+          @cached_bookmark_time = current_time
+        end
+        bookmarks = @cached_bookmarks
 
         # 起動ディレクトリを取得
         start_dir = @directory_listing&.start_directory
@@ -783,9 +868,15 @@ module Rufio
         print "\e[7m#{footer_content}\e[0m"
       else
         # 通常モードではブックマーク一覧、ステータス情報、?:helpを1行に表示
-        require_relative 'bookmark'
-        bookmark = Bookmark.new
-        bookmarks = bookmark.list
+        # ブックマークをキャッシュ（毎フレームのファイルI/Oを回避）
+        current_time = Time.now
+        if @cached_bookmarks.nil? || @cached_bookmark_time.nil? || (current_time - @cached_bookmark_time) > @bookmark_cache_ttl
+          require_relative 'bookmark'
+          bookmark = Bookmark.new
+          @cached_bookmarks = bookmark.list
+          @cached_bookmark_time = current_time
+        end
+        bookmarks = @cached_bookmarks
 
         # 起動ディレクトリを取得
         start_dir = @directory_listing&.start_directory
@@ -965,20 +1056,37 @@ module Rufio
       @command_mode_active
     end
 
+    # プロジェクトモードの再描画をトリガー
+    def trigger_project_mode_redraw
+      @project_mode_needs_redraw = true if @in_project_mode
+    end
+
     # コマンド入力を処理
     def handle_command_input(input)
       case input
       when "\r", "\n"
         # Enter キーでコマンドを実行
         execute_command(@command_input)
-        deactivate_command_mode
+        # コマンド実行後、入力をクリアして再度コマンドモードに戻る
+        @command_input = ""
       when "\e"
         # Escape キーでコマンドモードをキャンセル
         # まずコマンドウィンドウをクリア
         @command_mode_ui.clear_prompt
         deactivate_command_mode
-        # ファイラー画面を再描画
-        draw_screen
+        # ファイラー画面を再描画（バッファベース）
+        if @screen && @renderer
+          # レンダラーの前フレーム情報をリセット（差分レンダリングを強制的に全体描画にする）
+          @renderer.clear
+          @screen.clear
+          draw_screen_to_buffer(@screen, nil, nil)
+          @renderer.render(@screen)
+          # カーソルを画面外に移動（メインループと同じ処理）
+          print "\e[#{@screen_height};#{@screen_width}H"
+        else
+          # フォールバック（古い実装）
+          draw_screen
+        end
       when "\t"
         # Tab キーで補完
         handle_tab_completion
@@ -1008,7 +1116,12 @@ module Rufio
       end
 
       # 画面を再描画
-      draw_screen
+      if @in_project_mode
+        # プロジェクトモードの場合は再描画フラグを立てる
+        @project_mode_needs_redraw = true
+      else
+        draw_screen
+      end
     end
 
     # Tab補完を処理
@@ -1086,7 +1199,12 @@ module Rufio
       @dialog_renderer.clear_area(x, y, width, height)
 
       # 画面を再描画
-      draw_screen
+      if @in_project_mode
+        # プロジェクトモードの場合は再描画フラグを立てる
+        @project_mode_needs_redraw = true
+      else
+        draw_screen
+      end
     end
 
     # Show info notices from the info directory if any are unread
@@ -1138,7 +1256,12 @@ module Rufio
       @dialog_renderer.clear_area(x, y, width, height)
 
       # Redraw the screen
-      draw_screen
+      if @in_project_mode
+        # プロジェクトモードの場合は再描画フラグを立てる
+        @project_mode_needs_redraw = true
+      else
+        draw_screen
+      end
     end
 
     # プロジェクトモードを設定
@@ -1148,8 +1271,11 @@ module Rufio
       @project_log = project_log
       @in_project_mode = true
       @in_log_mode = false
-      refresh_display
-      draw_screen
+      # 画面を一度クリアしてレンダラーをリセット
+      print "\e[2J\e[H"
+      @renderer.clear if @renderer
+      # 再描画フラグを立てる
+      @project_mode_needs_redraw = true
     end
 
     # プロジェクトモードを終了
@@ -1159,16 +1285,29 @@ module Rufio
       @project_mode = nil
       @project_command = nil
       @project_log = nil
-      refresh_display
-      draw_screen
+      # バッファベースの全画面再描画を使用
+      update_screen_size
+      print "\e[2J\e[H"
+      if @screen && @renderer
+        @renderer.clear
+        @screen.clear
+        draw_screen_to_buffer(@screen, nil, nil)
+        @renderer.render(@screen)
+        print "\e[#{@screen_height};#{@screen_width}H"
+      else
+        draw_screen
+      end
     end
 
     # ログモードに入る
     def enter_log_mode(project_log)
       @in_log_mode = true
       @project_log = project_log
-      refresh_display
-      draw_screen
+      # 画面を一度クリアしてレンダラーをリセット
+      print "\e[2J\e[H"
+      @renderer.clear if @renderer
+      # 再描画フラグを立てる
+      @project_mode_needs_redraw = true
     end
 
     # プロジェクトモード画面を描画
@@ -1410,8 +1549,11 @@ module Rufio
     # ログモードを終了してプロジェクトモードに戻る
     def exit_log_mode
       @in_log_mode = false
-      refresh_display
-      draw_screen
+      # 画面を一度クリアしてレンダラーをリセット
+      print "\e[2J\e[H"
+      @renderer.clear if @renderer
+      # 再描画フラグを立てる
+      @project_mode_needs_redraw = true
     end
 
     # プロジェクト未選択メッセージ
@@ -1439,7 +1581,6 @@ module Rufio
 
       # 画面を再描画
       refresh_display
-      draw_screen
     end
 
     # ヘルプダイアログを表示
@@ -1502,7 +1643,6 @@ module Rufio
 
       # 画面を再描画
       refresh_display
-      draw_screen
     end
 
     # プロジェクトモードでコマンドを実行
@@ -1534,7 +1674,6 @@ module Rufio
 
       # 画面を再描画
       refresh_display
-      draw_screen
     end
 
     # スクリプトまたはコマンドを選択
@@ -1682,7 +1821,6 @@ module Rufio
 
       # 画面を再描画
       refresh_display
-      draw_screen
     end
   end
 end

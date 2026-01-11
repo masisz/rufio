@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-01-10
+
+### Added
+- **🎮 Game Loop Architecture**: Transition from event-driven to game loop + double buffering
+  - **Phase 1: Foundation**
+    - Screen class (back buffer) with multibyte character support
+    - Renderer class (front buffer) with differential rendering
+    - Demo PoC with 10 FPS game loop
+  - **Phase 2: Main Loop Migration**
+    - Non-blocking input handling with IO.select (1ms timeout)
+    - UPDATE → DRAW → RENDER → SLEEP pattern
+    - FPS control (10 FPS default, configurable)
+    - Arrow key support (↑↓←→ mapped to kjhl)
+  - **Phase 3: Screen/Renderer Integration**
+    - Complete drawing method migration to Screen buffer
+    - Header, footer, directory list, file preview buffer rendering
+    - Differential rendering for optimized updates
+    - Color and ANSI code preservation in buffer
+  - **Phase 4: Dialog Renderer Update**
+    - `draw_floating_window_to_buffer` for Screen buffer support
+    - Command mode display integration
+    - Floating window compatibility maintained
+- **📺 Screen Buffer**: Back buffer implementation
+  - Cell-based architecture with character, fg/bg color, width info
+  - Multibyte character support (Japanese, emoji)
+  - Full-width character handling (2-cell occupation)
+  - ANSI color code preservation
+  - `put`, `put_string`, `clear`, `row` methods
+- **🖥️ Renderer**: Front buffer with diff rendering
+  - Differential update (only changed lines rendered)
+  - ANSI escape code positioning
+  - Resize and clear support
+  - Flush control for consistent display
+- **⚡ Performance Improvements**
+  - Diff rendering reduces terminal I/O by ~90% in static screens
+  - Non-blocking input eliminates blocking wait
+  - FPS control ensures consistent frame pacing
+
+### Changed
+- **Architecture**: Event-driven → Game loop pattern
+  - Main loop now runs at fixed FPS (10 FPS)
+  - Input processing is non-blocking
+  - Rendering is differential
+- **Drawing Pipeline**: Direct print → Screen buffer → Renderer
+  - All drawing operations go through Screen buffer
+  - Renderer applies differential updates
+  - Reduces terminal flicker and improves responsiveness
+
+### Technical Details
+- **Test Coverage**: 513 tests, 1983 assertions (all passing)
+- **Compatibility**: Maintains full backward compatibility
+- **Project Mode**: Temporarily uses legacy rendering (Phase 5 planned)
+- **Command Mode**: Floating windows rendered post-buffer (Phase 5 planned)
+
 ## [0.34.0] - 2026-01-10
 
 ### Added

@@ -18,10 +18,12 @@ module Rufio
     # Line break constants
     BREAK_POINT_THRESHOLD = 0.5  # Break after 50% of max_width
 
-    # Calculate display width of a string
-    # Full-width characters (Japanese, etc.) count as 2, half-width as 1
-    def display_width(string)
-      string.each_char.map do |char|
+    # Character width cache (memo化)
+    @char_width_cache = {}
+
+    # Calculate width for a single character with caching
+    def char_width(char)
+      @char_width_cache[char] ||= begin
         case char
         when /[\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\uFF00-\uFFEF\u2500-\u257F\u2580-\u259F]/
           FULLWIDTH_CHAR_WIDTH  # Japanese characters (hiragana, katakana, kanji, full-width symbols, box drawing, block elements)
@@ -30,7 +32,17 @@ module Rufio
         else
           char.bytesize > MULTIBYTE_THRESHOLD ? FULLWIDTH_CHAR_WIDTH : HALFWIDTH_CHAR_WIDTH
         end
-      end.sum
+      end
+    end
+
+    # Calculate display width of a string
+    # Full-width characters (Japanese, etc.) count as 2, half-width as 1
+    def display_width(string)
+      width = 0
+      string.each_char do |char|
+        width += char_width(char)
+      end
+      width
     end
 
     # Truncate string to fit within max_width
@@ -44,11 +56,11 @@ module Rufio
         target_width = max_width - ELLIPSIS_MIN_WIDTH
 
         string.each_char do |char|
-          char_width = display_width(char)
-          break if current_width + char_width > target_width
+          cw = char_width(char)
+          break if current_width + cw > target_width
 
           result += char
-          current_width += char_width
+          current_width += cw
         end
 
         result + ELLIPSIS
@@ -58,11 +70,11 @@ module Rufio
         current_width = 0
 
         string.each_char do |char|
-          char_width = display_width(char)
-          break if current_width + char_width > max_width
+          cw = char_width(char)
+          break if current_width + cw > max_width
 
           result += char
-          current_width += char_width
+          current_width += cw
         end
 
         result
@@ -89,10 +101,10 @@ module Rufio
       punct_break_point = nil
 
       line.each_char.with_index do |char, index|
-        char_width = display_width(char)
-        break if current_width + char_width > max_width
+        cw = char_width(char)
+        break if current_width + cw > max_width
 
-        current_width += char_width
+        current_width += cw
         best_break_point = index + 1
 
         # Record break point at space
@@ -134,16 +146,16 @@ module Rufio
         current_width = 0
 
         line.each_char do |char|
-          char_width = display_width(char)
+          cw = char_width(char)
 
-          if current_width + char_width > max_width
+          if current_width + cw > max_width
             # Start a new line
             wrapped << current_line.join
             current_line = [char]
-            current_width = char_width
+            current_width = cw
           else
             current_line << char
-            current_width += char_width
+            current_width += cw
           end
         end
 

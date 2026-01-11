@@ -6,9 +6,16 @@ require_relative '../lib/rufio'
 # プラグインを読み込む
 Rufio::PluginManager.load_all
 
+# YJITを早期に有効化（引数をチェック）
+if ARGV.include?('--yjit') && defined?(RubyVM::YJIT)
+  RubyVM::YJIT.enable
+end
+
 # コマンドライン引数のパース
 native_mode = nil
 start_directory = nil
+test_mode = false
+yjit_mode = false
 skip_next = false
 
 ARGV.each_with_index do |arg, idx|
@@ -18,6 +25,10 @@ ARGV.each_with_index do |arg, idx|
   end
 
   case arg
+  when '--test'
+    test_mode = true
+  when '--yjit'
+    yjit_mode = true
   when '--native'
     # 次の引数がモード指定かチェック
     if idx + 1 < ARGV.length && !ARGV[idx + 1].start_with?('--') && !ARGV[idx + 1].start_with?('/')
@@ -33,7 +44,7 @@ ARGV.each_with_index do |arg, idx|
     end
   when /^--native=(rust|go|auto|ruby)$/
     native_mode = $1
-  when '-c', '--check-health', '--help', '-h'
+  when '-c', '--check-health', '--help', '-h', '--yjit'
     # これらは後で処理
   when /^--/
     # 未知のオプションは無視
@@ -68,6 +79,8 @@ elsif ARGV.include?('--help') || ARGV.include?('-h')
   puts "Options:"
   puts "  -c, --check-health        Check system dependencies"
   puts "  -h, --help                Show this help message"
+  puts "  --test                    Show FPS counter in footer (for performance testing)"
+  puts "  --yjit                    Enable YJIT JIT compiler (Ruby 3.1+)"
   if defined?(Rufio::NativeScanner)
     puts "  --native[=MODE]           Enable native scanner (experimental)"
     puts "                            MODE: auto|rust|go (default: auto)"
@@ -88,6 +101,8 @@ elsif ARGV.include?('--help') || ARGV.include?('-h')
   puts "Examples:"
   puts "  rufio                     # Start in current directory"
   puts "  rufio /path/to/dir        # Start in specific directory"
+  puts "  rufio --test              # Show FPS counter for performance testing"
+  puts "  rufio --yjit              # Enable YJIT for better performance"
   if defined?(Rufio::NativeScanner)
     puts "  rufio --native            # Use native scanner (auto-detect)"
     puts "  rufio --native=rust       # Use Rust scanner"
@@ -101,5 +116,5 @@ else
 
   # アプリケーション開始
   app = Rufio::Application.new(start_directory)
-  app.run
+  app.run(test_mode: test_mode)
 end

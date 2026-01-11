@@ -13,12 +13,12 @@ module Rufio
       ConfigLoader.load_config
     end
 
-    def run
+    def run(test_mode: false)
       # 各コンポーネントを初期化
       directory_listing = DirectoryListing.new(@start_directory)
       keybind_handler = KeybindHandler.new
       file_preview = FilePreview.new
-      terminal_ui = TerminalUI.new
+      terminal_ui = TerminalUI.new(test_mode: test_mode)
 
       # バックグラウンドコマンド実行用の設定
       log_dir = File.join(Dir.home, '.config', 'rufio', 'log')
