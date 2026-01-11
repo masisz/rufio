@@ -545,7 +545,7 @@ module Rufio
     end
 
     def exit_request
-      true # request exit
+      show_exit_confirmation
     end
 
     def fzf_search
@@ -1117,6 +1117,53 @@ module Rufio
       end
     end
 
+    def show_exit_confirmation
+      # コンテンツの準備
+      title = 'Exit Confirmation'
+
+      content_lines = [
+        '',
+        'Are you sure you want to exit?',
+        '',
+        '  [Y]es - Exit',
+        '  [N]o  - Cancel',
+        ''
+      ]
+
+      # ダイアログのサイズ設定
+      dialog_width = CONFIRMATION_DIALOG_WIDTH
+      dialog_height = DIALOG_BORDER_HEIGHT + content_lines.length
+
+      # ダイアログの位置を中央に設定
+      x, y = @dialog_renderer.calculate_center(dialog_width, dialog_height)
+
+      # ダイアログの描画（終了は黄色で表示）
+      @dialog_renderer.draw_floating_window(x, y, dialog_width, dialog_height, title, content_lines, {
+                             border_color: "\e[33m",    # 黄色（注意）
+                             title_color: "\e[1;33m",   # 太字黄色
+                             content_color: "\e[37m"    # 白色
+                           })
+
+      # キー入力待機
+      loop do
+        input = STDIN.getch.downcase
+
+        case input
+        when 'y'
+          # ダイアログをクリア
+          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
+          @terminal_ui&.refresh_display # 画面を再描画
+          return true
+        when 'n', "\e", "\x03" # n, ESC, Ctrl+C
+          # ダイアログをクリア
+          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
+          @terminal_ui&.refresh_display # 画面を再描画
+          return false
+        end
+        # 無効なキー入力の場合は再度ループ
+      end
+    end
+
     # パスを指定した長さに短縮
     def shorten_path(path, max_length)
       return path if path.length <= max_length
@@ -1455,7 +1502,7 @@ module Rufio
 
     # プロジェクトモード中のキー処理
     def handle_project_mode_key(key)
-      case key
+      result = case key
       when "\e" # ESC - ログモードならプロジェクトモードに戻る、そうでなければ終了
         if @in_log_mode
           exit_log_mode
@@ -1507,6 +1554,10 @@ module Rufio
       else
         false
       end
+
+      # キー処理後、プロジェクトモードの再描画をトリガー
+      @terminal_ui&.trigger_project_mode_redraw if result && @in_project_mode
+      result
     end
 
     # プロジェクトモード用のエントリ数取得
