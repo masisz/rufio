@@ -32,7 +32,7 @@ module Rufio
     # Line offsets
     CONTENT_START_LINE = 2         # コンテンツ開始行（ヘッダー1行スキップ）
 
-    def initialize
+    def initialize(test_mode: false)
       console = IO.console
       if console
         @screen_width, @screen_height = console.winsize.reverse
@@ -42,6 +42,7 @@ module Rufio
         @screen_height = DEFAULT_SCREEN_HEIGHT
       end
       @running = false
+      @test_mode = test_mode
       @command_mode_active = false
       @command_input = ""
       @command_mode = CommandMode.new
@@ -100,6 +101,11 @@ module Rufio
       system('tput civis')  # cursor invisible
       print "\e[2J\e[H"     # clear screen, cursor to home (first time only)
 
+      # rawモードに設定（ゲームループのノンブロッキング入力用）
+      if STDIN.tty?
+        STDIN.raw!
+      end
+
       # re-acquire terminal size (just in case)
       update_screen_size
     end
@@ -112,17 +118,41 @@ module Rufio
     end
 
     def cleanup_terminal
+      # rawモードを解除
+      if STDIN.tty?
+        STDIN.cooked!
+      end
+
       system('tput rmcup')  # normal screen
       system('tput cnorm')  # cursor normal
       puts ConfigLoader.message('app.terminated')
     end
 
+    # ゲームループパターンのmain_loop
+    # UPDATE → DRAW → RENDER → SLEEP のサイクル
     def main_loop
+      fps = 60
+      interval = 1.0 / fps
+
+      # Phase 3: Screen/Rendererを初期化
+      @screen = Screen.new(@screen_width, @screen_height)
+      @renderer = Renderer.new(@screen_width, @screen_height)
+
       last_notification_check = Time.now
       notification_message = nil
       notification_time = nil
 
+      # FPS計測用
+      frame_times = []
+      last_frame_time = Time.now
+      current_fps = 0.0
+
       while @running
+        start = Time.now
+
+        # UPDATE phase - ノンブロッキング入力処理
+        handle_input_nonblocking
+
         # バックグラウンドコマンドの完了チェック（0.5秒ごと）
         if @background_executor && (Time.now - last_notification_check) > 0.5
           if !@background_executor.running? && @background_executor.get_completion_message
@@ -133,15 +163,41 @@ module Rufio
           last_notification_check = Time.now
         end
 
-        # 通知メッセージを表示（3秒間）
-        if notification_message && (Time.now - notification_time) < 3.0
-          draw_screen_with_notification(notification_message)
-        else
-          notification_message = nil if notification_message
-          draw_screen
+        # FPS計算（移動平均）
+        if @test_mode
+          frame_time = Time.now - last_frame_time
+          frame_times << frame_time
+          frame_times.shift if frame_times.size > 60  # 直近60フレームで平均
+          avg_frame_time = frame_times.sum / frame_times.size
+          current_fps = 1.0 / avg_frame_time if avg_frame_time > 0
+          last_frame_time = Time.now
         end
 
-        handle_input
+        # DRAW phase - Screenバッファに描画
+        @screen.clear
+        if notification_message && (Time.now - notification_time) < 3.0
+          draw_screen_to_buffer(@screen, notification_message, current_fps)
+        else
+          notification_message = nil if notification_message
+          draw_screen_to_buffer(@screen, nil, current_fps)
+        end
+
+        # RENDER phase - 差分レンダリング
+        @renderer.render(@screen)
+
+        # コマンドモードがアクティブな場合はフローティングウィンドウを表示
+        # Phase 4: 暫定的に直接描画（Screenバッファ外）
+        if @command_mode_active
+          @command_mode_ui.show_input_prompt(@command_input)
+        else
+          # カーソルを画面外に移動
+          print "\e[#{@screen_height};#{@screen_width}H"
+        end
+
+        # SLEEP phase - FPS制御
+        elapsed = Time.now - start
+        sleep_time = [interval - elapsed, 0].max
+        sleep sleep_time if sleep_time > 0
       end
     end
 
@@ -190,6 +246,53 @@ module Rufio
       end
     end
 
+    # Phase 3: Screenバッファに描画する新しいメソッド
+    def draw_screen_to_buffer(screen, notification_message = nil, fps = nil)
+      # プロジェクトモードの場合は既存の描画メソッドを使用（Phase 3では未実装）
+      if @in_project_mode
+        # プロジェクトモード用のバッファ描画は今後実装予定
+        # 現在は既存のdraw_project_mode_screenを直接呼び出す
+        @renderer.clear  # 一旦クリア
+        draw_project_mode_screen
+        return
+      end
+
+      # header (1 line) - y=0
+      draw_header_to_buffer(screen, 0)
+
+      # main content (left: directory list, right: preview)
+      entries = get_display_entries
+      selected_entry = entries[@keybind_handler.current_index]
+
+      # calculate height with header and footer margin
+      content_height = @screen_height - HEADER_FOOTER_MARGIN
+      left_width = (@screen_width * LEFT_PANEL_RATIO).to_i
+      right_width = @screen_width - left_width
+
+      # adjust so right panel doesn't overflow into left panel
+      right_width = @screen_width - left_width if left_width + right_width > @screen_width
+
+      draw_directory_list_to_buffer(screen, entries, left_width, content_height)
+      draw_file_preview_to_buffer(screen, selected_entry, right_width, content_height, left_width)
+
+      # footer
+      draw_footer_to_buffer(screen, @screen_height - 1, fps)
+
+      # 通知メッセージがある場合は表示
+      if notification_message
+        notification_line = @screen_height - 1
+        message_display = " #{notification_message} "
+        if message_display.length > @screen_width
+          message_display = message_display[0...(@screen_width - 3)] + "..."
+        end
+        screen.put_string(0, notification_line, message_display.ljust(@screen_width), fg: "\e[7m")
+      end
+
+      # コマンドモードがアクティブな場合はフローティングウィンドウを描画
+      # Phase 4: 暫定的に既存のメソッドを使用
+      # Phase 5でScreenバッファ統合予定
+    end
+
     def draw_screen_with_notification(notification_message)
       # 通常の画面を描画
       draw_screen
@@ -205,6 +308,42 @@ module Rufio
       end
 
       print "\e[7m#{message_display.ljust(@screen_width)}\e[0m"
+    end
+
+    # Phase 3: Screenバッファにヘッダーを描画
+    def draw_header_to_buffer(screen, y)
+      current_path = @directory_listing.current_path
+      header = "📁 rufio - #{current_path}"
+
+      # Add help mode indicator if in help mode
+      if @keybind_handler.help_mode?
+        header += " [Help Mode - Press ESC to exit]"
+      end
+
+      # Add filter indicator if in filter mode
+      if @keybind_handler.filter_active?
+        filter_text = " [Filter: #{@keybind_handler.filter_query}]"
+        header += filter_text
+      end
+
+      # abbreviate if path is too long
+      if header.length > @screen_width - HEADER_PADDING
+        if @keybind_handler.help_mode?
+          # prioritize showing help mode indicator
+          help_text = " [Help Mode - Press ESC to exit]"
+          base_length = @screen_width - help_text.length - FILTER_TEXT_RESERVED
+          header = "📁 rufio - ...#{current_path[-base_length..-1]}#{help_text}"
+        elsif @keybind_handler.filter_active?
+          # prioritize showing filter when active
+          filter_text = " [Filter: #{@keybind_handler.filter_query}]"
+          base_length = @screen_width - filter_text.length - FILTER_TEXT_RESERVED
+          header = "📁 rufio - ...#{current_path[-base_length..-1]}#{filter_text}"
+        else
+          header = "📁 rufio - ...#{current_path[-(@screen_width - FILTER_TEXT_RESERVED)..-1]}"
+        end
+      end
+
+      screen.put_string(0, y, header.ljust(@screen_width), fg: "\e[7m")
     end
 
     def draw_header
@@ -244,6 +383,27 @@ module Rufio
 
 
 
+    # Phase 3: Screenバッファにディレクトリリストを描画
+    def draw_directory_list_to_buffer(screen, entries, width, height)
+      start_index = [@keybind_handler.current_index - height / 2, 0].max
+
+      (0...height).each do |i|
+        entry_index = start_index + i
+        line_num = i + CONTENT_START_LINE
+
+        if entry_index < entries.length
+          entry = entries[entry_index]
+          is_selected = entry_index == @keybind_handler.current_index
+
+          draw_entry_line_to_buffer(screen, entry, width, is_selected, 0, line_num)
+        else
+          # 空行
+          safe_width = [width - CURSOR_OFFSET, (@screen_width * LEFT_PANEL_RATIO).to_i - CURSOR_OFFSET].min
+          screen.put_string(0, line_num, ' ' * safe_width)
+        end
+      end
+    end
+
     def draw_directory_list(entries, width, height)
       start_index = [@keybind_handler.current_index - height / 2, 0].max
       [start_index + height - 1, entries.length - 1].min
@@ -264,6 +424,50 @@ module Rufio
           safe_width = [width - CURSOR_OFFSET, (@screen_width * LEFT_PANEL_RATIO).to_i - CURSOR_OFFSET].min
           print ' ' * safe_width
         end
+      end
+    end
+
+    # Phase 3: Screenバッファにエントリ行を描画
+    def draw_entry_line_to_buffer(screen, entry, width, is_selected, x, y)
+      # アイコンと色の設定
+      icon, color = get_entry_display_info(entry)
+
+      # 左ペイン専用の安全な幅を計算
+      safe_width = [width - CURSOR_OFFSET, (@screen_width * LEFT_PANEL_RATIO).to_i - CURSOR_OFFSET].min
+
+      # 選択マークの追加
+      selection_mark = @keybind_handler.is_selected?(entry[:name]) ? "✓ " : "  "
+
+      # ファイル名（必要に応じて切り詰め）
+      name = entry[:name]
+      max_name_length = safe_width - ICON_SIZE_PADDING
+      name = name[0...max_name_length - 3] + '...' if max_name_length > 0 && name.length > max_name_length
+
+      # サイズ情報
+      size_info = format_size(entry[:size])
+
+      # 行の内容を構築
+      content_without_size = "#{selection_mark}#{icon} #{name}"
+      available_for_content = safe_width - size_info.length
+
+      line_content = if available_for_content > 0
+                       content_without_size.ljust(available_for_content) + size_info
+                     else
+                       content_without_size
+                     end
+
+      # 確実に safe_width を超えないよう切り詰め
+      line_content = line_content[0...safe_width]
+
+      # 色を決定
+      if is_selected
+        fg_color = ColorHelper.color_to_selected_ansi(ConfigLoader.colors[:selected])
+        screen.put_string(x, y, line_content, fg: fg_color)
+      elsif @keybind_handler.is_selected?(entry[:name])
+        # 選択されたアイテムは緑背景、黒文字
+        screen.put_string(x, y, line_content, fg: "\e[42m\e[30m")
+      else
+        screen.put_string(x, y, line_content, fg: color)
       end
     end
 
@@ -348,6 +552,67 @@ module Rufio
         "#{(size / MEGABYTE.to_f).round(1)}M".rjust(6)
       else
         "#{(size / GIGABYTE.to_f).round(1)}G".rjust(6)
+      end
+    end
+
+    # Phase 3: Screenバッファにファイルプレビューを描画
+    def draw_file_preview_to_buffer(screen, selected_entry, width, height, left_offset)
+      # 事前計算
+      cursor_position = left_offset + CURSOR_OFFSET
+      max_chars_from_cursor = @screen_width - cursor_position
+      safe_width = [max_chars_from_cursor - 2, width - 2, 0].max
+
+      # プレビューコンテンツを計算
+      preview_content = nil
+      wrapped_lines = nil
+
+      if selected_entry && selected_entry[:type] == 'file'
+        preview_content = get_preview_content(selected_entry)
+        wrapped_lines = TextUtils.wrap_preview_lines(preview_content, safe_width - 1) if safe_width > 0
+      end
+
+      (0...height).each do |i|
+        line_num = i + CONTENT_START_LINE
+
+        # 区切り線
+        screen.put(cursor_position, line_num, '│')
+
+        content_to_print = ''
+
+        if selected_entry && i == 0
+          # プレビューヘッダー
+          header = " #{selected_entry[:name]} "
+          if @keybind_handler&.preview_focused?
+            header += "[PREVIEW MODE]"
+          end
+          content_to_print = header
+        elsif wrapped_lines && i >= 2
+          # ファイルプレビュー（折り返し対応）
+          scroll_offset = @keybind_handler&.preview_scroll_offset || 0
+          display_line_index = i - 2 + scroll_offset
+
+          if display_line_index < wrapped_lines.length
+            line = wrapped_lines[display_line_index] || ''
+            content_to_print = " #{line}"
+          else
+            content_to_print = ' '
+          end
+        else
+          content_to_print = ' '
+        end
+
+        # safe_widthを超えないよう切り詰め
+        next if safe_width <= 0
+
+        if TextUtils.display_width(content_to_print) > safe_width
+          content_to_print = TextUtils.truncate_to_width(content_to_print, safe_width)
+        end
+
+        # パディングを追加
+        remaining_space = safe_width - TextUtils.display_width(content_to_print)
+        content_to_print += ' ' * remaining_space if remaining_space > 0
+
+        screen.put_string(cursor_position + 1, line_num, content_to_print)
       end
     end
 
@@ -447,6 +712,61 @@ module Rufio
       end
     end
 
+    # Phase 3: Screenバッファにフッターを描画
+    def draw_footer_to_buffer(screen, y, fps = nil)
+      if @keybind_handler.filter_active?
+        if @keybind_handler.instance_variable_get(:@filter_mode)
+          help_text = "Filter mode: Type to filter, ESC to clear, Enter to apply, Backspace to delete"
+        else
+          help_text = "Filtered view active - Space to edit filter, ESC to clear filter"
+        end
+        # フィルタモードでは通常のフッタを表示
+        footer_content = help_text.ljust(@screen_width)[0...@screen_width]
+        screen.put_string(0, y, footer_content, fg: "\e[7m")
+      else
+        # 通常モードではブックマーク一覧、ステータス情報、?:helpを1行に表示
+        require_relative 'bookmark'
+        bookmark = Bookmark.new
+        bookmarks = bookmark.list
+
+        # 起動ディレクトリを取得
+        start_dir = @directory_listing&.start_directory
+        start_dir_name = if start_dir
+                           File.basename(start_dir)
+                         else
+                           "start"
+                         end
+
+        # ブックマーク一覧を作成（0.起動dir を先頭に追加）
+        bookmark_parts = ["0.#{start_dir_name}"]
+        unless bookmarks.empty?
+          bookmark_parts.concat(bookmarks.take(9).map.with_index(1) { |bm, idx| "#{idx}.#{bm[:name]}" })
+        end
+        bookmark_text = bookmark_parts.join(" ")
+
+        # 右側の情報: FPS（test modeの時のみ）| ?:help
+        if @test_mode && fps
+          right_info = "#{fps.round(1)} FPS | ?:help"
+        else
+          right_info = "?:help"
+        end
+
+        # ブックマーク一覧を利用可能な幅に収める
+        available_width = @screen_width - right_info.length - 3
+        if bookmark_text.length > available_width && available_width > 3
+          bookmark_text = bookmark_text[0...available_width - 3] + "..."
+        elsif available_width <= 3
+          bookmark_text = ""
+        end
+
+        # フッタ全体を構築
+        padding = @screen_width - bookmark_text.length - right_info.length
+        footer_content = "#{bookmark_text}#{' ' * padding}#{right_info}"
+        footer_content = footer_content.ljust(@screen_width)[0...@screen_width]
+        screen.put_string(0, y, footer_content, fg: "\e[7m")
+      end
+    end
+
     def draw_footer(render_time = nil)
       # フッタは最下行に表示
       footer_line = @screen_height - FOOTER_HEIGHT + 1
@@ -504,6 +824,66 @@ module Rufio
       end
     end
 
+    # ノンブロッキング入力処理（ゲームループ用）
+    # IO.selectでタイムアウト付きで入力をチェック
+    def handle_input_nonblocking
+      # 1msタイムアウトで入力待ち（60FPS = 16.67ms/frame）
+      ready = IO.select([STDIN], nil, nil, 0.001)
+      return unless ready
+
+      begin
+        # read_nonblockを使ってノンブロッキングで1文字読み取る
+        input = STDIN.read_nonblock(1)
+      rescue IO::WaitReadable, IO::EAGAINWaitReadable
+        # 入力が利用できない
+        return
+      rescue Errno::ENOTTY, Errno::ENODEV
+        # ターミナルでない環境
+        return
+      end
+
+      # コマンドモードがアクティブな場合は、エスケープシーケンス処理をスキップ
+      # ESCキーをそのまま handle_command_input に渡す
+      if @command_mode_active
+        handle_command_input(input)
+        return
+      end
+
+      # 特殊キーの処理（エスケープシーケンス）（コマンドモード外のみ）
+      if input == "\e"
+        next_char = begin
+          STDIN.read_nonblock(1)
+        rescue StandardError
+          nil
+        end
+        if next_char == '['
+          # 矢印キーなどのシーケンス
+          third_char = begin
+            STDIN.read_nonblock(1)
+          rescue StandardError
+            nil
+          end
+          input = case third_char
+          when 'A' then 'k'  # Up arrow
+          when 'B' then 'j'  # Down arrow
+          when 'C' then 'l'  # Right arrow
+          when 'D' then 'h'  # Left arrow
+          else "\e"  # ESCキー（そのまま保持）
+          end
+        else
+          input = "\e"  # ESCキー（そのまま保持）
+        end
+      end
+
+      # キーバインドハンドラーに処理を委譲
+      @keybind_handler.handle_key(input) if input
+
+      # 終了処理（qキーのみ）
+      if input == 'q'
+        @running = false
+      end
+    end
+
     def handle_input
       begin
         input = STDIN.getch
@@ -518,7 +898,14 @@ module Rufio
         return 'q'
       end
 
-      # 特殊キーの処理
+      # コマンドモードがアクティブな場合は、エスケープシーケンス処理をスキップ
+      # ESCキーをそのまま handle_command_input に渡す
+      if @command_mode_active
+        handle_command_input(input)
+        return
+      end
+
+      # 特殊キーの処理（コマンドモード外のみ）
       if input == "\e"
         # エスケープシーケンスの処理
         next_char = begin
@@ -547,12 +934,6 @@ module Rufio
         else
           input = "\e" # ESCキー（そのまま保持）
         end
-      end
-
-      # コマンドモードがアクティブな場合は、コマンド入力を処理
-      if @command_mode_active
-        handle_command_input(input)
-        return
       end
 
       # キーバインドハンドラーに処理を委譲
