@@ -62,18 +62,19 @@ module Rufio
       truncated = false
       encoding = "UTF-8"
 
-      File.open(file_path, "r:UTF-8") do |file|
+      # UTF-8で読み込み、不正なバイト列は置換文字に変換
+      File.open(file_path, "r:UTF-8:UTF-8", invalid: :replace, undef: :replace, replace: '�') do |file|
         file.each_line.with_index do |line, index|
           break if index >= max_lines
-          
+
           # truncate too long lines
           if line.length > MAX_LINE_LENGTH
             line = line[0...MAX_LINE_LENGTH] + "..."
           end
-          
+
           lines << line.chomp
         end
-        
+
         # check if there are more lines to read
         truncated = !file.eof?
       end
@@ -83,11 +84,11 @@ module Rufio
         truncated: truncated,
         encoding: encoding
       }
-    rescue Encoding::InvalidByteSequenceError
+    rescue Encoding::InvalidByteSequenceError, Encoding::CompatibilityError
       # try Shift_JIS if UTF-8 fails
       begin
         lines = []
-        File.open(file_path, "r:Shift_JIS:UTF-8") do |file|
+        File.open(file_path, "r:Shift_JIS:UTF-8", invalid: :replace, undef: :replace, replace: '�') do |file|
           file.each_line.with_index do |line, index|
             break if index >= max_lines
             lines << line.chomp
