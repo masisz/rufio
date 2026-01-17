@@ -43,7 +43,21 @@ module Rufio
         return "⚠️  コマンドが見つかりません: #{command_name}"
       end
 
-      # コマンドを実行
+      # バックグラウンドエグゼキュータが利用可能な場合は非同期実行
+      if @background_executor
+        command_method = @commands[command_name][:method]
+        command_display_name = command_name.to_s
+
+        if @background_executor.execute_ruby_async(command_display_name) do
+             command_method.call
+           end
+          return "🔄 バックグラウンドで実行中: #{command_display_name}"
+        else
+          return "⚠️  既にコマンドが実行中です"
+        end
+      end
+
+      # バックグラウンドエグゼキュータがない場合は同期実行
       begin
         command_method = @commands[command_name][:method]
         command_method.call

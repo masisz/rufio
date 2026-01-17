@@ -1,0 +1,5 @@
+Line 1: Normal text
+Line 2: Invalid €‚ bytes here
+Line 3: More text
+Line 4: Another ÿş problem
+Line 5: Final line

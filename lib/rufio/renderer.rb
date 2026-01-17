@@ -22,20 +22,33 @@ module Rufio
     # Render the screen with differential updates
     #
     # @param screen [Screen] The back buffer to render
+    # @return [Boolean] true if rendering was performed, false if skipped
     def render(screen)
+      # CPU最適化: Dirty rowsが空の場合は完全にスキップ
+      dirty = screen.dirty_rows
+      if dirty.empty?
+        return false
+      end
+
       # Phase1: Only process dirty rows (rows that have changed)
-      screen.dirty_rows.each do |y|
+      rendered_count = 0
+      dirty.each do |y|
         line = screen.row(y)
         next if line == @front[y]  # Skip if content is actually the same
 
         # Move cursor to line y (1-indexed) and output the line
         @output.print "\e[#{y + 1};1H#{line}"
         @front[y] = line
+        rendered_count += 1
       end
 
       # Phase1: Clear dirty tracking after rendering
       screen.clear_dirty
-      @output.flush
+
+      # Only flush if we actually rendered something
+      @output.flush if rendered_count > 0
+
+      true
     end
 
     # Resize the front buffer

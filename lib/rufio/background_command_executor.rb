@@ -3,7 +3,7 @@
 require 'open3'
 
 module Rufio
-  # バックグラウンドでシェルコマンドを実行するクラス
+  # バックグラウンドでシェルコマンドまたはRubyコードを実行するクラス
   class BackgroundCommandExecutor
     attr_reader :command_logger
 
@@ -13,11 +13,12 @@ module Rufio
       @command_logger = command_logger
       @thread = nil
       @command = nil
+      @command_type = nil  # :shell または :ruby
       @completed = false
       @completion_message = nil
     end
 
-    # コマンドを非同期で実行
+    # シェルコマンドを非同期で実行
     # @param command [String] 実行するコマンド
     # @return [Boolean] 実行を開始した場合はtrue、既に実行中の場合はfalse
     def execute_async(command)
@@ -25,6 +26,7 @@ module Rufio
       return false if running?
 
       @command = command
+      @command_type = :shell
       @completed = false
       @completion_message = nil
 
@@ -73,6 +75,54 @@ module Rufio
       true
     end
 
+    # Rubyコード（プラグインコマンド）を非同期で実行
+    # @param command_name [String] コマンド名（表示用）
+    # @param block [Proc] 実行するコードブロック
+    # @return [Boolean] 実行を開始した場合はtrue、既に実行中の場合はfalse
+    def execute_ruby_async(command_name, &block)
+      # 既に実行中の場合は新しいコマンドを開始しない
+      return false if running?
+
+      @command = command_name
+      @command_type = :ruby
+      @completed = false
+      @completion_message = nil
+
+      @thread = Thread.new do
+        begin
+          # Rubyコードを実行
+          result = block.call
+
+          # 結果をログに保存
+          output = result.to_s
+
+          @command_logger.log(
+            command_name,
+            output,
+            success: true,
+            error: nil
+          )
+
+          # 完了メッセージを生成
+          @completion_message = "✓ #{command_name} 完了"
+          @completed = true
+        rescue StandardError => e
+          # エラーが発生した場合もログに記録
+          @command_logger.log(
+            command_name,
+            "",
+            success: false,
+            error: e.message
+          )
+
+          @completion_message = "✗ #{command_name} エラー: #{e.message}"
+          @completed = true
+        end
+      end
+
+      true
+    end
+
     # コマンドが実行中かどうか
     # @return [Boolean] 実行中の場合はtrue
     def running?
@@ -83,6 +133,18 @@ module Rufio
     # @return [String, nil] 完了メッセージ（完了していない場合はnil）
     def get_completion_message
       @completion_message
+    end
+
+    # 現在実行中のコマンド名を取得
+    # @return [String, nil] コマンド名（実行中でない場合はnil）
+    def current_command
+      running? ? @command : nil
+    end
+
+    # コマンドタイプを取得
+    # @return [Symbol, nil] :shell または :ruby（実行中でない場合はnil）
+    def command_type
+      running? ? @command_type : nil
     end
 
     private

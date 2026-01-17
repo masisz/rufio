@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-01-13
+
+### Changed
+- **⚡ FPS Optimization**: Changed target frame rate from 60 FPS to 30 FPS (33.33ms/frame)
+  - Reduced CPU usage while maintaining smooth UI responsiveness
+  - More efficient for terminal-based applications
+  - Consistent frame pacing with `min_sleep_interval = 0.0333`
+
+### Fixed
+- **🐛 Exit Confirmation Bug**: Fixed confirmation dialog not preventing exit when selecting "No"
+  - `terminal_ui.rb`: Now checks `exit_request` return value before setting `@running = false`
+  - Selecting "No" or pressing ESC properly cancels the exit operation
+  - Fixed in both `handle_input_nonblocking` and `handle_input` methods
+
+- **📊 FPS Display Bug**: Fixed FPS counter showing incorrect 1 FPS value
+  - FPS calculation now updates every frame instead of every second
+  - `frame_time` and `last_frame_time` updated on each loop iteration
+  - Display update throttled to once per second to prevent flicker
+
+### Added
+- **🎮 Experimental Async UI**: Initial implementation of asynchronous UI rendering
+  - Non-blocking input processing with IO.select (1ms timeout)
+  - Frame-based rendering with differential updates
+  - FPS counter display with `--test` flag for performance monitoring
+
 ## [0.40.0] - 2026-01-11
 
 ### Added

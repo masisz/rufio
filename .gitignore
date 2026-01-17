@@ -38,6 +38,10 @@ Gemfile.lock
 *~
 .DS_Store
 
+# Claude Code 
+CLAUDE.md
+.claude/
+
 # Rust build artifacts
 lib_rust/scanner/target/
 lib_rust/scanner/Cargo.lock

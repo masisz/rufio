@@ -11,11 +11,17 @@ if ARGV.include?('--yjit') && defined?(RubyVM::YJIT)
   RubyVM::YJIT.enable
 end
 
+# ZJITを早期に有効化（引数をチェック）
+if ARGV.include?('--zjit') && defined?(RubyVM::ZJIT)
+  RubyVM::ZJIT.enable
+end
+
 # コマンドライン引数のパース
 native_mode = nil
 start_directory = nil
 test_mode = false
 yjit_mode = false
+zjit_mode = false
 skip_next = false
 
 ARGV.each_with_index do |arg, idx|
@@ -29,6 +35,8 @@ ARGV.each_with_index do |arg, idx|
     test_mode = true
   when '--yjit'
     yjit_mode = true
+  when '--zjit'
+    zjit_mode = true
   when '--native'
     # 次の引数がモード指定かチェック
     if idx + 1 < ARGV.length && !ARGV[idx + 1].start_with?('--') && !ARGV[idx + 1].start_with?('/')
@@ -44,7 +52,7 @@ ARGV.each_with_index do |arg, idx|
     end
   when /^--native=(rust|go|auto|ruby)$/
     native_mode = $1
-  when '-c', '--check-health', '--help', '-h', '--yjit'
+  when '-c', '--check-health', '--help', '-h', '--yjit', '--zjit'
     # これらは後で処理
   when /^--/
     # 未知のオプションは無視
@@ -81,6 +89,7 @@ elsif ARGV.include?('--help') || ARGV.include?('-h')
   puts "  -h, --help                Show this help message"
   puts "  --test                    Show FPS counter in footer (for performance testing)"
   puts "  --yjit                    Enable YJIT JIT compiler (Ruby 3.1+)"
+  puts "  --zjit                    Enable ZJIT JIT compiler (Ruby 3.4+)"
   if defined?(Rufio::NativeScanner)
     puts "  --native[=MODE]           Enable native scanner (experimental)"
     puts "                            MODE: auto|rust|go (default: auto)"
@@ -103,6 +112,7 @@ elsif ARGV.include?('--help') || ARGV.include?('-h')
   puts "  rufio /path/to/dir        # Start in specific directory"
   puts "  rufio --test              # Show FPS counter for performance testing"
   puts "  rufio --yjit              # Enable YJIT for better performance"
+  puts "  rufio --zjit              # Enable ZJIT for better performance"
   if defined?(Rufio::NativeScanner)
     puts "  rufio --native            # Use native scanner (auto-detect)"
     puts "  rufio --native=rust       # Use Rust scanner"

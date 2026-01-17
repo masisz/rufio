@@ -67,12 +67,20 @@ module Rufio
         file.each_line.with_index do |line, index|
           break if index >= max_lines
 
-          # truncate too long lines
-          if line.length > MAX_LINE_LENGTH
-            line = line[0...MAX_LINE_LENGTH] + "..."
-          end
+          begin
+            # Ensure line is properly encoded as UTF-8
+            line = line.encode('UTF-8', invalid: :replace, undef: :replace, replace: '?')
 
-          lines << line.chomp
+            # truncate too long lines
+            if line.length > MAX_LINE_LENGTH
+              line = line[0...MAX_LINE_LENGTH] + "..."
+            end
+
+            lines << line.chomp
+          rescue EncodingError, ArgumentError => e
+            # If encoding fails, add placeholder
+            lines << "[encoding error in line #{index + 1}]"
+          end
         end
 
         # check if there are more lines to read
@@ -91,7 +99,15 @@ module Rufio
         File.open(file_path, "r:Shift_JIS:UTF-8", invalid: :replace, undef: :replace, replace: '�') do |file|
           file.each_line.with_index do |line, index|
             break if index >= max_lines
-            lines << line.chomp
+
+            begin
+              # Ensure line is properly encoded as UTF-8
+              line = line.encode('UTF-8', invalid: :replace, undef: :replace, replace: '?')
+              lines << line.chomp
+            rescue EncodingError, ArgumentError => e
+              # If encoding fails, add placeholder
+              lines << "[encoding error in line #{index + 1}]"
+            end
           end
           truncated = !file.eof?
         end

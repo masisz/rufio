@@ -126,8 +126,17 @@ module Rufio
 
       wrapped = []
       lines.each do |line|
-        # Remove trailing whitespace
-        line = line.rstrip
+        # Handle encoding errors: scrub invalid UTF-8 sequences
+        begin
+          # Force UTF-8 encoding and replace invalid bytes
+          line = line.encode('UTF-8', invalid: :replace, undef: :replace, replace: '?')
+          # Remove trailing whitespace
+          line = line.rstrip
+        rescue EncodingError, ArgumentError => e
+          # If encoding fails completely, skip this line
+          wrapped << '[encoding error]'
+          next
+        end
 
         # If line is empty, keep it
         if line.empty?
@@ -136,31 +145,45 @@ module Rufio
         end
 
         # If line fits within max_width, keep it as is
-        if display_width(line) <= max_width
-          wrapped << line
-          next
+        begin
+          if display_width(line) <= max_width
+            wrapped << line
+            next
+          end
+        rescue ArgumentError => e
+          # If display_width fails, just truncate by byte length
+          if line.bytesize <= max_width
+            wrapped << line
+            next
+          end
         end
 
         # Split long lines
         current_line = []
         current_width = 0
 
-        line.each_char do |char|
-          cw = char_width(char)
+        begin
+          line.each_char do |char|
+            cw = char_width(char)
 
-          if current_width + cw > max_width
-            # Start a new line
-            wrapped << current_line.join
-            current_line = [char]
-            current_width = cw
-          else
-            current_line << char
-            current_width += cw
+            if current_width + cw > max_width
+              # Start a new line
+              wrapped << current_line.join
+              current_line = [char]
+              current_width = cw
+            else
+              current_line << char
+              current_width += cw
+            end
           end
-        end
 
-        # Add remaining characters
-        wrapped << current_line.join unless current_line.empty?
+          # Add remaining characters
+          wrapped << current_line.join unless current_line.empty?
+        rescue ArgumentError, EncodingError => e
+          # If character iteration fails, just add the line truncated
+          truncated = line.byteslice(0, [max_width, line.bytesize].min)
+          wrapped << (truncated || line)
+        end
       end
 
       wrapped

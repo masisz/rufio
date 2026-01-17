@@ -71,6 +71,10 @@ module Rufio
       @cached_bookmarks = nil
       @cached_bookmark_time = nil
       @bookmark_cache_ttl = 1.0  # 1秒間キャッシュ
+
+      # Command execution lamp (footer indicator)
+      @completion_lamp_message = nil
+      @completion_lamp_time = nil
     end
 
     def start(directory_listing, keybind_handler, file_preview, background_executor = nil)
@@ -159,75 +163,143 @@ module Rufio
       puts ConfigLoader.message('app.terminated')
     end
 
-    # ゲームループパターンのmain_loop
+    # ゲームループパターンのmain_loop（CPU最適化版：フレームスキップ対応）
     # UPDATE → DRAW → RENDER → SLEEP のサイクル
+    # 変更がない場合は描画をスキップしてCPU使用率を削減
     def main_loop
-      fps = 60
-      interval = 1.0 / fps
+      # CPU最適化: 固定FPSをやめて、イベントドリブンに変更
+      # 最小スリープ時間（入力チェック間隔）
+      min_sleep_interval = 0.0333  # 30FPS（約33.33ms/フレーム）
+      check_interval = 0.1  # バックグラウンドタスクのチェック間隔
 
       # Phase 3: Screen/Rendererを初期化
       @screen = Screen.new(@screen_width, @screen_height)
       @renderer = Renderer.new(@screen_width, @screen_height)
 
+      # 初回描画
+      @screen.clear
+      draw_screen_to_buffer(@screen, nil, nil)
+      @renderer.render(@screen)
+
       last_notification_check = Time.now
+      last_lamp_check = Time.now
       notification_message = nil
       notification_time = nil
+      previous_notification = nil
+      previous_lamp_message = @completion_lamp_message
 
       # FPS計測用
       frame_times = []
       last_frame_time = Time.now
       current_fps = 0.0
+      last_fps_update = Time.now
+
+      # 再描画フラグ
+      needs_redraw = false
 
       while @running
         start = Time.now
 
-        # UPDATE phase - ノンブロッキング入力処理
-        handle_input_nonblocking
-
-        # バックグラウンドコマンドの完了チェック（0.5秒ごと）
-        if @background_executor && (Time.now - last_notification_check) > 0.5
-          if !@background_executor.running? && @background_executor.get_completion_message
-            notification_message = @background_executor.get_completion_message
-            notification_time = Time.now
-            @background_executor.instance_variable_set(:@completion_message, nil)  # メッセージをクリア
-          end
-          last_notification_check = Time.now
-        end
-
-        # FPS計算（移動平均）
+        # FPS計算（毎フレームで記録）- ループの最初で計測してsleep時間を含める
         if @test_mode
-          frame_time = Time.now - last_frame_time
+          frame_time = start - last_frame_time
+          last_frame_time = start
           frame_times << frame_time
           frame_times.shift if frame_times.size > 60  # 直近60フレームで平均
-          avg_frame_time = frame_times.sum / frame_times.size
-          current_fps = 1.0 / avg_frame_time if avg_frame_time > 0
-          last_frame_time = Time.now
+
+          # FPS表示の更新は1秒ごと
+          if (start - last_fps_update) > 1.0
+            avg_frame_time = frame_times.sum / frame_times.size
+            current_fps = 1.0 / avg_frame_time if avg_frame_time > 0
+            last_fps_update = start
+          end
+
+          # test_modeでは毎フレーム描画してFPS計測の精度を上げる
+          needs_redraw = true
         end
 
-        # DRAW phase - Screenバッファに描画
-        @screen.clear
-        if notification_message && (Time.now - notification_time) < 3.0
-          draw_screen_to_buffer(@screen, notification_message, current_fps)
-        else
-          notification_message = nil if notification_message
-          draw_screen_to_buffer(@screen, nil, current_fps)
+        # UPDATE phase - ノンブロッキング入力処理
+        # 入力があった場合は再描画が必要
+        had_input = handle_input_nonblocking
+        needs_redraw = true if had_input
+
+        # バックグラウンドコマンドの完了チェック（0.1秒ごと）
+        if @background_executor && (start - last_notification_check) > check_interval
+          if !@background_executor.running? && @background_executor.get_completion_message
+            completion_msg = @background_executor.get_completion_message
+            # 通知メッセージとして表示
+            notification_message = completion_msg
+            notification_time = start
+            # フッターのランプ表示用にも設定
+            @completion_lamp_message = completion_msg
+            @completion_lamp_time = start
+            @background_executor.instance_variable_set(:@completion_message, nil)  # メッセージをクリア
+            needs_redraw = true
+          end
+          last_notification_check = start
         end
 
-        # RENDER phase - 差分レンダリング
-        @renderer.render(@screen)
+        # バックグラウンドコマンドの実行状態が変わった場合も再描画
+        if @background_executor
+          current_running = @background_executor.running?
+          if @last_bg_running != current_running
+            @last_bg_running = current_running
+            needs_redraw = true
+          end
+        end
+
+        # 完了ランプの表示状態をチェック（0.5秒ごと）
+        if (start - last_lamp_check) > 0.5
+          current_lamp = @completion_lamp_message
+          if current_lamp != previous_lamp_message
+            previous_lamp_message = current_lamp
+            needs_redraw = true
+          end
+          # 完了ランプのタイムアウトチェック
+          if @completion_lamp_message && @completion_lamp_time && (start - @completion_lamp_time) >= 3.0
+            @completion_lamp_message = nil
+            needs_redraw = true
+          end
+          last_lamp_check = start
+        end
+
+        # 通知メッセージの変化をチェック
+        current_notification = notification_message && (start - notification_time) < 3.0 ? notification_message : nil
+        if current_notification != previous_notification
+          previous_notification = current_notification
+          notification_message = nil if current_notification.nil?
+          needs_redraw = true
+        end
+
+        # DRAW & RENDER phase - 変更があった場合のみ描画
+        if needs_redraw
+          # Screenバッファに描画（clearは呼ばない。必要な部分だけ更新）
+          if notification_message && (start - notification_time) < 3.0
+            draw_screen_to_buffer(@screen, notification_message, current_fps)
+          else
+            draw_screen_to_buffer(@screen, nil, current_fps)
+          end
+
+          # 差分レンダリング（dirty rowsのみ）
+          @renderer.render(@screen)
+
+          # 描画後にカーソルを画面外に移動
+          if !@command_mode_active
+            print "\e[#{@screen_height};#{@screen_width}H"
+          end
+
+          needs_redraw = false
+        end
 
         # コマンドモードがアクティブな場合はフローティングウィンドウを表示
         # Phase 4: 暫定的に直接描画（Screenバッファ外）
         if @command_mode_active
           @command_mode_ui.show_input_prompt(@command_input)
-        else
-          # カーソルを画面外に移動
-          print "\e[#{@screen_height};#{@screen_width}H"
         end
 
-        # SLEEP phase - FPS制御
+        # SLEEP phase - CPU使用率削減のため適切にスリープ
         elapsed = Time.now - start
-        sleep_time = [interval - elapsed, 0].max
+        sleep_time = [min_sleep_interval - elapsed, 0].max
         sleep sleep_time if sleep_time > 0
       end
     end
@@ -829,12 +901,35 @@ module Rufio
         end
         bookmark_text = bookmark_parts.join(" ")
 
-        # 右側の情報: FPS（test modeの時のみ）| ?:help
-        if @test_mode && fps
-          right_info = "#{fps.round(1)} FPS | ?:help"
-        else
-          right_info = "?:help"
+        # 右側の情報: コマンド実行ランプ | FPS（test modeの時のみ）| ?:help
+        right_parts = []
+
+        # バックグラウンドコマンドの実行状態をランプで表示
+        if @background_executor
+          if @background_executor.running?
+            # 実行中ランプ（緑色の回転矢印）
+            command_name = @background_executor.current_command || "処理中"
+            right_parts << "\e[32m🔄\e[0m #{command_name}"
+          elsif @completion_lamp_message && @completion_lamp_time
+            # 完了ランプ（3秒間表示）
+            if (Time.now - @completion_lamp_time) < 3.0
+              right_parts << @completion_lamp_message
+            else
+              @completion_lamp_message = nil
+              @completion_lamp_time = nil
+            end
+          end
         end
+
+        # FPS表示（test modeの時のみ）
+        if @test_mode && fps
+          right_parts << "#{fps.round(1)} FPS"
+        end
+
+        # ヘルプ表示
+        right_parts << "?:help"
+
+        right_info = right_parts.join(" | ")
 
         # ブックマーク一覧を利用可能な幅に収める
         available_width = @screen_width - right_info.length - 3
@@ -918,26 +1013,26 @@ module Rufio
     # ノンブロッキング入力処理（ゲームループ用）
     # IO.selectでタイムアウト付きで入力をチェック
     def handle_input_nonblocking
-      # 1msタイムアウトで入力待ち（60FPS = 16.67ms/frame）
-      ready = IO.select([STDIN], nil, nil, 0.001)
-      return unless ready
+      # 0msタイムアウトで即座にチェック（30FPS = 33.33ms/frame）
+      ready = IO.select([STDIN], nil, nil, 0)
+      return false unless ready
 
       begin
         # read_nonblockを使ってノンブロッキングで1文字読み取る
         input = STDIN.read_nonblock(1)
       rescue IO::WaitReadable, IO::EAGAINWaitReadable
         # 入力が利用できない
-        return
+        return false
       rescue Errno::ENOTTY, Errno::ENODEV
         # ターミナルでない環境
-        return
+        return false
       end
 
       # コマンドモードがアクティブな場合は、エスケープシーケンス処理をスキップ
       # ESCキーをそのまま handle_command_input に渡す
       if @command_mode_active
         handle_command_input(input)
-        return
+        return true
       end
 
       # 特殊キーの処理（エスケープシーケンス）（コマンドモード外のみ）
@@ -967,12 +1062,15 @@ module Rufio
       end
 
       # キーバインドハンドラーに処理を委譲
-      @keybind_handler.handle_key(input) if input
+      result = @keybind_handler.handle_key(input) if input
 
-      # 終了処理（qキーのみ）
-      if input == 'q'
+      # 終了処理（qキーのみ、確認ダイアログの結果を確認）
+      if input == 'q' && result == true
         @running = false
       end
+
+      # 入力があったことを返す
+      true
     end
 
     def handle_input
@@ -1028,10 +1126,10 @@ module Rufio
       end
 
       # キーバインドハンドラーに処理を委譲
-      _result = @keybind_handler.handle_key(input)
+      result = @keybind_handler.handle_key(input)
 
-      # 終了処理（qキーのみ）
-      if input == 'q'
+      # 終了処理（qキーのみ、確認ダイアログの結果を確認）
+      if input == 'q' && result == true
         @running = false
       end
     end
