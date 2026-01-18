@@ -134,10 +134,11 @@ class TestDslCommandLoader < Minitest::Test
   end
 
   def test_load_with_syntax_error_returns_empty_array
+    # 実際のRuby構文エラー（閉じ括弧がない）
     dsl = <<~DSL
       command "broken" do
         script "#{@script_path}"
-        invalid syntax here
+        (unclosed
       end
     DSL
 
