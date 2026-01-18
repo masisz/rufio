@@ -3,9 +3,6 @@
 
 require_relative '../lib/rufio'
 
-# プラグインを読み込む
-Rufio::PluginManager.load_all
-
 # YJITを早期に有効化（引数をチェック）
 if ARGV.include?('--yjit') && defined?(RubyVM::YJIT)
   RubyVM::YJIT.enable
