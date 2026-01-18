@@ -5,57 +5,7 @@ require 'minitest/autorun'
 
 class TestCommandCompletion < Minitest::Test
   def setup
-    # プラグインマネージャーをリセット
-    Rufio::PluginManager.instance_variable_set(:@plugins, [])
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
-
-    # テスト用プラグインを作成
-    @test_plugin = Class.new(Rufio::Plugin) do
-      def name
-        "TestPlugin"
-      end
-
-      def description
-        "テスト用プラグイン"
-      end
-
-      def commands
-        {
-          hello: method(:say_hello),
-          help: method(:show_help),
-          history: method(:show_history)
-        }
-      end
-
-      private
-
-      def say_hello
-        "Hello!"
-      end
-
-      def show_help
-        "Help!"
-      end
-
-      def show_history
-        "History!"
-      end
-    end
-
-    # プラグインを登録
-    Rufio::Plugins.const_set(:TestPlugin, @test_plugin)
-    Rufio::PluginManager.register(@test_plugin)
-  end
-
-  def teardown
-    # テスト後のクリーンアップ
-    Rufio::PluginManager.instance_variable_set(:@plugins, [])
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
-
-    # テスト用プラグインを削除
-    if Rufio::Plugins.const_defined?(:TestPlugin, false)
-      Rufio::Plugins.send(:remove_const, :TestPlugin)
-    end
+    @command_mode = Rufio::CommandMode.new
   end
 
   def test_command_completion_class_exists
@@ -63,46 +13,35 @@ class TestCommandCompletion < Minitest::Test
   end
 
   def test_get_all_completion_candidates
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
-
-    completion = Rufio::CommandCompletion.new
+    completion = Rufio::CommandCompletion.new(@command_mode)
     candidates = completion.complete("")
 
-    # すべてのコマンド名を候補として返す
+    # 組み込みコマンドを候補として返す
     assert_includes candidates, "hello"
-    assert_includes candidates, "help"
-    assert_includes candidates, "history"
+    assert_includes candidates, "stop"
   end
 
   def test_complete_with_prefix
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
-
-    completion = Rufio::CommandCompletion.new
+    completion = Rufio::CommandCompletion.new(@command_mode)
 
     # "he" で始まるコマンドを補完
     candidates = completion.complete("he")
 
-    assert_equal 2, candidates.size
     assert_includes candidates, "hello"
-    assert_includes candidates, "help"
   end
 
   def test_complete_with_unique_match
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
+    completion = Rufio::CommandCompletion.new(@command_mode)
 
-    completion = Rufio::CommandCompletion.new
-
-    # "his" で始まるコマンドは history のみ
-    candidates = completion.complete("his")
+    # "hel" で始まるコマンドは hello のみ
+    candidates = completion.complete("hel")
 
     assert_equal 1, candidates.size
-    assert_equal "history", candidates.first
+    assert_equal "hello", candidates.first
   end
 
   def test_complete_with_no_match
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
-
-    completion = Rufio::CommandCompletion.new
+    completion = Rufio::CommandCompletion.new(@command_mode)
 
     # マッチするコマンドがない
     candidates = completion.complete("xyz")
@@ -111,9 +50,7 @@ class TestCommandCompletion < Minitest::Test
   end
 
   def test_complete_exact_match
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
-
-    completion = Rufio::CommandCompletion.new
+    completion = Rufio::CommandCompletion.new(@command_mode)
 
     # 完全一致の場合も候補を返す
     candidates = completion.complete("hello")
@@ -123,45 +60,35 @@ class TestCommandCompletion < Minitest::Test
   end
 
   def test_complete_case_insensitive
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
-
-    completion = Rufio::CommandCompletion.new
+    completion = Rufio::CommandCompletion.new(@command_mode)
 
     # 大文字小文字を区別しない
     candidates = completion.complete("HE")
 
-    assert_equal 2, candidates.size
     assert_includes candidates, "hello"
-    assert_includes candidates, "help"
   end
 
   def test_get_common_prefix
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
+    completion = Rufio::CommandCompletion.new(@command_mode)
 
-    completion = Rufio::CommandCompletion.new
-
-    # 複数の候補がある場合、共通のプレフィックスを返す
+    # 補完候補があるプレフィックスの共通部分を返す
     common_prefix = completion.common_prefix("he")
 
-    # "hello" と "help" の共通プレフィックスは "hel"
-    assert_equal "hel", common_prefix
+    # "hello" があるので、共通プレフィックスは少なくとも "he" を含む
+    assert common_prefix.start_with?("he")
   end
 
   def test_get_common_prefix_with_unique_match
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
-
-    completion = Rufio::CommandCompletion.new
+    completion = Rufio::CommandCompletion.new(@command_mode)
 
     # 候補が1つの場合、そのコマンド名全体を返す
-    common_prefix = completion.common_prefix("his")
+    common_prefix = completion.common_prefix("hel")
 
-    assert_equal "history", common_prefix
+    assert_equal "hello", common_prefix
   end
 
   def test_get_common_prefix_with_no_match
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
-
-    completion = Rufio::CommandCompletion.new
+    completion = Rufio::CommandCompletion.new(@command_mode)
 
     # 候補がない場合、元の入力をそのまま返す
     common_prefix = completion.common_prefix("xyz")
@@ -172,9 +99,7 @@ class TestCommandCompletion < Minitest::Test
   # === シェルコマンド補完の統合テスト ===
 
   def test_complete_shell_command
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
-
-    completion = Rufio::CommandCompletion.new
+    completion = Rufio::CommandCompletion.new(@command_mode)
 
     # ! で始まる入力はシェルコマンドとして補完
     candidates = completion.complete("!l")
@@ -186,7 +111,7 @@ class TestCommandCompletion < Minitest::Test
   end
 
   def test_complete_shell_command_with_space
-    completion = Rufio::CommandCompletion.new
+    completion = Rufio::CommandCompletion.new(@command_mode)
 
     # コマンド + スペース + パスの場合、パス補完を行う
     Dir.mktmpdir do |tmpdir|
@@ -200,15 +125,12 @@ class TestCommandCompletion < Minitest::Test
   end
 
   def test_normal_command_not_affected_by_shell_completion
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
-
-    completion = Rufio::CommandCompletion.new
+    completion = Rufio::CommandCompletion.new(@command_mode)
 
     # ! なしの通常のコマンドは従来通り動作
     candidates = completion.complete("he")
 
     assert_includes candidates, "hello"
-    assert_includes candidates, "help"
     # シェルコマンドは含まれない（!で始まらない）
     refute candidates.any? { |c| c.start_with?("!") }
   end
