@@ -4,18 +4,36 @@ module Rufio
   # DSLで定義されたコマンドを表すクラス
   class DslCommand
     attr_reader :name, :script, :description, :interpreter, :errors
+    attr_reader :ruby_block, :shell_command
 
     # コマンドを初期化する
     # @param name [String] コマンド名
-    # @param script [String] スクリプトパス
+    # @param script [String, nil] スクリプトパス
     # @param description [String] コマンドの説明
     # @param interpreter [String, nil] インタープリタ（nilの場合は自動検出）
-    def initialize(name:, script:, description: "", interpreter: nil)
+    # @param ruby_block [Proc, nil] inline Rubyブロック
+    # @param shell_command [String, nil] inline シェルコマンド
+    def initialize(name:, script: nil, description: "", interpreter: nil,
+                   ruby_block: nil, shell_command: nil)
       @name = name.to_s
-      @script = normalize_path(script.to_s)
+      @script = script ? normalize_path(script.to_s) : nil
       @description = description.to_s
       @interpreter = interpreter || auto_resolve_interpreter
+      @ruby_block = ruby_block
+      @shell_command = shell_command
       @errors = []
+    end
+
+    # コマンドタイプを返す
+    # @return [Symbol] :ruby, :shell, :script のいずれか
+    def command_type
+      if @ruby_block
+        :ruby
+      elsif @shell_command
+        :shell
+      else
+        :script
+      end
     end
 
     # コマンドが有効かどうかを検証する
@@ -23,7 +41,7 @@ module Rufio
     def valid?
       @errors = []
       validate_name
-      validate_script
+      validate_execution_source
       @errors.empty?
     end
 
@@ -36,12 +54,15 @@ module Rufio
     # ハッシュ表現を返す
     # @return [Hash]
     def to_h
-      {
+      hash = {
         name: @name,
         script: @script,
         description: @description,
         interpreter: @interpreter
       }
+      hash[:has_ruby_block] = true if @ruby_block
+      hash[:shell_command] = @shell_command if @shell_command
+      hash
     end
 
     private
@@ -67,7 +88,7 @@ module Rufio
     # 拡張子からインタープリタを自動検出する
     # @return [String, nil]
     def auto_resolve_interpreter
-      return nil if @script.empty?
+      return nil if @script.nil? || @script.empty?
 
       InterpreterResolver.resolve_from_path(@script)
     end
@@ -79,9 +100,14 @@ module Rufio
       end
     end
 
-    # スクリプトパスのバリデーション
-    def validate_script
-      if @script.empty?
+    # 実行ソースのバリデーション
+    # ruby_block, shell_command, script のいずれかが必要
+    def validate_execution_source
+      # ruby_block または shell_command がある場合はスクリプト不要
+      return if @ruby_block || @shell_command
+
+      # スクリプトパスのバリデーション
+      if @script.nil? || @script.empty?
         @errors << "Script path is required"
         return
       end

@@ -18,10 +18,6 @@ class TestDslIntegration < Minitest::Test
     @temp_dir = Dir.mktmpdir
     @temp_dir = File.realpath(@temp_dir)
 
-    # プラグインマネージャーをリセット
-    Rufio::PluginManager.instance_variable_set(:@plugins, [])
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
-
     # テスト用スクリプトを作成
     @hello_script = create_script("hello.rb", <<~RUBY)
       puts "Hello from DSL command!"
@@ -57,8 +53,6 @@ class TestDslIntegration < Minitest::Test
 
   def teardown
     FileUtils.remove_entry(@temp_dir) if @temp_dir && File.exist?(@temp_dir)
-    Rufio::PluginManager.instance_variable_set(:@plugins, [])
-    Rufio::PluginManager.instance_variable_set(:@enabled_plugins, nil)
   end
 
   def test_command_mode_loads_dsl_commands
@@ -97,46 +91,6 @@ class TestDslIntegration < Minitest::Test
     assert_kind_of Hash, result
     refute result[:success], "Failing DSL command should fail"
     assert_equal 1, result[:exit_code]
-  end
-
-  def test_plugin_and_dsl_commands_coexist
-    # プラグインコマンドを登録
-    test_plugin = Class.new(Rufio::Plugin) do
-      def name
-        "TestPlugin"
-      end
-
-      def description
-        "テスト用プラグイン"
-      end
-
-      def commands
-        {
-          plugin_cmd: method(:plugin_method)
-        }
-      end
-
-      private
-
-      def plugin_method
-        "Plugin result"
-      end
-    end
-
-    Rufio::Plugins.const_set(:TestDslPlugin, test_plugin) unless Rufio::Plugins.const_defined?(:TestDslPlugin)
-    Rufio::PluginManager.register(test_plugin)
-
-    command_mode = create_command_mode_with_dsl
-
-    commands = command_mode.available_commands
-
-    # プラグインコマンドとDSLコマンドの両方が利用可能
-    assert_includes commands, :plugin_cmd
-    assert_includes commands, :"hello-dsl"
-  ensure
-    if Rufio::Plugins.const_defined?(:TestDslPlugin, false)
-      Rufio::Plugins.send(:remove_const, :TestDslPlugin)
-    end
   end
 
   def test_command_mode_with_empty_dsl_config

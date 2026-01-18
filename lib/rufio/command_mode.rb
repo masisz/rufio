@@ -3,15 +3,15 @@
 require 'open3'
 
 module Rufio
-  # コマンドモード - プラグインコマンドとDSLコマンドを実行するためのインターフェース
+  # コマンドモード - DSLコマンドを実行するための統一インターフェース
+  # すべてのコマンドはDslCommandとして扱われる
   class CommandMode
     attr_accessor :background_executor
 
     def initialize(background_executor = nil)
       @commands = {}
-      @dsl_commands = {}
       @background_executor = background_executor
-      load_plugin_commands
+      load_builtin_commands
       load_dsl_commands
     end
 
@@ -40,62 +40,30 @@ module Rufio
       # コマンド名を取得 (前後の空白を削除)
       command_name = command_string.strip.to_sym
 
-      # DSLコマンドをチェック
-      if @dsl_commands.key?(command_name)
-        return execute_dsl_command(command_name)
-      end
-
-      # プラグインコマンドが存在するかチェック
-      unless @commands.key?(command_name)
+      # 統一されたコマンドストアから検索
+      command = @commands[command_name]
+      unless command
         return "⚠️  コマンドが見つかりません: #{command_name}"
       end
 
-      # バックグラウンドエグゼキュータが利用可能な場合は非同期実行
-      if @background_executor
-        command_method = @commands[command_name][:method]
-        command_display_name = command_name.to_s
-
-        if @background_executor.execute_ruby_async(command_display_name) do
-             command_method.call
-           end
-          return "🔄 バックグラウンドで実行中: #{command_display_name}"
-        else
-          return "⚠️  既にコマンドが実行中です"
-        end
-      end
-
-      # バックグラウンドエグゼキュータがない場合は同期実行
-      begin
-        command_method = @commands[command_name][:method]
-        command_method.call
-      rescue StandardError => e
-        "⚠️  コマンド実行エラー: #{e.message}"
-      end
+      # 統一された実行パス
+      execute_unified_command(command_name, command)
     end
 
     # 利用可能なコマンドのリストを取得
     def available_commands
-      @commands.keys + @dsl_commands.keys
+      @commands.keys
     end
 
     # コマンドの情報を取得
     def command_info(command_name)
-      # DSLコマンドをチェック
-      if @dsl_commands.key?(command_name)
-        dsl_cmd = @dsl_commands[command_name]
-        return {
-          name: command_name,
-          plugin: "dsl",
-          description: dsl_cmd.description
-        }
-      end
-
-      return nil unless @commands.key?(command_name)
+      command = @commands[command_name]
+      return nil unless command
 
       {
         name: command_name,
-        plugin: @commands[command_name][:plugin],
-        description: @commands[command_name][:description]
+        plugin: command[:source] || "dsl",
+        description: command[:command].description
       }
     end
 
@@ -110,18 +78,34 @@ module Rufio
                    loader.load
                  end
 
+      # ユーザーDSLコマンドは既存のコマンドを上書きする（優先度が高い）
       commands.each do |cmd|
-        @dsl_commands[cmd.name.to_sym] = cmd
+        @commands[cmd.name.to_sym] = {
+          command: cmd,
+          source: "dsl"
+        }
       end
     end
 
     private
 
-    # DSLコマンドを実行する
+    # 組み込みコマンドをロードする
+    def load_builtin_commands
+      builtin = BuiltinCommands.load
+      builtin.each do |name, cmd|
+        @commands[name] = {
+          command: cmd,
+          source: "builtin"
+        }
+      end
+    end
+
+    # 統一されたコマンド実行
     # @param command_name [Symbol] コマンド名
+    # @param command [Hash] コマンド情報 { command: DslCommand, source: String }
     # @return [Hash] 実行結果
-    def execute_dsl_command(command_name)
-      dsl_cmd = @dsl_commands[command_name]
+    def execute_unified_command(command_name, command)
+      dsl_cmd = command[:command]
 
       # バックグラウンドエグゼキュータが利用可能な場合は非同期実行
       if @background_executor
@@ -164,27 +148,6 @@ module Rufio
         { success: false, error: "コマンドが見つかりません: #{e.message}" }
       rescue StandardError => e
         { success: false, error: "コマンド実行エラー: #{e.message}" }
-      end
-    end
-
-    # プラグインからコマンドを読み込む
-    def load_plugin_commands
-      # 有効なプラグインを取得
-      enabled_plugins = PluginManager.enabled_plugins
-
-      # 各プラグインからコマンドを取得
-      enabled_plugins.each do |plugin|
-        plugin_name = plugin.name
-        plugin_commands = plugin.commands
-
-        # 各コマンドを登録
-        plugin_commands.each do |command_name, command_method|
-          @commands[command_name] = {
-            method: command_method,
-            plugin: plugin_name,
-            description: plugin.description
-          }
-        end
       end
     end
   end

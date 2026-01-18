@@ -6,7 +6,7 @@ Ruby製のターミナルベースファイルマネージャー
 
 ## 概要
 
-rufioは、Yaziにインスパイアされたターミナル上で動作するファイルマネージャーです。Rubyで実装されており、プラグインサポートを備えています。軽量で高速な操作性を提供し、ファイルの閲覧・管理・検索機能を備えています。
+rufioは、Yaziにインスパイアされたターミナル上で動作するファイルマネージャーです。Rubyで実装されており、DSLコマンドによる拡張機能を備えています。軽量で高速な操作性を提供し、ファイルの閲覧・管理・検索機能を備えています。
 
 ### 🚀 v0.33.0の重要な更新
 
@@ -20,12 +20,12 @@ rufioは、Yaziにインスパイアされたターミナル上で動作する�
 
 - **軽量でシンプル**: Rubyで書かれた軽量なファイルマネージャー
 - **直感的な操作**: Vimライクなキーバインド
-- **プラグインシステム**: 拡張可能なプラグインアーキテクチャ
+- **DSLコマンドシステム** (v0.50.0): 拡張可能なDSLベースのコマンド定義
 - **強力なコマンドモード** (v0.32.0):
   - シェルコマンド実行 (`!ls`, `!git status` など)
   - コマンド履歴（上下矢印キーでナビゲーション）
   - インテリジェントなTab補完（候補リスト表示）
-  - Rubyプラグインによる拡張可能なコマンド
+  - DSLコマンドによる拡張可能なコマンド
 - **バックグラウンドコマンド実行** (v0.33.0):
   - `:!command` でシェルコマンドを非同期実行
   - 実行中もrufioの操作が可能
@@ -249,9 +249,10 @@ rufio --help           # ヘルプメッセージを表示
 - 完了時に通知メッセージを3秒間表示
 - 実行結果は自動的に `~/.config/rufio/log/` に保存
 
-**Rubyコマンド** (v0.32.0):
+**DSLコマンド** (v0.50.0):
 ```
-:hello            # Hello プラグインを実行
+:hello            # Hello DSLコマンドを実行
+:stop             # rufioを終了
 ```
 
 #### ログビューワ (v0.33.0)
@@ -507,7 +508,7 @@ apt install zoxide
 
 #### 利用可能なコマンド
 
-コマンドはプラグインによって提供されます。プラグインシステムの詳細については後述の「プラグインシステム」セクションを参照してください。
+コマンドはDSLで定義されます。DSLコマンドシステムの詳細については後述の「DSLコマンドシステム」セクションを参照してください。
 
 ### 必要な外部ツール
 
@@ -589,188 +590,93 @@ COLORS = {
 - `selected`: 選択中の項目の色
 - `preview`: プレビューパネルの色
 
-## プラグインシステム
+## DSLコマンドシステム
 
-rufioは拡張可能なプラグインシステムを備えており、独自の機能を簡単に追加できます。
+rufioはDSLベースのコマンドシステムを備えており、独自のコマンドを簡単に追加できます。
 
-### プラグインの配置場所
+### コマンド定義ファイル
 
-#### 1. 本体同梱プラグイン
+ユーザー定義コマンドは以下のファイルに記述します:
+
 ```
-lib/rufio/plugins/*.rb
+~/.config/rufio/commands.rb
 ```
-rufioに標準で含まれるプラグイン。外部gem依存なしの基本機能を提供。
 
-#### 2. ユーザープラグイン
-```
-~/.rufio/plugins/*.rb
-```
-ユーザーが自由に追加できるプラグイン。GitHub GistやrawURLから取得可能。
+### コマンドの作成方法
 
-### プラグインの作成方法
-
-#### シンプルなプラグイン例
+#### Rubyコードを実行するコマンド
 
 ```ruby
-# ~/.rufio/plugins/hello.rb
-module Rufio
-  module Plugins
-    class Hello < Plugin
-      def name
-        'Hello'
-      end
+# ~/.config/rufio/commands.rb
+command "hello" do
+  ruby { "Hello from rufio!" }
+  description "挨拶コマンド"
+end
 
-      def description
-        'シンプルな挨拶プラグイン'
-      end
-
-      def commands
-        {
-          hello: method(:say_hello)
-        }
-      end
-
-      private
-
-      def say_hello
-        "Hello from rufio!"
-      end
-    end
-  end
+command "time" do
+  ruby { Time.now.strftime("%Y-%m-%d %H:%M:%S") }
+  description "現在時刻を表示"
 end
 ```
 
-**プラグインの使い方:**
+#### シェルコマンドを実行するコマンド
+
+```ruby
+command "status" do
+  shell "git status"
+  description "Gitステータスを表示"
+end
+
+command "disk" do
+  shell "df -h"
+  description "ディスク使用量を表示"
+end
+```
+
+#### 外部スクリプトを実行するコマンド
+
+```ruby
+command "build" do
+  script "~/.config/rufio/scripts/build.rb"
+  description "プロジェクトをビルド"
+end
+```
+
+### コマンドの使い方
 
 1. rufioを起動
 2. `:`キーでコマンドモードを起動
-3. `hello`と入力（または`he`と入力してTabキーで補完）
+3. コマンド名を入力（または一部を入力してTabキーで補完）
 4. Enterキーで実行
-5. フローティングウィンドウに"Hello from rufio!"が表示される
+5. フローティングウィンドウに結果が表示される
 
-#### 外部gemに依存するプラグイン例
+### 組み込みコマンド
 
-```ruby
-# ~/.rufio/plugins/ai_helper.rb
-module Rufio
-  module Plugins
-    class AiHelper < Plugin
-      requires 'anthropic'  # 依存gem宣言
+rufioには以下のコマンドがデフォルトで組み込まれています:
 
-      def name
-        'AiHelper'
-      end
+| コマンド | 説明 |
+| -------- | ---- |
+| `hello`  | 挨拶メッセージを表示 |
+| `stop`   | rufioを終了 |
+| `touch`  | ファイルを作成 |
+| `mkdir`  | ディレクトリを作成 |
 
-      def description
-        'Claude APIを使ったAIアシスタント'
-      end
+### DSLコマンドの種類
 
-      def commands
-        {
-          ai: method(:ask_ai)
-        }
-      end
+1. **ruby**: Rubyコードをインラインで実行
+2. **shell**: シェルコマンドを実行
+3. **script**: 外部スクリプトファイルを実行
 
-      def initialize
-        super  # 依存チェック実行
-        @client = Anthropic::Client.new(
-          api_key: ENV['ANTHROPIC_API_KEY']
-        )
-      end
+### 設定ファイル構成
 
-      private
-
-      def ask_ai
-        response = @client.messages.create(
-          model: "claude-3-5-sonnet-20241022",
-          max_tokens: 1024,
-          messages: [{role: "user", content: "Hello, Claude!"}]
-        )
-        response.content.first.text
-      end
-    end
-  end
-end
 ```
-
-**プラグインの使い方:**
-
-1. 依存gemをインストール: `gem install anthropic`
-2. 環境変数を設定: `export ANTHROPIC_API_KEY=your_api_key`
-3. rufioを起動
-4. `:`キーでコマンドモードを起動
-5. `ai`と入力してEnterキーで実行
-6. フローティングウィンドウにClaude APIからの応答が表示される
-
-### プラグインの管理
-
-#### プラグインの有効/無効設定
-
-`~/.rufio/config.yml`でプラグインの有効/無効を制御できます：
-
-```yaml
-plugins:
-  fileoperations:
-    enabled: true
-  ai_helper:
-    enabled: true
-  my_custom:
-    enabled: false
+~/.config/rufio/
+├── config.rb         # カラー設定
+├── commands.rb       # DSLコマンド定義
+├── bookmarks.json    # ブックマーク
+├── scripts/          # スクリプトファイル
+└── log/              # 実行ログ
 ```
-
-#### デフォルト動作
-
-- `config.yml`が存在しない → 全プラグイン有効
-- プラグインの設定がない → 有効とみなす
-- `enabled: false`が明示的に設定されている → 無効
-
-### プラグインの配布方法
-
-#### GitHub Gistで共有
-
-```bash
-# プラグイン作者
-1. GitHub Gistに.rbファイルをアップロード
-2. Raw URLをユーザーに共有
-
-# ユーザー
-$ mkdir -p ~/.rufio/plugins
-$ curl -o ~/.rufio/plugins/my_plugin.rb [RAW_URL]
-$ rufio
-✓ my_plugin 読み込み完了
-```
-
-#### GitHubリポジトリで共有
-
-```bash
-# プラグイン作者
-rufio-plugins/
-  ├── plugin1.rb
-  └── plugin2.rb
-
-# ユーザー
-$ curl -o ~/.rufio/plugins/plugin1.rb https://raw.githubusercontent.com/user/rufio-plugins/main/plugin1.rb
-```
-
-### プラグインの主要機能
-
-#### 必須メソッド
-
-- `name`: プラグイン名（必須）
-- `description`: プラグインの説明（オプション、デフォルト: ""）
-- `version`: プラグインのバージョン（オプション、デフォルト: "1.0.0"）
-- `commands`: コマンド定義（オプション、デフォルト: {}）
-
-#### 依存gem管理
-
-- `requires 'gem_name'`: 依存gemを宣言
-- 依存gemが不足している場合、警告を表示してプラグインを無効化
-- rufio本体は正常に起動継続
-
-#### 自動登録機能
-
-- `Plugin`クラスを継承すると自動的に`PluginManager`に登録
-- 複雑な登録処理は不要
 
 ## 開発
 

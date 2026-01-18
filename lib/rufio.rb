@@ -21,16 +21,12 @@ require_relative "rufio/application"
 require_relative "rufio/file_opener"
 require_relative "rufio/health_checker"
 
-# プラグインシステム
-require_relative "rufio/plugin_config"
-require_relative "rufio/plugin"
-require_relative "rufio/plugin_manager"
-
 # DSLコマンドシステム
 require_relative "rufio/interpreter_resolver"
 require_relative "rufio/dsl_command"
 require_relative "rufio/script_executor"
 require_relative "rufio/dsl_command_loader"
+require_relative "rufio/builtin_commands"
 
 require_relative "rufio/command_mode"
 require_relative "rufio/command_mode_ui"
@@ -51,9 +47,6 @@ require_relative "rufio/renderer"
 require_relative "rufio/project_mode"
 require_relative "rufio/project_command"
 require_relative "rufio/project_log"
-
-# プラグインをロード
-Rufio::PluginManager.load_all
 
 module Rufio
   class Error < StandardError; end

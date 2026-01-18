@@ -123,9 +123,11 @@ module Rufio
     class CommandBuilder
       def initialize(name)
         @name = name
-        @script = ""
+        @script = nil
         @description = ""
         @interpreter = nil
+        @ruby_block = nil
+        @shell_command = nil
       end
 
       def script(path)
@@ -140,12 +142,24 @@ module Rufio
         @interpreter = interp
       end
 
+      # inline Rubyブロックを定義
+      def ruby(&block)
+        @ruby_block = block
+      end
+
+      # inline シェルコマンドを定義
+      def shell(command)
+        @shell_command = command
+      end
+
       def build
         DslCommand.new(
           name: @name,
           script: @script,
           description: @description,
-          interpreter: @interpreter
+          interpreter: @interpreter,
+          ruby_block: @ruby_block,
+          shell_command: @shell_command
         )
       end
 
