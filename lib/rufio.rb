@@ -25,6 +25,13 @@ require_relative "rufio/health_checker"
 require_relative "rufio/plugin_config"
 require_relative "rufio/plugin"
 require_relative "rufio/plugin_manager"
+
+# DSLコマンドシステム
+require_relative "rufio/interpreter_resolver"
+require_relative "rufio/dsl_command"
+require_relative "rufio/script_executor"
+require_relative "rufio/dsl_command_loader"
+
 require_relative "rufio/command_mode"
 require_relative "rufio/command_mode_ui"
 require_relative "rufio/command_history"
