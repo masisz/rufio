@@ -3,12 +3,13 @@
 require 'open3'
 
 module Rufio
-  # コマンドモード - プラグインコマンドを実行するためのインターフェース
+  # コマンドモード - プラグインコマンドとDSLコマンドを実行するためのインターフェース
   class CommandMode
     attr_accessor :background_executor
 
     def initialize(background_executor = nil)
       @commands = {}
+      @dsl_commands = {}
       @background_executor = background_executor
       load_plugin_commands
     end
@@ -38,7 +39,12 @@ module Rufio
       # コマンド名を取得 (前後の空白を削除)
       command_name = command_string.strip.to_sym
 
-      # コマンドが存在するかチェック
+      # DSLコマンドをチェック
+      if @dsl_commands.key?(command_name)
+        return execute_dsl_command(command_name)
+      end
+
+      # プラグインコマンドが存在するかチェック
       unless @commands.key?(command_name)
         return "⚠️  コマンドが見つかりません: #{command_name}"
       end
@@ -68,11 +74,21 @@ module Rufio
 
     # 利用可能なコマンドのリストを取得
     def available_commands
-      @commands.keys
+      @commands.keys + @dsl_commands.keys
     end
 
     # コマンドの情報を取得
     def command_info(command_name)
+      # DSLコマンドをチェック
+      if @dsl_commands.key?(command_name)
+        dsl_cmd = @dsl_commands[command_name]
+        return {
+          name: command_name,
+          plugin: "dsl",
+          description: dsl_cmd.description
+        }
+      end
+
       return nil unless @commands.key?(command_name)
 
       {
@@ -82,7 +98,45 @@ module Rufio
       }
     end
 
+    # DSLコマンドをロードする
+    # @param paths [Array<String>, nil] 設定ファイルのパス配列（nilの場合はデフォルトパス）
+    def load_dsl_commands(paths = nil)
+      loader = DslCommandLoader.new
+
+      commands = if paths
+                   loader.load_from_paths(paths)
+                 else
+                   loader.load
+                 end
+
+      commands.each do |cmd|
+        @dsl_commands[cmd.name.to_sym] = cmd
+      end
+    end
+
     private
+
+    # DSLコマンドを実行する
+    # @param command_name [Symbol] コマンド名
+    # @return [Hash] 実行結果
+    def execute_dsl_command(command_name)
+      dsl_cmd = @dsl_commands[command_name]
+
+      # バックグラウンドエグゼキュータが利用可能な場合は非同期実行
+      if @background_executor
+        command_display_name = command_name.to_s
+        if @background_executor.execute_ruby_async(command_display_name) do
+             ScriptExecutor.execute_command(dsl_cmd)
+           end
+          return "🔄 バックグラウンドで実行中: #{command_display_name}"
+        else
+          return "⚠️  既にコマンドが実行中です"
+        end
+      end
+
+      # 同期実行
+      ScriptExecutor.execute_command(dsl_cmd)
+    end
 
     # シェルコマンドを実行する
     def execute_shell_command(shell_command)
