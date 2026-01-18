@@ -12,6 +12,7 @@ module Rufio
       @dsl_commands = {}
       @background_executor = background_executor
       load_plugin_commands
+      load_dsl_commands
     end
 
     # コマンドを実行する
