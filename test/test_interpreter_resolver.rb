@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "test_helper"
+require_relative "../lib/rufio/interpreter_resolver"
 require "minitest/autorun"
 
 class TestInterpreterResolver < Minitest::Test
