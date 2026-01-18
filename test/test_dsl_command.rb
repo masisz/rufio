@@ -13,6 +13,9 @@ class TestDslCommand < Minitest::Test
     @test_script = File.join(@temp_dir, "test_script.rb")
     File.write(@test_script, "#!/usr/bin/env ruby\nputs 'hello'")
     File.chmod(0o755, @test_script)
+    # macOSでは/var → /private/varにrealpathで変換されるため正規化
+    @test_script = File.realpath(@test_script)
+    @temp_dir = File.realpath(@temp_dir)
   end
 
   def teardown
@@ -99,7 +102,7 @@ class TestDslCommand < Minitest::Test
     )
 
     refute cmd.valid?
-    assert cmd.errors.any? { |e| e.include?("script") }
+    assert cmd.errors.any? { |e| e.downcase.include?("script") }
   end
 
   def test_command_with_non_executable_script_is_valid
