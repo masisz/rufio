@@ -43,10 +43,14 @@ require_relative "rufio/parallel_scanner"
 require_relative "rufio/screen"
 require_relative "rufio/renderer"
 
-# プロジェクトモード
-require_relative "rufio/project_mode"
-require_relative "rufio/project_command"
-require_relative "rufio/project_log"
+# ジョブ管理システム
+require_relative "rufio/task_status"
+require_relative "rufio/notification_manager"
+require_relative "rufio/job_manager"
+require_relative "rufio/job_mode"
+require_relative "rufio/script_runner"
+require_relative "rufio/script_path_manager"
+require_relative "rufio/script_config_loader"
 
 module Rufio
   class Error < StandardError; end

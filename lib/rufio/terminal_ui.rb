@@ -53,15 +53,14 @@ module Rufio
       history_file = File.join(Dir.home, '.rufio', 'command_history.txt')
       FileUtils.mkdir_p(File.dirname(history_file))
       @command_history = CommandHistory.new(history_file, max_size: ConfigLoader.command_history_size)
-      @command_completion = CommandCompletion.new(@command_history)
+      @command_completion = CommandCompletion.new(@command_history, @command_mode)
 
-      # Project mode
-      @project_mode = nil
-      @project_command = nil
-      @project_log = nil
-      @in_project_mode = false
-      @in_log_mode = false
-      @project_mode_needs_redraw = false
+      # Job mode
+      @job_mode_instance = nil
+      @job_manager = nil
+      @notification_manager = nil
+      @in_job_mode = false
+      @job_mode_needs_redraw = false
 
       # Preview cache
       @preview_cache = {}
@@ -87,6 +86,9 @@ module Rufio
 
       # コマンドモードにバックグラウンドエグゼキュータを設定
       @command_mode.background_executor = @background_executor if @background_executor
+
+      # スクリプトランナーを設定（ジョブモードと連携）
+      setup_script_runner
 
       @running = true
       setup_terminal
@@ -119,13 +121,28 @@ module Rufio
         # レンダラーの前フレーム情報をリセット（差分レンダリングを強制的に全体描画にする）
         @renderer.clear
         @screen.clear
-        # プロジェクトモードの場合は再描画フラグを立てる
-        @project_mode_needs_redraw = true if @in_project_mode
         draw_screen_to_buffer(@screen, nil, nil)
         @renderer.render(@screen)
         # カーソルを画面外に移動
         print "\e[#{@screen_height};#{@screen_width}H"
       end
+    end
+
+    # スクリプトランナーを設定
+    def setup_script_runner
+      return unless @keybind_handler
+
+      # KeybindHandlerからジョブマネージャーを取得
+      job_manager = @keybind_handler.job_manager
+
+      # 設定からスクリプトパスを取得
+      script_paths = ConfigLoader.script_paths
+
+      # CommandModeにスクリプトランナーを設定
+      @command_mode.setup_script_runner(
+        script_paths: script_paths,
+        job_manager: job_manager
+      )
     end
 
     private
@@ -311,9 +328,9 @@ module Rufio
       # move cursor to top of screen (don't clear)
       print "\e[H"
 
-      # プロジェクトモードの場合は専用の画面を描画
-      if @in_project_mode
-        draw_project_mode_screen
+      # ジョブモードの場合は専用の画面を描画
+      if @in_job_mode
+        draw_job_mode_screen
         return
       end
 
@@ -347,19 +364,18 @@ module Rufio
         # move cursor to invisible position
         print "\e[#{@screen_height};#{@screen_width}H"
       end
+
+      # 通知を描画（右上にオーバーレイ）
+      draw_notifications
     end
 
     # Phase 3: Screenバッファに描画する新しいメソッド
     def draw_screen_to_buffer(screen, notification_message = nil, fps = nil)
-      # プロジェクトモードの場合は既存の描画メソッドを使用（Phase 3では未実装）
-      if @in_project_mode
-        # プロジェクトモード用のバッファ描画は今後実装予定
-        # 現在は既存のdraw_project_mode_screenを直接呼び出す
-        # 注: レンダラーのクリアは状態遷移時のみ行う（set_project_mode等）
-        # ちらつき防止: 再描画が必要な時だけ描画
-        if @project_mode_needs_redraw
-          draw_project_mode_screen
-          @project_mode_needs_redraw = false
+      # ジョブモードの場合は既存の描画メソッドを使用
+      if @in_job_mode
+        if @job_mode_needs_redraw
+          draw_job_mode_screen
+          @job_mode_needs_redraw = false
         end
         return
       end
@@ -901,8 +917,14 @@ module Rufio
         end
         bookmark_text = bookmark_parts.join(" ")
 
-        # 右側の情報: コマンド実行ランプ | FPS（test modeの時のみ）| ?:help
+        # 右側の情報: ジョブ数 | コマンド実行ランプ | FPS（test modeの時のみ）| ?:help
         right_parts = []
+
+        # ジョブ数を表示（ジョブがある場合のみ）
+        if @keybind_handler.has_jobs?
+          job_text = @keybind_handler.job_status_bar_text
+          right_parts << "[#{job_text}]" if job_text
+        end
 
         # バックグラウンドコマンドの実行状態をランプで表示
         if @background_executor
@@ -1154,11 +1176,6 @@ module Rufio
       @command_mode_active
     end
 
-    # プロジェクトモードの再描画をトリガー
-    def trigger_project_mode_redraw
-      @project_mode_needs_redraw = true if @in_project_mode
-    end
-
     # コマンド入力を処理
     def handle_command_input(input)
       case input
@@ -1204,7 +1221,10 @@ module Rufio
       # コマンド履歴に追加
       @command_history.add(command_string)
 
-      result = @command_mode.execute(command_string)
+      # 現在のディレクトリを取得
+      working_dir = @directory_listing&.current_path || Dir.pwd
+
+      result = @command_mode.execute(command_string, working_dir: working_dir)
 
       # バックグラウンドコマンドの場合は結果表示をスキップ
       # (完了通知は別途メインループで表示される)
@@ -1214,12 +1234,7 @@ module Rufio
       end
 
       # 画面を再描画
-      if @in_project_mode
-        # プロジェクトモードの場合は再描画フラグを立てる
-        @project_mode_needs_redraw = true
-      else
-        draw_screen
-      end
+      draw_screen
     end
 
     # Tab補完を処理
@@ -1297,12 +1312,7 @@ module Rufio
       @dialog_renderer.clear_area(x, y, width, height)
 
       # 画面を再描画
-      if @in_project_mode
-        # プロジェクトモードの場合は再描画フラグを立てる
-        @project_mode_needs_redraw = true
-      else
-        draw_screen
-      end
+      draw_screen
     end
 
     # Show info notices from the info directory if any are unread
@@ -1354,35 +1364,37 @@ module Rufio
       @dialog_renderer.clear_area(x, y, width, height)
 
       # Redraw the screen
-      if @in_project_mode
-        # プロジェクトモードの場合は再描画フラグを立てる
-        @project_mode_needs_redraw = true
-      else
-        draw_screen
-      end
+      draw_screen
     end
 
-    # プロジェクトモードを設定
-    def set_project_mode(project_mode, project_command, project_log)
-      @project_mode = project_mode
-      @project_command = project_command
-      @project_log = project_log
-      @in_project_mode = true
-      @in_log_mode = false
+    # ログモードに入る（廃止済み: 空のメソッド）
+    def enter_log_mode(_project_log)
+      # プロジェクトモード廃止により何もしない
+    end
+
+    # ログモードを終了（廃止済み: 空のメソッド）
+    def exit_log_mode
+      # プロジェクトモード廃止により何もしない
+    end
+
+    # ジョブモードを設定
+    def set_job_mode(job_mode, job_manager, notification_manager)
+      @job_mode_instance = job_mode
+      @job_manager = job_manager
+      @notification_manager = notification_manager
+      @in_job_mode = true
       # 画面を一度クリアしてレンダラーをリセット
       print "\e[2J\e[H"
       @renderer.clear if @renderer
       # 再描画フラグを立てる
-      @project_mode_needs_redraw = true
+      @job_mode_needs_redraw = true
     end
 
-    # プロジェクトモードを終了
-    def exit_project_mode
-      @in_project_mode = false
-      @in_log_mode = false
-      @project_mode = nil
-      @project_command = nil
-      @project_log = nil
+    # ジョブモードを終了
+    def exit_job_mode
+      @in_job_mode = false
+      @job_mode_instance = nil
+      @job_manager = nil
       # バッファベースの全画面再描画を使用
       update_screen_size
       print "\e[2J\e[H"
@@ -1397,288 +1409,139 @@ module Rufio
       end
     end
 
-    # ログモードに入る
-    def enter_log_mode(project_log)
-      @in_log_mode = true
-      @project_log = project_log
-      # 画面を一度クリアしてレンダラーをリセット
-      print "\e[2J\e[H"
-      @renderer.clear if @renderer
-      # 再描画フラグを立てる
-      @project_mode_needs_redraw = true
+    # ジョブモード再描画をトリガー
+    def trigger_job_mode_redraw
+      @job_mode_needs_redraw = true
     end
 
-    # プロジェクトモード画面を描画
-    def draw_project_mode_screen
-      # header
-      print "\e[1;1H"  # Move to top-left
-      header = @in_log_mode ? "📋 Project Mode - Logs" : "📁 Project Mode - Bookmarks"
-      print "\e[44m\e[97m#{header.ljust(@screen_width)}\e[0m\n"
-      print "\e[0m#{' ' * @screen_width}\n"
+    # ジョブモード画面を描画
+    def draw_job_mode_screen
+      return unless @in_job_mode && @job_mode_instance && @job_manager
 
-      # calculate dimensions
-      content_height = @screen_height - HEADER_FOOTER_MARGIN
-      left_width = (@screen_width * LEFT_PANEL_RATIO).to_i
-      right_width = @screen_width - left_width
+      # ヘッダー
+      job_count = @job_manager.job_count
+      header = "Running Jobs (#{job_count})"
+      header_line = header.center(@screen_width)
+      print "\e[1;1H\e[1;36m#{header_line}\e[0m"
 
-      if @in_log_mode
-        # ログモード: ログファイル一覧と内容
-        draw_log_list(left_width, content_height)
-        draw_log_preview(right_width, content_height, left_width)
-      else
-        # ブックマークモード: プロジェクト一覧と詳細
-        draw_bookmark_list(left_width, content_height)
-        draw_bookmark_detail(right_width, content_height, left_width)
-      end
+      # 区切り線
+      separator = "━" * @screen_width
+      print "\e[2;1H\e[36m#{separator}\e[0m"
 
-      # footer（通常モードと同じスタイル）
-      footer_line = @screen_height
-      print "\e[#{footer_line};1H"
-      footer_text = if @in_log_mode
-        "ESC:exit log j/k:move"
-      else
-        "SPACE:select l:logs ::cmd r:rename d:delete ESC:exit j/k:move"
-      end
-      # 文字列を確実に画面幅に合わせる
-      footer_content = footer_text.ljust(@screen_width)[0...@screen_width]
-      print "\e[7m#{footer_content}\e[0m"
+      # ジョブ一覧
+      jobs = @job_manager.jobs
+      selected_index = @job_mode_instance.selected_index
 
-      # move cursor to invisible position
-      print "\e[#{@screen_height};#{@screen_width}H"
-    end
+      jobs.each_with_index do |job, i|
+        line_num = i + 3
+        break if line_num >= @screen_height - 2
 
-    # ブックマーク一覧を描画
-    def draw_bookmark_list(width, height)
-      bookmarks = @project_mode.list_bookmarks
-      current_index = @keybind_handler.current_index
+        # ステータスアイコン
+        icon = job.status_icon
+        icon_color = case job.status
+                     when :running then "\e[33m"  # Yellow
+                     when :completed then "\e[32m"  # Green
+                     when :failed then "\e[31m"  # Red
+                     else "\e[37m"  # White
+                     end
 
-      print "\e[#{CONTENT_START_LINE};1H"
+        # ジョブ名とパス
+        name = job.name
+        path = "(#{job.path})"
+        duration = job.formatted_duration
+        duration_text = duration.empty? ? "" : "[#{duration}]"
 
-      if bookmarks.empty?
-        print "  No bookmarks found"
-        (height - 1).times { puts ' ' * width }
-        return
-      end
+        # ステータステキスト
+        status_text = case job.status
+                      when :running then "Running"
+                      when :completed then "Done"
+                      when :failed then "Failed"
+                      when :waiting then "Waiting"
+                      when :cancelled then "Cancelled"
+                      else ""
+                      end
 
-      selected_name = @project_mode.selected_name
+        # 行を構築
+        line_content = "#{icon} #{name} #{path}".ljust(40)
+        line_content += "#{duration_text.ljust(12)} #{status_text}"
+        line_content = line_content[0...@screen_width - 1].ljust(@screen_width - 1)
 
-      bookmarks.each_with_index do |bookmark, index|
-        line_num = CONTENT_START_LINE + index
-        break if index >= height
-
-        # 選択マーク（通常モードと同じ）
-        is_project_selected = (bookmark[:name] == selected_name)
-        selection_mark = is_project_selected ? "✓ " : "  "
-
-        # ブックマーク名を表示（番号付き）
-        number = index + 1  # 1-based index
-        name = bookmark[:name]
-        max_name_length = width - 8  # selection_mark(2) + number(1-2) + ". "(2) + padding
-        display_name = name.length > max_name_length ? name[0...max_name_length - 3] + '...' : name
-        line_content = "#{selection_mark}#{number}. #{display_name}".ljust(width)
-
-        if index == current_index
-          # カーソル位置は選択色でハイライト
-          selected_color = ColorHelper.color_to_selected_ansi(ConfigLoader.colors[:selected])
-          print "\e[#{line_num};1H#{selected_color}#{line_content[0...width]}#{ColorHelper.reset}"
+        # 選択状態の場合はハイライト
+        if i == selected_index
+          print "\e[#{line_num};1H\e[7m#{icon_color}#{line_content}\e[0m"
         else
-          # 選択済みブックマークは緑背景、黒文字
-          if is_project_selected
-            print "\e[#{line_num};1H\e[42m\e[30m#{line_content[0...width]}\e[0m"
-          else
-            print "\e[#{line_num};1H#{line_content[0...width]}"
-          end
+          print "\e[#{line_num};1H#{icon_color}#{line_content}\e[0m"
         end
       end
 
-      # 残りの行をクリア
-      remaining_lines = height - bookmarks.length
-      remaining_lines.times do |i|
-        line_num = CONTENT_START_LINE + bookmarks.length + i
-        print "\e[#{line_num};1H#{' ' * width}"
+      # 空行をクリア
+      ((jobs.length + 3)...(@screen_height - 2)).each do |line_num|
+        print "\e[#{line_num};1H#{' ' * @screen_width}"
       end
+
+      # フッター
+      footer_line = @screen_height - 1
+      footer_separator = "━" * @screen_width
+      print "\e[#{footer_line};1H\e[36m#{footer_separator}\e[0m"
+
+      # ヘルプライン
+      help_line = @screen_height
+      help_text = "[Space] View Log | [x] Cancel | [Esc] Back to Files"
+      help_content = help_text.center(@screen_width)
+      print "\e[#{help_line};1H\e[7m#{help_content}\e[0m"
+
+      STDOUT.flush
+      @job_mode_needs_redraw = false
     end
 
-    # ブックマーク詳細を描画
-    def draw_bookmark_detail(width, height, left_offset)
-      bookmarks = @project_mode.list_bookmarks
-      current_index = @keybind_handler.current_index
+    # Noice風の通知を描画
+    def draw_notifications
+      nm = @notification_manager || @keybind_handler&.notification_manager
+      return unless nm
 
-      return if bookmarks.empty? || current_index >= bookmarks.length
+      # 期限切れの通知を削除
+      nm.expire_old_notifications
 
-      bookmark = bookmarks[current_index]
-      path = bookmark[:path]
+      notifications = nm.notifications
+      return if notifications.empty?
 
-      # ディレクトリ内容を取得
-      details = [
-        "Project: #{bookmark[:name]}",
-        "Path: #{path}",
-        "",
-        "Directory contents:",
-        ""
-      ]
+      # 通知の幅と位置
+      notification_width = 22
+      x = @screen_width - notification_width - 2  # 右端から2文字マージン
 
-      # ディレクトリが存在する場合、内容を表示
-      if Dir.exist?(path)
-        begin
-          entries = Dir.entries(path).reject { |e| e == '.' || e == '..' }.sort
+      notifications.each_with_index do |notif, i|
+        y = 2 + (i * 5)  # 各通知4行 + 間隔1行
 
-          # 最大表示数を計算（ヘッダー分を引く）
-          max_entries = height - details.length
+        # 色設定
+        border_color = notif[:border_color] == :green ? "\e[32m" : "\e[31m"
+        reset = "\e[0m"
 
-          entries.take(max_entries).each do |entry|
-            full_path = File.join(path, entry)
-            icon = File.directory?(full_path) ? '📁' : '📄'
-            details << "  #{icon} #{entry}"
-          end
+        # ステータスアイコン
+        icon = notif[:type] == :success ? '✓' : '✗'
 
-          # 表示しきれない場合
-          if entries.length > max_entries
-            details << "  ... and #{entries.length - max_entries} more"
-          end
-        rescue => e
-          details << "  Error reading directory: #{e.message}"
-        end
-      else
-        details << "  Directory does not exist"
-      end
+        # 通知の内容を作成
+        name_line = "#{icon} #{notif[:name]}"[0...notification_width - 4]
+        status_line = notif[:status_text][0...notification_width - 4]
 
-      # 各行にセパレータと内容を表示（通常モードと同じ）
-      height.times do |i|
-        line_num = CONTENT_START_LINE + i
+        # 上部ボーダー
+        print "\e[#{y};#{x}H#{border_color}╭#{'─' * (notification_width - 2)}╮#{reset}"
 
-        # セパレータを表示
-        cursor_position = left_offset + CURSOR_OFFSET
-        print "\e[#{line_num};#{cursor_position}H"
-        print '│'
+        # 1行目: アイコン + 名前
+        print "\e[#{y + 1};#{x}H#{border_color}│#{reset} #{name_line.ljust(notification_width - 4)} #{border_color}│#{reset}"
 
-        # 右画面の内容を表示
-        if i < details.length
-          line = details[i]
-          safe_width = width - 2
-          content = " #{line}"
-          content = content[0...safe_width] if content.length > safe_width
-          print content
+        # 2行目: ステータス
+        print "\e[#{y + 2};#{x}H#{border_color}│#{reset}   #{status_line.ljust(notification_width - 6)} #{border_color}│#{reset}"
 
-          # 残りをスペースで埋める
-          remaining = safe_width - content.length
-          print ' ' * remaining if remaining > 0
+        # Exit code行（失敗時のみ）
+        if notif[:type] == :error && notif[:exit_code]
+          exit_line = "Exit code: #{notif[:exit_code]}"[0...notification_width - 6]
+          print "\e[#{y + 3};#{x}H#{border_color}│#{reset}   #{exit_line.ljust(notification_width - 6)} #{border_color}│#{reset}"
+          print "\e[#{y + 4};#{x}H#{border_color}╰#{'─' * (notification_width - 2)}╯#{reset}"
         else
-          # 空行
-          print ' ' * (width - 2)
+          # 下部ボーダー
+          print "\e[#{y + 3};#{x}H#{border_color}╰#{'─' * (notification_width - 2)}╯#{reset}"
         end
       end
-    end
-
-    # ログファイル一覧を描画
-    def draw_log_list(width, height)
-      log_files = @project_log.list_log_files
-      current_index = @keybind_handler.current_index
-
-      print "\e[#{CONTENT_START_LINE};1H"
-
-      if log_files.empty?
-        print "  No log files found"
-        (height - 1).times { puts ' ' * width }
-        return
-      end
-
-      log_files.each_with_index do |filename, index|
-        line_num = CONTENT_START_LINE + index
-        break if index >= height
-
-        cursor_mark = index == current_index ? '>' : ' '
-        display_name = filename.ljust(width - 3)
-
-        if index == current_index
-          print "\e[#{line_num};1H\e[7m#{cursor_mark} #{display_name[0...width-3]}\e[0m"
-        else
-          print "\e[#{line_num};1H #{display_name[0...width-3]}"
-        end
-      end
-
-      # 残りの行をクリア
-      remaining_lines = height - log_files.length
-      remaining_lines.times do |i|
-        line_num = CONTENT_START_LINE + log_files.length + i
-        print "\e[#{line_num};1H#{' ' * width}"
-      end
-    end
-
-    # ログプレビューを描画
-    def draw_log_preview(width, height, left_offset)
-      log_files = @project_log.list_log_files
-      current_index = @keybind_handler.current_index
-
-      return if log_files.empty? || current_index >= log_files.length
-
-      filename = log_files[current_index]
-      content = @project_log.preview(filename)
-
-      lines = content.split("\n")
-
-      # 各行にセパレータと内容を表示（通常モードと同じ）
-      height.times do |i|
-        line_num = CONTENT_START_LINE + i
-
-        # セパレータを表示
-        cursor_position = left_offset + CURSOR_OFFSET
-        print "\e[#{line_num};#{cursor_position}H"
-        print '│'
-
-        # 右画面の内容を表示
-        if i < lines.length
-          line = lines[i]
-          safe_width = width - 2
-          content = " #{line}"
-          content = content[0...safe_width] if content.length > safe_width
-          print content
-
-          # 残りをスペースで埋める
-          remaining = safe_width - content.length
-          print ' ' * remaining if remaining > 0
-        else
-          # 空行
-          print ' ' * (width - 2)
-        end
-      end
-    end
-
-    # ログモードを終了してプロジェクトモードに戻る
-    def exit_log_mode
-      @in_log_mode = false
-      # 画面を一度クリアしてレンダラーをリセット
-      print "\e[2J\e[H"
-      @renderer.clear if @renderer
-      # 再描画フラグを立てる
-      @project_mode_needs_redraw = true
-    end
-
-    # プロジェクト未選択メッセージ
-    def show_project_not_selected_message
-      content_lines = [
-        '',
-        'Please select a project first by pressing SPACE',
-        '',
-        'Press any key to continue...'
-      ]
-
-      width = 50
-      height = 8
-      x, y = @dialog_renderer.calculate_center(width, height)
-
-      @dialog_renderer.draw_floating_window(x, y, width, height, 'No Project Selected', content_lines, {
-        border_color: "\e[33m",    # Yellow (warning)
-        title_color: "\e[1;33m",   # Bold yellow
-        content_color: "\e[37m"    # White
-      })
-
-      require 'io/console'
-      IO.console.getch
-      @dialog_renderer.clear_area(x, y, width, height)
-
-      # 画面を再描画
-      refresh_display
     end
 
     # ヘルプダイアログを表示
@@ -1702,7 +1565,7 @@ module Rufio
         'z        - Zoxide navigation',
         '0        - Go to start directory',
         '1-9      - Go to bookmark',
-        'P        - Project mode',
+        'J        - Job mode',
         ':        - Command mode',
         'q        - Quit',
         ''
@@ -1743,183 +1606,6 @@ module Rufio
       refresh_display
     end
 
-    # プロジェクトモードでコマンドを実行
-    def activate_project_command_mode(project_mode, project_command, project_log)
-      return unless project_mode.selected_path
-
-      # スクリプトまたはコマンドを選択
-      choice = show_script_or_command_dialog(project_mode.selected_name, project_command)
-      return unless choice
-
-      command = nil
-      result = nil
-
-      if choice[:type] == :script
-        # スクリプトを実行
-        command = "ruby script: #{choice[:value]}"
-        result = project_command.execute_script(choice[:value], project_mode.selected_path)
-      else
-        # 通常のコマンドを実行
-        command = choice[:value]
-        result = project_command.execute(command, project_mode.selected_path)
-      end
-
-      # ログを保存
-      project_log.save(project_mode.selected_name, command, result[:output])
-
-      # 結果を表示
-      show_project_command_result_dialog(command, result)
-
-      # 画面を再描画
-      refresh_display
-    end
-
-    # スクリプトまたはコマンドを選択
-    def show_script_or_command_dialog(project_name, project_command)
-      scripts = project_command.list_scripts
-
-      content_lines = [
-        '',
-        "Project: #{project_name}",
-        ''
-      ]
-
-      if scripts.empty?
-        content_lines << 'No scripts found in scripts directory'
-        content_lines << "  (#{project_command.scripts_dir})"
-        content_lines << ''
-        content_lines << 'Press C to enter custom command'
-        content_lines << 'Press ESC to cancel'
-      else
-        content_lines << 'Available scripts:'
-        content_lines << ''
-        scripts.each_with_index do |script, index|
-          content_lines << "  #{index + 1}. #{script}"
-        end
-        content_lines << ''
-        content_lines << 'Press 1-9 to select script'
-        content_lines << 'Press C to enter custom command'
-        content_lines << 'Press ESC to cancel'
-      end
-
-      width = 70
-      height = [content_lines.length + 4, 25].min
-      x, y = @dialog_renderer.calculate_center(width, height)
-
-      @dialog_renderer.draw_floating_window(x, y, width, height, 'Execute in Project', content_lines, {
-        border_color: "\e[32m",
-        title_color: "\e[1;32m",
-        content_color: "\e[37m"
-      })
-
-      require 'io/console'
-      choice = nil
-
-      loop do
-        input = IO.console.getch.downcase
-
-        case input
-        when "\e" # ESC
-          break
-        when 'c' # Custom command
-          @dialog_renderer.clear_area(x, y, width, height)
-          command = show_project_command_input_dialog(project_name)
-          choice = { type: :command, value: command } if command && !command.empty?
-          break
-        when '1'..'9'
-          number = input.to_i
-          if number > 0 && number <= scripts.length
-            choice = { type: :script, value: scripts[number - 1] }
-            break
-          end
-        end
-      end
-
-      @dialog_renderer.clear_area(x, y, width, height)
-      choice
-    end
-
-    # プロジェクトコマンド入力ダイアログ
-    def show_project_command_input_dialog(project_name)
-      title = "Execute Command in: #{project_name}"
-      prompt = "Enter command:"
-
-      @dialog_renderer.show_input_dialog(title, prompt, {
-        border_color: "\e[32m",    # Green
-        title_color: "\e[1;32m",   # Bold green
-        content_color: "\e[37m"    # White
-      })
-    end
-
-    # プロジェクトコマンド結果ダイアログ
-    def show_project_command_result_dialog(command, result)
-      title = result[:success] ? "Command Success" : "Command Failed"
-
-      # 出力を最初の10行まで表示
-      output_lines = (result[:output] || result[:error] || '').split("\n").take(10)
-
-      content_lines = [
-        '',
-        "Command: #{command}",
-        '',
-        "Output:",
-        ''
-      ] + output_lines
-
-      if output_lines.length >= 10
-        content_lines << '... (see log for full output)'
-      end
-
-      content_lines << ''
-      content_lines << 'Press any key to continue...'
-
-      width = 80
-      height = [content_lines.length + 4, 20].min
-      x, y = @dialog_renderer.calculate_center(width, height)
-
-      border_color = result[:success] ? "\e[32m" : "\e[31m"  # Green or Red
-      title_color = result[:success] ? "\e[1;32m" : "\e[1;31m"
-
-      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-        border_color: border_color,
-        title_color: title_color,
-        content_color: "\e[37m"
-      })
-
-      require 'io/console'
-      IO.console.getch
-      @dialog_renderer.clear_area(x, y, width, height)
-    end
-
-    # プロジェクト選択時の表示
-    def show_project_selected
-      # 選択完了メッセージを表示
-      content_lines = [
-        '',
-        'Project selected!',
-        '',
-        'You can now press : to execute commands',
-        '',
-        'Press any key to continue...'
-      ]
-
-      width = 50
-      height = 10
-      x, y = @dialog_renderer.calculate_center(width, height)
-
-      @dialog_renderer.draw_floating_window(x, y, width, height, 'Project Selected', content_lines, {
-        border_color: "\e[32m",    # Green
-        title_color: "\e[1;32m",   # Bold green
-        content_color: "\e[37m"    # White
-      })
-
-      require 'io/console'
-      IO.console.getch
-      @dialog_renderer.clear_area(x, y, width, height)
-
-      # 画面を再描画
-      refresh_display
-    end
   end
 end
 

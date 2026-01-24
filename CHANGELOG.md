@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.60.0] - 2026-01-24
+
+### Added
+- **⌨️ スクリプト補完機能**: コマンドモードでスクリプトのTab補完が可能に
+  - `@`プレフィックスでスクリプト専用補完（例: `@bu` + Tab → `@build.sh`）
+  - 通常補完時も登録済みスクリプトが候補に表示
+  - `CommandCompletion`が`CommandMode`と連携してスクリプト候補を取得
+
+### Removed
+- **🗑️ プロジェクトモード廃止**: `P`キーで起動するプロジェクトモードを削除
+  - `lib/rufio/project_mode.rb` - ProjectModeクラス
+  - `lib/rufio/project_command.rb` - ProjectCommandクラス
+  - `lib/rufio/project_log.rb` - ProjectLogクラス
+  - 関連するUI描画メソッド（`draw_project_mode_screen`等）
+  - 関連するキーハンドリング（`handle_project_mode_key`等）
+  - 関連するテストファイル
+
+### Changed
+- **📋 ヘルプ表示更新**: ヘルプダイアログに`J`キー（Job mode）を追加
+- **🧹 コードクリーンアップ**: プロジェクトモード関連の未使用コードを削除
+
+### Technical Details
+- **テストカバレッジ**: 684 tests, 2474 assertions (all passing)
+- **削除ファイル**: 7ファイル（ライブラリ3、テスト4）
+- **影響範囲**: `keybind_handler.rb`, `terminal_ui.rb`, `rufio.rb`
+
 ## [0.41.0] - 2026-01-13
 
 ### Changed

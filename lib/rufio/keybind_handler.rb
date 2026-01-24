@@ -44,14 +44,6 @@ module Rufio
       @bookmark_manager = BookmarkManager.new(Bookmark.new, @dialog_renderer)
       @zoxide_integration = ZoxideIntegration.new(@dialog_renderer)
 
-      # Project mode
-      log_dir = File.expand_path('~/.config/rufio/logs')
-      @project_mode = ProjectMode.new(@bookmark_manager.instance_variable_get(:@bookmark), log_dir)
-      @project_command = ProjectCommand.new(log_dir)
-      @project_log = ProjectLog.new(log_dir)
-      @in_project_mode = false
-      @in_log_mode = false
-
       # Help mode
       @in_help_mode = false
       @pre_help_directory = nil
@@ -64,6 +56,15 @@ module Rufio
       # Preview pane focus and scroll
       @preview_focused = false
       @preview_scroll_offset = 0
+
+      # Job mode
+      @notification_manager = NotificationManager.new
+      @job_manager = JobManager.new(notification_manager: @notification_manager)
+      @job_mode = JobMode.new(job_manager: @job_manager)
+
+      # Script path manager
+      config_file = File.expand_path('~/.config/rufio/config.yml')
+      @script_path_manager = File.exist?(config_file) ? ScriptPathManager.new(config_file) : nil
     end
 
     def set_directory_listing(directory_listing)
@@ -93,9 +94,9 @@ module Rufio
     def handle_key(key)
       return false unless @directory_listing
 
-      # プロジェクトモード中の特別処理
-      if @in_project_mode
-        return handle_project_mode_key(key)
+      # ジョブモード中の特別処理
+      if @job_mode.active?
+        return handle_job_mode_key(key)
       end
 
       # プレビューペインフォーカス中の特別処理
@@ -177,10 +178,12 @@ module Rufio
         copy_selected_to_current
       when 'x'  # x - delete selected files
         delete_selected_files
-      when 'P'  # P - project mode
-        enter_project_mode
+      when 'J'  # J - job mode
+        enter_job_mode
       when 'b'  # b - add bookmark
         add_bookmark
+      when 'B'  # B - bookmark menu (with script paths)
+        show_bookmark_menu
       when 'z'  # z - zoxide history navigation
         show_zoxide_menu
       when '0'  # 0 - go to start directory
@@ -1408,6 +1411,191 @@ module Rufio
       result
     end
 
+    # ブックマークメニューを表示（スクリプトパス機能を含む）
+    def show_bookmark_menu
+      current_path = @directory_listing&.current_path || Dir.pwd
+
+      menu_items = [
+        '1. Add current dir to bookmarks',
+        '2. Add to script paths',
+        '3. Manage script paths',
+        '4. View bookmarks'
+      ]
+
+      content_lines = [''] + menu_items + ['', '[1-4] Select | [Esc] Cancel']
+
+      title = 'Bookmark Menu'
+      width = 45
+      height = content_lines.length + 4
+      x, y = @dialog_renderer.calculate_center(width, height)
+
+      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+        border_color: "\e[36m",    # Cyan
+        title_color: "\e[1;36m",   # Bold cyan
+        content_color: "\e[37m"    # White
+      })
+
+      key = STDIN.getch
+      @dialog_renderer.clear_area(x, y, width, height)
+
+      case key
+      when '1'
+        add_bookmark
+      when '2'
+        add_to_script_paths
+      when '3'
+        show_script_paths_manager
+      when '4'
+        # ブックマーク一覧表示（既存機能）
+        @terminal_ui&.refresh_display
+      else
+        @terminal_ui&.refresh_display
+      end
+
+      true
+    end
+
+    # カレントディレクトリをスクリプトパスに追加
+    def add_to_script_paths
+      current_path = @directory_listing&.current_path || Dir.pwd
+
+      unless @script_path_manager
+        # ScriptPathManagerがない場合は作成
+        config_file = File.expand_path('~/.config/rufio/config.yml')
+        FileUtils.mkdir_p(File.dirname(config_file))
+        @script_path_manager = ScriptPathManager.new(config_file)
+      end
+
+      if @script_path_manager.paths.include?(current_path)
+        # 既に登録されている
+        show_notification('Already in paths', current_path, :info)
+      elsif @script_path_manager.add_path(current_path)
+        show_notification('Added to scripts', current_path, :success)
+      else
+        show_notification('Failed to add', current_path, :error)
+      end
+
+      @terminal_ui&.refresh_display
+      true
+    end
+
+    # スクリプトパス管理UIを表示
+    def show_script_paths_manager
+      unless @script_path_manager
+        show_notification('No script paths configured', '', :info)
+        @terminal_ui&.refresh_display
+        return false
+      end
+
+      paths = @script_path_manager.paths
+      if paths.empty?
+        show_notification('No script paths', 'Press B > 2 to add', :info)
+        @terminal_ui&.refresh_display
+        return false
+      end
+
+      selected_index = 0
+
+      loop do
+        # メニューを描画
+        menu_items = paths.each_with_index.map do |path, i|
+          prefix = i == selected_index ? '> ' : '  '
+          "#{prefix}#{i + 1}. #{truncate_path(path, 35)}"
+        end
+
+        content_lines = [''] + menu_items + ['', '[j/k] Move | [d] Delete | [Enter] Jump | [Esc] Back']
+
+        title = 'Script Paths'
+        width = 50
+        height = content_lines.length + 4
+        x, y = @dialog_renderer.calculate_center(width, height)
+
+        @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+          border_color: "\e[35m",    # Magenta
+          title_color: "\e[1;35m",   # Bold magenta
+          content_color: "\e[37m"    # White
+        })
+
+        key = STDIN.getch
+        @dialog_renderer.clear_area(x, y, width, height)
+
+        case key
+        when 'j'
+          selected_index = [selected_index + 1, paths.length - 1].min
+        when 'k'
+          selected_index = [selected_index - 1, 0].max
+        when 'd'
+          # 削除確認
+          path_to_delete = paths[selected_index]
+          if confirm_delete_script_path(path_to_delete)
+            @script_path_manager.remove_path(path_to_delete)
+            paths = @script_path_manager.paths
+            selected_index = [selected_index, paths.length - 1].min
+            break if paths.empty?
+          end
+        when "\r", "\n"
+          # ディレクトリにジャンプ
+          path = paths[selected_index]
+          if Dir.exist?(path)
+            navigate_to_directory(path)
+          end
+          break
+        when "\e"
+          break
+        end
+      end
+
+      @terminal_ui&.refresh_display
+      true
+    end
+
+    # スクリプトパス削除の確認
+    def confirm_delete_script_path(path)
+      content_lines = [
+        '',
+        'Delete this script path?',
+        '',
+        truncate_path(path, 40),
+        '',
+        '[y] Yes | [n] No'
+      ]
+
+      title = 'Confirm Delete'
+      width = 50
+      height = content_lines.length + 4
+      x, y = @dialog_renderer.calculate_center(width, height)
+
+      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+        border_color: "\e[31m",    # Red
+        title_color: "\e[1;31m",   # Bold red
+        content_color: "\e[37m"    # White
+      })
+
+      key = STDIN.getch
+      @dialog_renderer.clear_area(x, y, width, height)
+
+      key.downcase == 'y'
+    end
+
+    # 通知を表示
+    def show_notification(title, message, type)
+      return unless @notification_manager
+
+      @notification_manager.add(title, type, duration: 3, exit_code: nil)
+    end
+
+    # パスを短縮表示
+    def truncate_path(path, max_length)
+      return path if path.length <= max_length
+
+      # ホームディレクトリを~に置換
+      display_path = path.sub(Dir.home, '~')
+      return display_path if display_path.length <= max_length
+
+      # 先頭と末尾を残して中間を...に
+      "...#{display_path[-(max_length - 3)..]}"
+    end
+
     # ヘルパーメソッド
     def wait_for_keypress
       print ConfigLoader.message('keybind.press_any_key') || 'Press any key to continue...'
@@ -1500,245 +1688,68 @@ module Rufio
       end
     end
 
-    # プロジェクトモード中のキー処理
-    def handle_project_mode_key(key)
-      result = case key
-      when "\e" # ESC - ログモードならプロジェクトモードに戻る、そうでなければ終了
-        if @in_log_mode
-          exit_log_mode
-        else
-          exit_project_mode
-        end
-      when ' ' # Space - ブックマークを選択
-        if @in_log_mode
-          # ログモード中は何もしない
-          false
-        else
-          select_bookmark_in_project_mode
-        end
-      when 'l' # l - ログディレクトリに移動
-        if @in_log_mode
-          # すでにログモードの場合は何もしない
-          false
-        else
-          @in_log_mode = true
-          @current_index = 0  # ログモードに入るときインデックスをリセット
-          @terminal_ui&.enter_log_mode(@project_log) if @terminal_ui
-          true
-        end
-      when 'j' # 下に移動
-        move_down_in_project_mode
-      when 'k' # 上に移動
-        move_up_in_project_mode
-      when 'g' # 先頭に移動
-        @current_index = 0
-        true
-      when 'G' # 末尾に移動
-        entries = get_project_mode_entries
-        @current_index = [entries.length - 1, 0].max
-        true
-      when ':' # コマンドモード
-        activate_project_command_mode
-      when 'r' # r - ブックマークをリネーム
-        if @in_log_mode
-          false
-        else
-          rename_bookmark_in_project_mode
-        end
-      when 'd' # d - ブックマークを削除
-        if @in_log_mode
-          false
-        else
-          delete_bookmark_in_project_mode
-        end
-      else
-        false
-      end
-
-      # キー処理後、プロジェクトモードの再描画をトリガー
-      @terminal_ui&.trigger_project_mode_redraw if result && @in_project_mode
-      result
-    end
-
-    # プロジェクトモード用のエントリ数取得
-    def get_project_mode_entries
-      if @in_log_mode
-        @project_log.list_log_files
-      else
-        @project_mode.list_bookmarks
-      end
-    end
-
-    # プロジェクトモード用の下移動
-    def move_down_in_project_mode
-      entries = get_project_mode_entries
-      @current_index = [@current_index + 1, entries.length - 1].min
-      true
-    end
-
-    # プロジェクトモード用の上移動
-    def move_up_in_project_mode
-      @current_index = [@current_index - 1, 0].max
-      true
-    end
-
-    # プロジェクトモードに入る
-    def enter_project_mode
-      @project_mode.activate
-      @in_project_mode = true
-      @current_index = 0  # プロジェクトモードに入るときインデックスをリセット
-      @terminal_ui&.set_project_mode(@project_mode, @project_command, @project_log) if @terminal_ui
-      true
-    end
-
-    # プロジェクトモードを終了
-    def exit_project_mode
-      @project_mode.deactivate
-      @in_project_mode = false
-      @in_log_mode = false
-      @current_index = 0  # 通常モードに戻るときインデックスをリセット
-      @terminal_ui&.exit_project_mode if @terminal_ui
-      refresh
-      true
-    end
-
-    # プロジェクトモードでコマンドモードを起動
-    def activate_project_command_mode
-      # 選択されたプロジェクトがあるかチェック
-      if @project_mode.selected_path.nil?
-        @terminal_ui&.show_project_not_selected_message if @terminal_ui
-        return false
-      end
-
-      @terminal_ui&.activate_project_command_mode(@project_mode, @project_command, @project_log) if @terminal_ui
-      true
-    end
-
-    # ログモードを終了してプロジェクトモードに戻る
-    def exit_log_mode
-      @in_log_mode = false
-      @current_index = 0  # プロジェクトモードに戻るときインデックスをリセット
-      @terminal_ui&.exit_log_mode if @terminal_ui
-      true
-    end
-
-    # プロジェクトモードでブックマークをリネーム
-    def rename_bookmark_in_project_mode
-      bookmarks = @bookmark_manager.list
-      return false if bookmarks.empty? || @current_index >= bookmarks.length
-
-      current_bookmark = bookmarks[@current_index]
-      old_name = current_bookmark[:name]
-
-      # ダイアログレンダラーを使用して入力ダイアログを表示
-      new_name = @dialog_renderer.show_input_dialog("Rename: #{old_name}", "Enter new name:", {
-        border_color: "\e[33m",    # Yellow
-        title_color: "\e[1;33m",   # Bold yellow
-        content_color: "\e[37m"    # White
-      })
-
-      return false if new_name.nil? || new_name.empty?
-
-      # Bookmarkを使用してリネーム
-      result = @bookmark_manager.instance_variable_get(:@bookmark).rename(old_name, new_name)
-
-      @terminal_ui&.refresh_display if @terminal_ui
-      result
-    end
-
-    # プロジェクトモードでブックマークを削除
-    def delete_bookmark_in_project_mode
-      bookmarks = @bookmark_manager.list
-      return false if bookmarks.empty? || @current_index >= bookmarks.length
-
-      current_bookmark = bookmarks[@current_index]
-      bookmark_name = current_bookmark[:name]
-
-      # 確認ダイアログを表示
-      content_lines = [
-        '',
-        "Delete this bookmark?",
-        "  #{bookmark_name}",
-        '',
-        '  [Y]es - Delete',
-        '  [N]o  - Cancel',
-        ''
-      ]
-
-      title = 'Confirm Delete'
-      width = [50, bookmark_name.length + 10].max
-      height = content_lines.length + 4
-      x, y = @dialog_renderer.calculate_center(width, height)
-
-      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-        border_color: "\e[31m",    # Red (warning)
-        title_color: "\e[1;31m",   # Bold red
-        content_color: "\e[37m"    # White
-      })
-
-      # 確認を待つ
-      confirmed = false
-      loop do
-        input = STDIN.getch.downcase
-
-        case input
-        when 'y'
-          confirmed = true
-          break
-        when 'n', "\e" # n or ESC
-          confirmed = false
-          break
-        end
-      end
-
-      @dialog_renderer.clear_area(x, y, width, height)
-      @terminal_ui&.refresh_display
-
-      return false unless confirmed
-
-      # Bookmarkを使用して削除
-      result = @bookmark_manager.instance_variable_get(:@bookmark).remove(bookmark_name)
-
-      # 削除後、選択されていたブックマークがなくなった場合は選択をクリア
-      if result && @project_mode.selected_path == current_bookmark[:path]
-        @project_mode.clear_selection
-      end
-
-      # カーソル位置を調整
-      if result
-        bookmarks_after = @bookmark_manager.list
-        @current_index = [@current_index, bookmarks_after.length - 1].min if @current_index >= bookmarks_after.length
-        @current_index = 0 if @current_index < 0
-      end
-
-      @terminal_ui&.refresh_display if @terminal_ui
-      result
-    end
-
-    # プロジェクトモードでブックマークの選択をトグル
-    def select_bookmark_in_project_mode
-      bookmarks = @bookmark_manager.list
-      return false if bookmarks.empty? || @current_index >= bookmarks.length
-
-      # ブックマークをプロジェクトとして選択
-      @project_mode.select_bookmark(@current_index + 1)
-      true
-    end
-
-    # プロジェクトモード中かどうか
-    def in_project_mode?
-      @in_project_mode
-    end
-
-    # ログモード中かどうか
-    def in_log_mode?
-      @in_log_mode
-    end
-
     # ヘルプダイアログを表示
     def show_help_dialog
       @terminal_ui&.show_help_dialog if @terminal_ui
       true
+    end
+
+    # ジョブモード関連メソッド（publicに戻す）
+    public
+
+    # ジョブマネージャを取得
+    attr_reader :job_manager, :job_mode, :notification_manager
+
+    # ジョブモードに入る
+    def enter_job_mode
+      @job_mode.activate
+      @terminal_ui&.set_job_mode(@job_mode, @job_manager, @notification_manager) if @terminal_ui
+      true
+    end
+
+    # ジョブモードを終了
+    def exit_job_mode
+      @job_mode.deactivate
+      @terminal_ui&.exit_job_mode if @terminal_ui
+      refresh
+      true
+    end
+
+    # ジョブモード中のキー処理
+    def handle_job_mode_key(key)
+      result = @job_mode.handle_key(key)
+
+      case result
+      when :exit
+        exit_job_mode
+        true
+      when :show_log
+        # ログ表示は将来実装
+        @terminal_ui&.trigger_job_mode_redraw if @terminal_ui
+        true
+      when true, false
+        @terminal_ui&.trigger_job_mode_redraw if @terminal_ui
+        result
+      else
+        result
+      end
+    end
+
+    # ジョブモード中かどうか
+    def in_job_mode?
+      @job_mode.active?
+    end
+
+    # ジョブがあるかどうか
+    def has_jobs?
+      @job_manager.has_jobs?
+    end
+
+    # ジョブのステータスバーテキストを取得
+    def job_status_bar_text
+      return nil unless @job_manager.has_jobs?
+
+      @job_manager.status_bar_text
     end
   end
 end

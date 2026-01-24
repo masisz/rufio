@@ -1,0 +1,8 @@
+# rufio 設定ファイル (YAML)
+# このファイルを ~/.config/rufio/config.yml に配置してください
+
+# スクリプトパス - @コマンドで実行可能なスクリプトを検索するディレクトリ
+script_paths:
+  - ~/.config/rufio/scripts/
+  - ~/scripts/
+  - ~/devs/scripts/

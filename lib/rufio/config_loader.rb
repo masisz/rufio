@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
+require 'yaml'
 require_relative 'config'
 
 module Rufio
   class ConfigLoader
     CONFIG_PATH = File.expand_path('~/.config/rufio/config.rb').freeze
+    YAML_CONFIG_PATH = File.expand_path('~/.config/rufio/config.yml').freeze
 
     class << self
       def load_config
@@ -58,6 +60,41 @@ module Rufio
 
       def command_history_size
         load_config[:command_history_size] || 1000
+      end
+
+      # スクリプトパスの配列を取得
+      # @return [Array<String>] 展開済みのスクリプトパス
+      def script_paths
+        yaml_config = load_yaml_config
+        paths = yaml_config[:script_paths] || default_script_paths
+        expand_script_paths(paths)
+      end
+
+      # デフォルトのスクリプトパス
+      # @return [Array<String>] デフォルトパス
+      def default_script_paths
+        [File.expand_path('~/.config/rufio/scripts')]
+      end
+
+      # スクリプトパスを展開
+      # @param paths [Array<String>] パスの配列
+      # @return [Array<String>] 展開済みのパス
+      def expand_script_paths(paths)
+        paths.map { |p| File.expand_path(p) }
+      end
+
+      # YAML設定ファイルを読み込む
+      # @param path [String, nil] 設定ファイルのパス（nilの場合はデフォルト）
+      # @return [Hash] 設定内容
+      def load_yaml_config(path = nil)
+        config_path = path || YAML_CONFIG_PATH
+        return {} unless File.exist?(config_path)
+
+        yaml = YAML.safe_load(File.read(config_path), symbolize_names: true)
+        yaml || {}
+      rescue StandardError => e
+        warn "Failed to load YAML config: #{e.message}"
+        {}
       end
 
       private

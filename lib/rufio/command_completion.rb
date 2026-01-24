@@ -5,8 +5,9 @@ module Rufio
   class CommandCompletion
     # 初期化
     # @param history [CommandHistory, nil] コマンド履歴（オプション）
-    def initialize(history = nil)
-      @command_mode = CommandMode.new
+    # @param command_mode [CommandMode, nil] コマンドモード（スクリプト補完に使用）
+    def initialize(history = nil, command_mode = nil)
+      @command_mode = command_mode || CommandMode.new
       @shell_completion = ShellCommandCompletion.new
       @history = history
     end
@@ -15,9 +16,9 @@ module Rufio
     # @param input [String] 入力されたテキスト
     # @return [Array<String>] 補完候補のリスト
     def complete(input)
-      # 入力が空の場合は内部コマンドを返す
+      # 入力が空の場合は内部コマンドとスクリプトを返す
       if input.nil? || input.strip.empty?
-        return @command_mode.available_commands.map(&:to_s)
+        return @command_mode.available_commands.map(&:to_s) + script_candidates('')
       end
 
       # シェルコマンド補完（!で始まる場合）
@@ -25,7 +26,12 @@ module Rufio
         return complete_shell_command(input.strip)
       end
 
-      # 通常のコマンド補完（内部コマンド）
+      # スクリプト補完（@で始まる場合）
+      if input.strip.start_with?('@')
+        return @command_mode.complete_script(input.strip)
+      end
+
+      # 通常のコマンド補完（内部コマンド + スクリプト）
       available_commands = @command_mode.available_commands.map(&:to_s)
       input_lower = input.downcase
       candidates = available_commands.select do |command|
@@ -60,6 +66,15 @@ module Rufio
     end
 
     private
+
+    # スクリプト候補を取得
+    # @param prefix [String] 入力中の文字列
+    # @return [Array<String>] スクリプト候補（@付き）
+    def script_candidates(prefix)
+      return [] unless @command_mode&.script_runner
+
+      @command_mode.complete_script("@#{prefix}")
+    end
 
     # シェルコマンドの補完
     # @param input [String] ! で始まる入力
