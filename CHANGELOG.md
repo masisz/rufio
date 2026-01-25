@@ -10,28 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.61.0] - 2026-01-25
 
 ### Changed
-- **🎯 リブランディング**: rufioを「Runtime Unified Flow I/O Operator」として再定義
-  - ファイルマネージャーから「ツールランタイム実行環境」としてのコンセプトを強調
-  - gemspecのサマリーと説明を新しいコンセプトに更新
-- **📖 README.md大幅改訂**: 新しいコンセプトに合わせて簡潔で分かりやすい構成に変更
-  - 機能説明をツールランタイムとファイルマネージャーの2軸で整理
-  - キーバインド表をカテゴリ別に簡潔化
-  - クイックスタートセクションを追加
-- **🌐 UIメッセージの英語統一**: 全てのUIメッセージを英語に統一
-  - コマンドモード、結果表示、補完候補などのメッセージを英語化
-  - 日本語設定でも英語メッセージを表示（内部的な言語設定は維持）
+- **🎯 Rebranding**: Redefined rufio as "Runtime Unified Flow I/O Operator"
+  - Emphasized the concept as a "tool runtime environment" rather than just a file manager
+  - Updated gemspec summary and description to reflect new concept
+- **📖 README.md Overhaul**: Restructured for clarity with the new concept
+  - Organized features around tool runtime and file manager axes
+  - Simplified keybinding tables by category
+  - Added Quick Start section
+- **🌐 Unified English UI Messages**: Standardized all UI messages to English
+  - Converted command mode, result display, and completion candidate messages to English
+  - Japanese setting now displays English messages (internal language setting preserved)
 
 ### Added
-- **💾 ブックマークストレージの抽象化**: `BookmarkStorage`インターフェースを導入
-  - `JsonBookmarkStorage`: 従来のJSONファイル形式
-  - `YamlBookmarkStorage`: 新しいYAMLファイル形式（config.yml内に統合）
-  - `BookmarkMigrator`: JSONからYAMLへの自動移行機能
-  - ストレージの依存性注入をサポート（テスタビリティ向上）
+- **💾 Bookmark Storage Abstraction**: Introduced `BookmarkStorage` interface
+  - `JsonBookmarkStorage`: Legacy JSON file format
+  - `YamlBookmarkStorage`: New YAML file format (integrated into config.yml)
+  - `BookmarkMigrator`: Automatic migration from JSON to YAML
+  - Support for storage dependency injection (improved testability)
 
 ### Technical Details
-- **新規ファイル**: `lib/rufio/bookmark_storage.rb`, `test/test_bookmark_storage.rb`
-- **影響ファイル**: `bookmark.rb`, `bookmark_manager.rb`, `config_loader.rb`, `command_mode.rb`, `command_mode_ui.rb`, `terminal_ui.rb`, `config.rb`
-- **テスト更新**: 英語メッセージに合わせてテストケースを修正
+- **New Files**: `lib/rufio/bookmark_storage.rb`, `test/test_bookmark_storage.rb`
+- **Affected Files**: `bookmark.rb`, `bookmark_manager.rb`, `config_loader.rb`, `command_mode.rb`, `command_mode_ui.rb`, `terminal_ui.rb`, `config.rb`
+- **Test Updates**: Modified test cases to match English messages
 
 ## [0.60.0] - 2026-01-24
 
