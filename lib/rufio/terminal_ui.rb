@@ -1228,7 +1228,7 @@ module Rufio
 
       # バックグラウンドコマンドの場合は結果表示をスキップ
       # (完了通知は別途メインループで表示される)
-      if result && !result.to_s.include?("🔄 バックグラウンドで実行中")
+      if result && !result.to_s.include?("🔄 Running in background")
         # コマンド実行結果をフローティングウィンドウで表示
         @command_mode_ui.show_result(result)
       end
@@ -1266,7 +1266,7 @@ module Rufio
 
     # 補完候補を一時的に表示
     def show_completion_candidates(candidates)
-      title = "補完候補 (#{candidates.size}件)"
+      title = "Completions (#{candidates.size})"
 
       # 候補を表示用にフォーマット（最大20件）
       display_candidates = candidates.first(20)

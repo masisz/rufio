@@ -87,7 +87,7 @@ class TestCommandModeUI < Minitest::Test
 
     @dialog_renderer.stub :draw_floating_window, ->(x, y, w, h, title, content, opts) {
       draw_called = true
-      assert_equal "コマンド実行結果", title
+      assert_equal "Command Result", title
       assert_includes content, result
     } do
       @dialog_renderer.stub :clear_area, ->(*) { clear_called = true } do
@@ -176,7 +176,7 @@ class TestCommandModeUI < Minitest::Test
 
     @dialog_renderer.stub :draw_floating_window, ->(x, y, w, h, title, content, opts) {
       draw_called = true
-      assert_equal "コマンドモード", title
+      assert_equal "Command Mode", title
       assert_includes content.join("\n"), input
     } do
       @command_mode_ui.show_input_prompt(input)
@@ -268,7 +268,7 @@ class TestCommandModeUI < Minitest::Test
 
     @dialog_renderer.stub :draw_floating_window, ->(x, y, w, h, title, content, opts) {
       draw_called = true
-      assert_equal "コマンド実行結果", title
+      assert_equal "Command Result", title
       content_text = content.join("\n")
       assert_includes content_text, "command output"
       # 成功の場合は緑色

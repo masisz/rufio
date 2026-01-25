@@ -1,15 +1,29 @@
 # frozen_string_literal: true
 
 require_relative 'bookmark'
+require_relative 'bookmark_storage'
 require_relative 'config_loader'
 
 module Rufio
   # Manages bookmark operations with interactive UI
   class BookmarkManager
     def initialize(bookmark = nil, dialog_renderer = nil)
-      @bookmark = bookmark || Bookmark.new
+      @bookmark = bookmark || create_default_bookmark
       @dialog_renderer = dialog_renderer
     end
+
+    private
+
+    def create_default_bookmark
+      # 必要に応じてJSONからYAMLに移行
+      ConfigLoader.migrate_bookmarks_if_needed
+
+      # YAMLストレージを使用
+      storage = ConfigLoader.bookmark_storage
+      Bookmark.new(ConfigLoader::YAML_CONFIG_PATH, storage: storage)
+    end
+
+    public
 
     # Show bookmark menu and handle user selection
     # @param current_path [String] Current directory path

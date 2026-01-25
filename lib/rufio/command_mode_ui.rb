@@ -47,13 +47,13 @@ module Rufio
     # @param suggestions [Array<String>] 補完候補（オプション）
     def show_input_prompt(input, suggestions = [])
       # タイトル
-      title = "コマンドモード"
+      title = "Command Mode"
 
-      # コンテンツ行を構築
+      # Build content lines
       content_lines = [""]
-      content_lines << "#{input}_"  # カーソルを_で表現
+      content_lines << "#{input}_"  # Show cursor as _
       content_lines << ""
-      content_lines << "Tab: 補完 | Enter: 実行 | ESC: キャンセル"
+      content_lines << "Tab: Complete | Enter: Execute | ESC: Cancel"
 
       # ウィンドウの色設定（青）
       border_color = "\e[34m"      # Blue
@@ -94,7 +94,7 @@ module Rufio
       else
         # 文字列形式の結果（従来の動作）
         result_text = result
-        is_error = result.include?("⚠️") || result.include?("エラー")
+        is_error = result.include?("⚠️") || result.include?("Error")
       end
 
       # 結果を行に分割
@@ -112,7 +112,7 @@ module Rufio
       end
 
       # ウィンドウタイトル
-      title = "コマンド実行結果"
+      title = "Command Result"
 
       # コンテンツ行を構築
       content_lines = [""] + result_lines + ["", "Press any key to close"]
@@ -207,9 +207,9 @@ module Rufio
       # 何も出力がない場合
       if lines.empty?
         if result[:success]
-          lines << "コマンドが正常に実行されました"
+          lines << "Command executed successfully"
         else
-          lines << "コマンドが失敗しました"
+          lines << "Command failed"
         end
       end
 

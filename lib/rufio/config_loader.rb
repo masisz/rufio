@@ -2,11 +2,13 @@
 
 require 'yaml'
 require_relative 'config'
+require_relative 'bookmark_storage'
 
 module Rufio
   class ConfigLoader
     CONFIG_PATH = File.expand_path('~/.config/rufio/config.rb').freeze
     YAML_CONFIG_PATH = File.expand_path('~/.config/rufio/config.yml').freeze
+    JSON_BOOKMARKS_PATH = File.expand_path('~/.config/rufio/bookmarks.json').freeze
 
     class << self
       def load_config
@@ -95,6 +97,20 @@ module Rufio
       rescue StandardError => e
         warn "Failed to load YAML config: #{e.message}"
         {}
+      end
+
+      # ブックマーク用のYAMLストレージを取得
+      # @return [YamlBookmarkStorage] ストレージインスタンス
+      def bookmark_storage
+        YamlBookmarkStorage.new(YAML_CONFIG_PATH)
+      end
+
+      # 必要に応じてブックマークをJSONからYAMLに移行
+      # @param json_path [String] JSONファイルパス
+      # @param yaml_path [String] YAMLファイルパス
+      # @return [Boolean] 移行が実行されたかどうか
+      def migrate_bookmarks_if_needed(json_path = JSON_BOOKMARKS_PATH, yaml_path = YAML_CONFIG_PATH)
+        BookmarkMigrator.migrate(json_path, yaml_path)
       end
 
       private

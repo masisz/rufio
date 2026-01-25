@@ -8,8 +8,8 @@ Gem::Specification.new do |spec|
   spec.authors = ['masisz']
   spec.email = ['masisz.1567@gmail.com']
 
-  spec.summary = 'Ruby file manager'
-  spec.description = 'A terminal-based file manager inspired by Yazi, written in Ruby with plugin support'
+  spec.summary = 'Runtime Unified Flow I/O Operator - TUI file manager as a unified tool runtime'
+  spec.description = 'Runtime Unified Flow I/O Operator - A TUI file manager as a unified runtime environment for Ruby/Python/PowerShell scripts and external tools.'
   spec.homepage = 'https://github.com/masisz/rufio'
   spec.license = 'MIT'
   spec.required_ruby_version = '>= 2.7.0'

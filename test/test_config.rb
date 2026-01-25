@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
-require 'test_helper'
+require_relative 'test_helper'
+require_relative '../lib/rufio/bookmark_storage'
+
+Minitest.autorun
 
 class TestConfig < Minitest::Test
   def setup
@@ -36,10 +39,11 @@ class TestConfig < Minitest::Test
     assert_equal 'rufio interrupted', message
   end
 
-  def test_message_returns_japanese_when_set
+  def test_message_returns_same_for_japanese_setting
+    # Both languages now use English messages
     Rufio::Config.current_language = 'ja'
     message = Rufio::Config.message('app.interrupted')
-    assert_equal 'rufioを中断しました', message
+    assert_equal 'rufio interrupted', message
   end
 
   def test_message_falls_back_to_english_for_missing_key
@@ -88,6 +92,59 @@ class TestConfig < Minitest::Test
     with_env('LANG' => 'fr_FR.UTF-8', 'BENIYA_LANG' => 'ja') do
       Rufio::Config.reset_language!
       assert_equal 'ja', Rufio::Config.current_language
+    end
+  end
+
+  # ========================================
+  # ConfigLoader ブックマーク統合テスト
+  # ========================================
+
+  def test_config_loader_bookmark_storage_returns_yaml_storage
+    storage = Rufio::ConfigLoader.bookmark_storage
+    assert_kind_of Rufio::YamlBookmarkStorage, storage
+  end
+
+  def test_config_loader_migrate_bookmarks_if_needed
+    # テスト用の一時ディレクトリを作成
+    test_dir = File.join(Dir.tmpdir, 'rufio_config_test')
+    FileUtils.mkdir_p(test_dir)
+
+    json_file = File.join(test_dir, 'bookmarks.json')
+    yaml_file = File.join(test_dir, 'config.yml')
+
+    begin
+      # JSONファイルにブックマークを保存
+      File.write(json_file, '[{"path": "/test/path", "name": "test"}]')
+
+      # マイグレーションを実行
+      result = Rufio::ConfigLoader.migrate_bookmarks_if_needed(json_file, yaml_file)
+
+      assert result
+      # YAMLファイルにブックマークが移行されている
+      assert File.exist?(yaml_file)
+      content = YAML.safe_load(File.read(yaml_file), symbolize_names: true)
+      assert_equal 1, content[:bookmarks].length
+      # JSONファイルはバックアップされている
+      assert File.exist?("#{json_file}.bak")
+    ensure
+      FileUtils.rm_rf(test_dir)
+    end
+  end
+
+  def test_config_loader_migrate_bookmarks_skips_if_no_json
+    test_dir = File.join(Dir.tmpdir, 'rufio_config_test')
+    FileUtils.mkdir_p(test_dir)
+
+    json_file = File.join(test_dir, 'nonexistent.json')
+    yaml_file = File.join(test_dir, 'config.yml')
+
+    begin
+      result = Rufio::ConfigLoader.migrate_bookmarks_if_needed(json_file, yaml_file)
+
+      refute result
+      refute File.exist?(yaml_file)
+    ensure
+      FileUtils.rm_rf(test_dir)
     end
   end
 

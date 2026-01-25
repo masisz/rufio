@@ -62,9 +62,9 @@ module Rufio
         # バックグラウンドエグゼキュータが利用可能な場合は非同期実行
         if @background_executor
           if @background_executor.execute_async(shell_command)
-            return "🔄 バックグラウンドで実行中: #{shell_command.split.first}"
+            return "🔄 Running in background: #{shell_command.split.first}"
           else
-            return "⚠️  既にコマンドが実行中です"
+            return "⚠️  Command already running"
           end
         else
           # バックグラウンドエグゼキュータがない場合は同期実行
@@ -165,9 +165,9 @@ module Rufio
         if @background_executor.execute_ruby_async(command_display_name) do
              ScriptExecutor.execute_command(dsl_cmd)
            end
-          return "🔄 バックグラウンドで実行中: #{command_display_name}"
+          return "🔄 Running in background: #{command_display_name}"
         else
-          return "⚠️  既にコマンドが実行中です"
+          return "⚠️  Command already running"
         end
       end
 

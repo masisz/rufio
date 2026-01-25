@@ -2,13 +2,15 @@
 
 require 'json'
 require 'fileutils'
+require_relative 'bookmark_storage'
 
 module Rufio
   class Bookmark
     MAX_BOOKMARKS = 9
 
-    def initialize(config_file = nil)
+    def initialize(config_file = nil, storage: nil)
       @config_file = config_file || default_config_file
+      @storage = storage || JsonBookmarkStorage.new(@config_file)
       @bookmarks = []
       ensure_config_directory
       load
@@ -70,38 +72,12 @@ module Rufio
     end
 
     def save
-      begin
-        File.write(@config_file, JSON.pretty_generate(@bookmarks))
-        true
-      rescue StandardError => e
-        warn "Failed to save bookmarks: #{e.message}"
-        false
-      end
+      @storage.save(@bookmarks)
     end
 
     def load
-      return true unless File.exist?(@config_file)
-
-      begin
-        content = File.read(@config_file)
-        @bookmarks = JSON.parse(content, symbolize_names: true)
-        @bookmarks = [] unless @bookmarks.is_a?(Array)
-        
-        # 無効なブックマークを除去
-        @bookmarks = @bookmarks.select do |bookmark|
-          bookmark.is_a?(Hash) &&
-            bookmark.key?(:path) &&
-            bookmark.key?(:name) &&
-            bookmark[:path].is_a?(String) &&
-            bookmark[:name].is_a?(String)
-        end
-        
-        true
-      rescue JSON::ParserError, StandardError => e
-        warn "Failed to load bookmarks: #{e.message}"
-        @bookmarks = []
-        true
-      end
+      @bookmarks = @storage.load
+      true
     end
 
     private
