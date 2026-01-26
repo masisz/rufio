@@ -2,16 +2,14 @@
 
 **Runtime Unified Flow I/O Operator**
 
-ファイルを起点に、ツールとスクリプトを実行・連携させるTUIファイルマネージャー。
-Ruby/Python/PowerShellに対応し、開発ワークフローを一箇所に統合します。
+A TUI file manager that executes and coordinates tools and scripts from files.
+Supports Ruby/Python/PowerShell and integrates your development workflow in one place.
 
-A TUI file manager as a unified runtime environment for tools and scripts.
+[日本語](./README_ja.md) | **English**
 
-**日本語** | [English](./README_EN.md)
+## Concept
 
-## コンセプト
-
-rufioは単なるファイルマネージャーではありません。**ツールランタイム実行環境**です。
+rufio is not just a file manager. It's a **tool runtime execution environment**.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -24,202 +22,202 @@ rufioは単なるファイルマネージャーではありません。**ツー�
 └─────────────────────────────────────────────────────────┘
 ```
 
-- **ファイル操作**: 従来のファイルマネージャー機能
-- **スクリプト実行**: Ruby/Python/PowerShellスクリプトをファイルコンテキストで実行
-- **ツール連携**: 外部ツール（git, fzf, rga等）とのシームレスな統合
-- **統一I/O**: すべての入出力を単一のフローで管理
+- **File Operations**: Traditional file manager functionality
+- **Script Execution**: Run Ruby/Python/PowerShell scripts in file context
+- **Tool Integration**: Seamless integration with external tools (git, fzf, rga, etc.)
+- **Unified I/O**: Manage all input/output in a single flow
 
-## 特徴
+## Features
 
-### ツールランタイムとして
+### As a Tool Runtime
 
-- **マルチ言語スクリプト対応**: Ruby, Python, PowerShell
-- **スクリプトパス管理**: 複数のスクリプトディレクトリを登録・管理
-- **コマンド補完**: `@`プレフィックスでスクリプトをTab補完
-- **ジョブ管理**: バックグラウンドでスクリプト/コマンドを実行
-- **実行ログ**: すべての実行結果を自動記録
+- **Multi-language Script Support**: Ruby, Python, PowerShell
+- **Script Path Management**: Register and manage multiple script directories
+- **Command Completion**: Tab completion for scripts with `@` prefix
+- **Job Management**: Run scripts/commands in the background
+- **Execution Logs**: Automatically record all execution results
 
-### ファイルマネージャーとして
+### As a File Manager
 
-- **Vimライクなキーバインド**: 直感的なナビゲーション
-- **リアルタイムプレビュー**: ファイル内容を即座に表示
-- **高速検索**: fzf/rgaとの連携
-- **ブックマーク**: よく使うディレクトリに素早くアクセス
-- **zoxide連携**: スマートなディレクトリ履歴
+- **Vim-like Key Bindings**: Intuitive navigation
+- **Real-time Preview**: Instantly display file contents
+- **Fast Search**: Integration with fzf/rga
+- **Bookmarks**: Quick access to frequently used directories
+- **zoxide Integration**: Smart directory history
 
-### クロスプラットフォーム
+### Cross-platform
 
-- **macOS**: ネイティブサポート
-- **Linux**: ネイティブサポート
-- **Windows**: PowerShellスクリプト対応
+- **macOS**: Native support
+- **Linux**: Native support
+- **Windows**: PowerShell script support
 
-## インストール
+## Installation
 
 ```bash
 gem install rufio
 ```
 
-または、Gemfileに追加:
+Or add to your Gemfile:
 
 ```ruby
 gem 'rufio'
 ```
 
-## クイックスタート
+## Quick Start
 
-### 1. 起動
+### 1. Launch
 
 ```bash
-rufio           # カレントディレクトリで起動
-rufio /path/to  # 指定したディレクトリで起動
+rufio           # Launch in current directory
+rufio /path/to  # Launch in specified directory
 ```
 
-### 2. スクリプトパスを登録
+### 2. Register Script Path
 
-1. スクリプトを配置したいディレクトリに移動
-2. `B` → `2` でスクリプトパスに追加
+1. Navigate to the directory where you want to place scripts
+2. `B` → `2` to add to script path
 
-### 3. スクリプトを実行
+### 3. Execute Script
 
-1. `:` でコマンドモードを起動
-2. `@` + スクリプト名の一部を入力
-3. `Tab` で補完
-4. `Enter` で実行
+1. Press `:` to enter command mode
+2. Type `@` + part of the script name
+3. Press `Tab` to complete
+4. Press `Enter` to execute
 
-## キーバインド
+## Key Bindings
 
-### 基本操作
+### Basic Operations
 
-| キー | 機能 |
-|------|------|
-| `j/k` | 上下移動 |
-| `h/l` | 親/子ディレクトリ |
-| `g/G` | 先頭/末尾 |
-| `Enter` | ディレクトリに入る/ファイルを開く |
-| `q` | 終了 |
+| Key | Function |
+|-----|----------|
+| `j/k` | Move up/down |
+| `h/l` | Parent/child directory |
+| `g/G` | Top/bottom |
+| `Enter` | Enter directory/open file |
+| `q` | Quit |
 
-### ファイル操作
+### File Operations
 
-| キー | 機能 |
-|------|------|
-| `Space` | 選択/選択解除 |
-| `o` | 外部エディタで開く |
-| `a/A` | ファイル/ディレクトリ作成 |
-| `r` | リネーム |
-| `d` | 削除 |
-| `m/c/x` | 移動/コピー/削除（選択済み） |
+| Key | Function |
+|-----|----------|
+| `Space` | Select/deselect |
+| `o` | Open with external editor |
+| `a/A` | Create file/directory |
+| `r` | Rename |
+| `d` | Delete |
+| `m/c/x` | Move/copy/delete (selected) |
 
-### 検索・フィルター
+### Search & Filter
 
-| キー | 機能 |
-|------|------|
-| `f` | フィルターモード |
-| `s` | fzfでファイル検索 |
-| `F` | rgaでファイル内容検索 |
+| Key | Function |
+|-----|----------|
+| `f` | Filter mode |
+| `s` | Search files with fzf |
+| `F` | Search file contents with rga |
 
-### ナビゲーション
+### Navigation
 
-| キー | 機能 |
-|------|------|
-| `b` | ブックマーク追加 |
-| `B` | ブックマークメニュー |
-| `0` | 起動ディレクトリに戻る |
-| `1-9` | ブックマークにジャンプ |
-| `z` | zoxide履歴 |
+| Key | Function |
+|-----|----------|
+| `b` | Add bookmark |
+| `B` | Bookmark menu |
+| `0` | Return to startup directory |
+| `1-9` | Jump to bookmark |
+| `z` | zoxide history |
 
-### ツールランタイム
+### Tool Runtime
 
-| キー | 機能 |
-|------|------|
-| `:` | コマンドモード |
-| `J` | ジョブモード |
-| `L` | 実行ログ表示 |
-| `?` | ヘルプ |
+| Key | Function |
+|-----|----------|
+| `:` | Command mode |
+| `J` | Job mode |
+| `L` | View execution logs |
+| `?` | Help |
 
-## コマンドモード
+## Command Mode
 
-`:` でコマンドモードを起動し、様々なコマンドを実行できます。
+Press `:` to enter command mode and execute various commands.
 
-### スクリプト実行
-
-```
-:@build           # @で始まるとスクリプト補完
-:@deploy.rb       # 登録済みスクリプトを実行
-```
-
-### シェルコマンド
+### Script Execution
 
 ```
-:!git status      # !で始まるとシェルコマンド
-:!ls -la          # バックグラウンドで実行
+:@build           # @ prefix triggers script completion
+:@deploy.rb       # Execute registered script
 ```
 
-### 組み込みコマンド
+### Shell Commands
 
 ```
-:hello            # 挨拶メッセージ
-:stop             # rufioを終了
+:!git status      # ! prefix for shell commands
+:!ls -la          # Execute in background
 ```
 
-## スクリプトパス
+### Built-in Commands
 
-### スクリプトパスとは
+```
+:hello            # Greeting message
+:stop             # Quit rufio
+```
 
-スクリプトファイルを配置するディレクトリを登録する機能です。登録したディレクトリ内のスクリプトは、コマンドモードで `@` プレフィックスを使って実行できます。
+## Script Path
 
-### 管理方法
+### What is Script Path?
 
-`B` → `3` でスクリプトパス管理メニューを開きます：
+A feature to register directories containing script files. Scripts in registered directories can be executed using the `@` prefix in command mode.
 
-- 登録済みパスの一覧表示
-- `d`: パスを削除
-- `Enter`: ディレクトリにジャンプ
-- `ESC`: メニューを閉じる
+### Management
 
-### 対応スクリプト
+Press `B` → `3` to open the script path management menu:
 
-| 拡張子 | 言語 |
-|--------|------|
+- View registered paths
+- `d`: Remove path
+- `Enter`: Jump to directory
+- `ESC`: Close menu
+
+### Supported Scripts
+
+| Extension | Language |
+|-----------|----------|
 | `.rb` | Ruby |
 | `.py` | Python |
 | `.ps1` | PowerShell |
 | `.sh` | Shell (bash/zsh) |
 
-## DSLコマンド
+## DSL Commands
 
-`~/.config/rufio/commands.rb` でカスタムコマンドを定義できます：
+Define custom commands in `~/.config/rufio/commands.rb`:
 
 ```ruby
 command "hello" do
   ruby { "Hello from rufio!" }
-  description "挨拶コマンド"
+  description "Greeting command"
 end
 
 command "status" do
   shell "git status"
-  description "Gitステータス"
+  description "Git status"
 end
 
 command "build" do
   script "~/.config/rufio/scripts/build.rb"
-  description "ビルド実行"
+  description "Run build"
 end
 ```
 
-## 設定
+## Configuration
 
-### 設定ファイル構成
+### Configuration File Structure
 
 ```
 ~/.config/rufio/
-├── config.rb         # カラー設定
-├── commands.rb       # DSLコマンド定義
-├── bookmarks.json    # ブックマーク
-├── scripts/          # スクリプトファイル
-└── log/              # 実行ログ
+├── config.rb         # Color settings
+├── commands.rb       # DSL command definitions
+├── bookmarks.json    # Bookmarks
+├── scripts/          # Script files
+└── log/              # Execution logs
 ```
 
-### カラー設定
+### Color Settings
 
 ```ruby
 # ~/.config/rufio/config.rb
@@ -232,17 +230,17 @@ COLORS = {
 }
 ```
 
-## 外部ツール連携
+## External Tool Integration
 
-rufioは以下の外部ツールと連携して機能を拡張します：
+rufio integrates with the following external tools to extend functionality:
 
-| ツール | 用途 | キー |
-|--------|------|------|
-| fzf | ファイル名検索 | `s` |
-| rga | ファイル内容検索 | `F` |
-| zoxide | ディレクトリ履歴 | `z` |
+| Tool | Purpose | Key |
+|------|---------|-----|
+| fzf | File name search | `s` |
+| rga | File content search | `F` |
+| zoxide | Directory history | `z` |
 
-### インストール
+### Installation
 
 ```bash
 # macOS
@@ -250,42 +248,42 @@ brew install fzf rga zoxide
 
 # Ubuntu/Debian
 apt install fzf zoxide
-# rgaは別途インストール: https://github.com/phiresky/ripgrep-all
+# rga requires separate installation: https://github.com/phiresky/ripgrep-all
 ```
 
-## 高度な機能
+## Advanced Features
 
-### ネイティブスキャナー（実験的）
+### Native Scanner (Experimental)
 
-高速なディレクトリスキャンのためのネイティブ実装をサポート：
+Support for native implementation for fast directory scanning:
 
 ```bash
-rufio --native        # 自動検出
-rufio --native=zig    # Zig実装
+rufio --native        # Auto-detect
+rufio --native=zig    # Zig implementation
 ```
 
-### JITコンパイラ
+### JIT Compiler
 
 ```bash
 rufio --yjit   # Ruby 3.1+ YJIT
 rufio --zjit   # Ruby 3.4+ ZJIT
 ```
 
-### ヘルスチェック
+### Health Check
 
 ```bash
-rufio -c              # システム依存関係をチェック
-rufio --check-health  # 同上
+rufio -c              # Check system dependencies
+rufio --check-health  # Same as above
 ```
 
-## 開発
+## Development
 
-### 必要な環境
+### Requirements
 
-- Ruby 2.7.0以上
+- Ruby 2.7.0 or later
 - io-console, pastel, tty-cursor, tty-screen gems
 
-### 開発版の実行
+### Running Development Version
 
 ```bash
 git clone https://github.com/masisz/rufio
@@ -294,17 +292,17 @@ bundle install
 ./bin/rufio
 ```
 
-### テスト
+### Testing
 
 ```bash
 bundle exec rake test
 ```
 
-## ライセンス
+## License
 
 MIT License
 
-## 貢献
+## Contributing
 
-バグ報告や機能リクエストは [GitHub Issues](https://github.com/masisz/rufio/issues) でお願いします。
-プルリクエストも歓迎です！
+Bug reports and feature requests are welcome at [GitHub Issues](https://github.com/masisz/rufio/issues).
+Pull requests are also welcome!
