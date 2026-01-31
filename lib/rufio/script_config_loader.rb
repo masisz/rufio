@@ -1,15 +1,16 @@
 # frozen_string_literal: true
 
 require 'yaml'
+require_relative 'config'
 
 module Rufio
   # 複数の設定ファイルからscript_pathsをロード・マージするクラス
   # 優先順位: ローカル > ユーザー > システム
   class ScriptConfigLoader
-    # デフォルトの設定ファイルパス
-    DEFAULT_LOCAL_PATH = './rufio.yml'
-    DEFAULT_USER_PATH = File.expand_path('~/.config/rufio/config.yml')
-    DEFAULT_SYSTEM_PATH = '/etc/rufio/config.yml'
+    # デフォルトの設定ファイルパス（新形式: script_paths.yml）
+    DEFAULT_LOCAL_PATH = Config::LOCAL_YAML_PATH
+    DEFAULT_USER_PATH = Config::SCRIPT_PATHS_YML
+    DEFAULT_SYSTEM_PATH = '/etc/rufio/script_paths.yml'
 
     # @param local_path [String, nil] ローカル設定ファイルのパス
     # @param user_path [String, nil] ユーザー設定ファイルのパス
@@ -63,25 +64,39 @@ module Rufio
 
     private
 
-    # 設定ファイルからscript_pathsを読み込む
+    # 設定ファイルからscript_pathsを読み込む（新形式対応）
     # @param path [String] 設定ファイルのパス
     # @return [Array<String>] パスの配列
     def load_paths_from_file(path)
+      # 新形式: script_paths.yml（リスト形式）
+      if path.end_with?('script_paths.yml')
+        return Config.load_script_paths(path)
+      end
+
+      # 後方互換: 古いconfig.yml形式（ハッシュ形式）
       config = load_config(path)
       config['script_paths'] || []
     end
 
-    # 設定ファイルを読み込む
+    # 設定ファイルを読み込む（後方互換用）
     # @param path [String] 設定ファイルのパス
     # @return [Hash] 設定内容
     def load_config(path)
-      return {} unless File.exist?(path)
+      config = Config.load_yaml_config(path)
+      stringify_keys(config)
+    end
 
-      yaml = YAML.safe_load(File.read(path), symbolize_names: false)
-      yaml || {}
-    rescue StandardError => e
-      warn "Warning: Failed to load config #{path}: #{e.message}"
-      {}
+    def stringify_keys(hash)
+      hash.transform_keys(&:to_s).transform_values do |value|
+        case value
+        when Hash
+          stringify_keys(value)
+        when Array
+          value.map { |v| v.is_a?(Hash) ? stringify_keys(v) : v }
+        else
+          value
+        end
+      end
     end
 
     # ハッシュを深くマージ

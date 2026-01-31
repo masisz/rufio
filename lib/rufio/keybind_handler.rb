@@ -51,7 +51,7 @@ module Rufio
       # Log viewer mode
       @in_log_viewer_mode = false
       @pre_log_viewer_directory = nil
-      @log_dir = File.join(Dir.home, '.config', 'rufio', 'log')
+      @log_dir = File.join(Dir.home, '.config', 'rufio', 'logs')
 
       # Preview pane focus and scroll
       @preview_focused = false
@@ -62,9 +62,8 @@ module Rufio
       @job_manager = JobManager.new(notification_manager: @notification_manager)
       @job_mode = JobMode.new(job_manager: @job_manager)
 
-      # Script path manager
-      config_file = File.expand_path('~/.config/rufio/config.yml')
-      @script_path_manager = File.exist?(config_file) ? ScriptPathManager.new(config_file) : nil
+      # Script path manager (新形式: script_paths.yml)
+      @script_path_manager = ScriptPathManager.new(Config::SCRIPT_PATHS_YML)
     end
 
     def set_directory_listing(directory_listing)
@@ -1446,8 +1445,16 @@ module Rufio
       when '3'
         show_script_paths_manager
       when '4'
-        # ブックマーク一覧表示（既存機能）
+        # ブックマーク一覧表示
+        selected_bookmark = @bookmark_manager.list_interactive
         @terminal_ui&.refresh_display
+        if selected_bookmark
+          if @bookmark_manager.path_exists?(selected_bookmark)
+            navigate_to_directory(selected_bookmark[:path])
+          else
+            show_error_and_wait('bookmark.path_not_exist', selected_bookmark[:path])
+          end
+        end
       else
         @terminal_ui&.refresh_display
       end
@@ -1460,10 +1467,8 @@ module Rufio
       current_path = @directory_listing&.current_path || Dir.pwd
 
       unless @script_path_manager
-        # ScriptPathManagerがない場合は作成
-        config_file = File.expand_path('~/.config/rufio/config.yml')
-        FileUtils.mkdir_p(File.dirname(config_file))
-        @script_path_manager = ScriptPathManager.new(config_file)
+        # ScriptPathManagerがない場合は作成（新形式: script_paths.yml）
+        @script_path_manager = ScriptPathManager.new(Config::SCRIPT_PATHS_YML)
       end
 
       if @script_path_manager.paths.include?(current_path)

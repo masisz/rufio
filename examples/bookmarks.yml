@@ -1,0 +1,14 @@
+# ~/.config/rufio/bookmarks.yml
+# List of bookmarks
+#
+# Press 1-9 keys to jump directly to bookmarks.
+# Press B key to open bookmark menu for add/remove operations.
+
+- path: ~/Documents
+  name: Documents
+- path: ~/Downloads
+  name: Downloads
+- path: ~/projects
+  name: Projects
+- path: ~/.config
+  name: Config

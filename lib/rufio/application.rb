@@ -21,7 +21,7 @@ module Rufio
       terminal_ui = TerminalUI.new(test_mode: test_mode)
 
       # バックグラウンドコマンド実行用の設定
-      log_dir = File.join(Dir.home, '.config', 'rufio', 'log')
+      log_dir = File.join(Dir.home, '.config', 'rufio', 'logs')
       FileUtils.mkdir_p(log_dir) unless Dir.exist?(log_dir)
       command_logger = CommandLogger.new(log_dir)
       background_executor = BackgroundCommandExecutor.new(command_logger)

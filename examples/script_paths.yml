@@ -1,0 +1,11 @@
+# ~/.config/rufio/script_paths.yml
+# List of script directories
+#
+# Scripts in registered directories can be executed
+# from rufio's command mode (:).
+#
+# Example: :build -> executes build.sh or build.rb in script_paths
+
+- ~/.config/rufio/scripts
+- ~/bin
+- ~/scripts

@@ -15,12 +15,12 @@ module Rufio
     private
 
     def create_default_bookmark
-      # 必要に応じてJSONからYAMLに移行
+      # 必要に応じて古いconfig.ymlからマイグレーション
       ConfigLoader.migrate_bookmarks_if_needed
 
-      # YAMLストレージを使用
+      # 新形式のYAMLストレージを使用（bookmarks.yml）
       storage = ConfigLoader.bookmark_storage
-      Bookmark.new(ConfigLoader::YAML_CONFIG_PATH, storage: storage)
+      Bookmark.new(ConfigLoader::BOOKMARKS_YML, storage: storage)
     end
 
     public

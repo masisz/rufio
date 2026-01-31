@@ -3,6 +3,7 @@
 require 'json'
 require 'yaml'
 require 'fileutils'
+require_relative 'config'
 
 module Rufio
   # ブックマークストレージの基底クラス
@@ -28,16 +29,21 @@ module Rufio
 
     def valid_bookmark?(bookmark)
       bookmark.is_a?(Hash) &&
-        bookmark.key?(:path) &&
-        bookmark.key?(:name) &&
-        bookmark[:path].is_a?(String) &&
-        bookmark[:name].is_a?(String)
+        (bookmark.key?(:path) || bookmark.key?('path')) &&
+        (bookmark.key?(:name) || bookmark.key?('name'))
+    end
+
+    def normalize_bookmark(bookmark)
+      {
+        path: bookmark[:path] || bookmark['path'],
+        name: bookmark[:name] || bookmark['name']
+      }
     end
 
     def filter_valid_bookmarks(bookmarks)
       return [] unless bookmarks.is_a?(Array)
 
-      bookmarks.select { |b| valid_bookmark?(b) }
+      bookmarks.select { |b| valid_bookmark?(b) }.map { |b| normalize_bookmark(b) }
     end
   end
 
@@ -63,15 +69,24 @@ module Rufio
     end
   end
 
-  # YAML形式のブックマークストレージ（config.ymlに統合）
+  # YAML形式のブックマークストレージ（新旧形式対応）
+  # 新形式: bookmarks.yml（配列形式）
+  # 旧形式: config.yml（bookmarksセクション）
   class YamlBookmarkStorage < BookmarkStorage
     def load
       return [] unless File.exist?(@file_path)
 
-      content = YAML.safe_load(File.read(@file_path), symbolize_names: true)
-      return [] unless content.is_a?(Hash) && content[:bookmarks]
+      # 新形式: bookmarks.yml（配列形式）
+      if @file_path.end_with?('bookmarks.yml')
+        return Config.load_bookmarks_from_yml(@file_path)
+      end
 
-      filter_valid_bookmarks(content[:bookmarks])
+      # 旧形式: config.yml（bookmarksセクション）
+      yaml = YAML.safe_load(File.read(@file_path), symbolize_names: true)
+      return [] unless yaml.is_a?(Hash)
+
+      bookmarks = yaml[:bookmarks] || []
+      filter_valid_bookmarks(bookmarks)
     rescue StandardError
       []
     end
@@ -79,70 +94,56 @@ module Rufio
     def save(bookmarks)
       ensure_directory
 
-      # 既存の設定を読み込み
-      existing_config = if File.exist?(@file_path)
-                          YAML.safe_load(File.read(@file_path), symbolize_names: true) || {}
-                        else
-                          {}
-                        end
+      # 新形式: bookmarks.yml（配列形式）
+      if @file_path.end_with?('bookmarks.yml')
+        Config.save_bookmarks_to_yml(@file_path, bookmarks)
+        return true
+      end
 
-      # ブックマークを文字列キーのハッシュに変換（YAMLの可読性のため）
-      bookmarks_for_yaml = bookmarks.map do |b|
+      # 旧形式: config.yml（bookmarksセクション - 既存の設定を保持）
+      existing = if File.exist?(@file_path)
+                   YAML.safe_load(File.read(@file_path), symbolize_names: false) || {}
+                 else
+                   {}
+                 end
+
+      existing['bookmarks'] = bookmarks.map do |b|
         { 'path' => b[:path], 'name' => b[:name] }
       end
 
-      # ブックマークセクションを更新
-      existing_config_string_keys = deep_stringify_keys(existing_config)
-      existing_config_string_keys['bookmarks'] = bookmarks_for_yaml
-
-      File.write(@file_path, YAML.dump(existing_config_string_keys))
+      File.write(@file_path, YAML.dump(existing))
       true
     rescue StandardError => e
       warn "Failed to save bookmarks to YAML: #{e.message}"
       false
     end
-
-    private
-
-    def deep_stringify_keys(hash)
-      return hash unless hash.is_a?(Hash)
-
-      hash.transform_keys(&:to_s).transform_values do |v|
-        case v
-        when Hash
-          deep_stringify_keys(v)
-        when Array
-          v.map { |item| item.is_a?(Hash) ? deep_stringify_keys(item) : item }
-        else
-          v
-        end
-      end
-    end
   end
 
-  # ブックマークのJSON→YAMLマイグレーター
+  # JSONからYAMLへのマイグレーター
   class BookmarkMigrator
-    class << self
-      def migrate(json_path, yaml_path)
-        return false unless File.exist?(json_path)
+    # @param json_path [String] JSONファイルのパス
+    # @param yaml_path [String] YAMLファイルのパス
+    # @return [Boolean] マイグレーションが実行されたかどうか
+    def self.migrate(json_path, yaml_path)
+      return false unless File.exist?(json_path)
 
-        # JSONからブックマークを読み込み
-        json_storage = JsonBookmarkStorage.new(json_path)
-        bookmarks = json_storage.load
+      # JSONからブックマークを読み込む
+      json_storage = JsonBookmarkStorage.new(json_path)
+      bookmarks = json_storage.load
 
-        # YAMLに保存
-        yaml_storage = YamlBookmarkStorage.new(yaml_path)
-        yaml_storage.save(bookmarks)
+      return false if bookmarks.empty?
 
-        # JSONファイルをバックアップして削除
-        backup_path = "#{json_path}.bak"
-        FileUtils.mv(json_path, backup_path)
+      # YAMLに保存
+      yaml_storage = YamlBookmarkStorage.new(yaml_path)
+      yaml_storage.save(bookmarks)
 
-        true
-      rescue StandardError => e
-        warn "Failed to migrate bookmarks: #{e.message}"
-        false
-      end
+      # JSONファイルをバックアップ
+      FileUtils.mv(json_path, "#{json_path}.bak")
+
+      true
+    rescue StandardError => e
+      warn "Migration failed: #{e.message}"
+      false
     end
   end
 end

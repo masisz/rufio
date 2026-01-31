@@ -212,24 +212,45 @@ end
 
 ```
 ~/.config/rufio/
-├── config.rb         # カラー設定
+├── config.rb         # メイン設定（スクリプトパス、カラー等）
 ├── commands.rb       # DSLコマンド定義
 ├── bookmarks.json    # ブックマーク
 ├── scripts/          # スクリプトファイル
-└── log/              # 実行ログ
+└── logs/             # 実行ログ
 ```
 
-### カラー設定
+### 設定例
 
 ```ruby
 # ~/.config/rufio/config.rb
+
+# スクリプトパス - スクリプトを配置するディレクトリ
+SCRIPT_PATHS = [
+  '~/.config/rufio/scripts',
+  '~/my-scripts',
+  './scripts'
+].freeze
+
+# カラー設定（HSL形式推奨）
 COLORS = {
-  directory: {hsl: [220, 80, 60]},
-  file: {hsl: [0, 0, 90]},
-  executable: {hsl: [120, 70, 50]},
-  selected: {hsl: [50, 90, 70]},
-  preview: {hsl: [180, 60, 65]},
-}
+  directory: { hsl: [220, 80, 60] },
+  file: { hsl: [0, 0, 90] },
+  executable: { hsl: [120, 70, 50] },
+  selected: { hsl: [50, 90, 70] },
+  preview: { hsl: [180, 60, 65] }
+}.freeze
+```
+
+### ローカル設定
+
+プロジェクトルートに `rufio.rb` を配置すると、そのプロジェクト専用のスクリプトパスを設定できます：
+
+```ruby
+# ./rufio.rb（プロジェクトルート）
+SCRIPT_PATHS = [
+  './scripts',
+  './bin'
+].freeze
 ```
 
 ## 外部ツール連携

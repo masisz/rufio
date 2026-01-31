@@ -210,24 +210,67 @@ end
 
 ```
 ~/.config/rufio/
-├── config.rb         # Color settings
-├── commands.rb       # DSL command definitions
-├── bookmarks.json    # Bookmarks
-├── scripts/          # Script files
-└── log/              # Execution logs
+├── config.rb          # DSL-style main configuration
+├── script_paths.yml   # Script directories (list format)
+├── bookmarks.yml      # Bookmarks (list format)
+├── commands.rb        # DSL command definitions
+├── scripts/           # Script files
+└── logs/              # Execution logs
 ```
 
-### Color Settings
+### config.rb (DSL Configuration)
 
 ```ruby
 # ~/.config/rufio/config.rb
+
+# Language setting: 'en' or 'ja'
+LANGUAGE = 'ja'
+
+# Color settings (HSL format)
 COLORS = {
-  directory: {hsl: [220, 80, 60]},
-  file: {hsl: [0, 0, 90]},
-  executable: {hsl: [120, 70, 50]},
-  selected: {hsl: [50, 90, 70]},
-  preview: {hsl: [180, 60, 65]},
-}
+  directory: { hsl: [220, 80, 60] },
+  file: { hsl: [0, 0, 90] },
+  executable: { hsl: [120, 70, 50] },
+  selected: { hsl: [50, 90, 70] },
+  preview: { hsl: [180, 60, 65] }
+}.freeze
+
+# Keybind settings
+KEYBINDS = {
+  quit: %w[q ESC],
+  up: %w[k UP],
+  down: %w[j DOWN]
+}.freeze
+```
+
+### script_paths.yml
+
+```yaml
+# ~/.config/rufio/script_paths.yml
+- ~/.config/rufio/scripts
+- ~/bin
+- ~/scripts
+```
+
+### bookmarks.yml
+
+```yaml
+# ~/.config/rufio/bookmarks.yml
+- path: ~/Documents
+  name: Documents
+- path: ~/projects
+  name: Projects
+```
+
+### Local Configuration
+
+Place `rufio.yml` in your project root for project-specific script paths:
+
+```yaml
+# ./rufio.yml (project root)
+script_paths:
+  - ./scripts
+  - ./bin
 ```
 
 ## External Tool Integration

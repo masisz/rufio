@@ -99,53 +99,122 @@ class TestConfig < Minitest::Test
   # ConfigLoader ブックマーク統合テスト
   # ========================================
 
-  def test_config_loader_bookmark_storage_returns_yaml_storage
-    storage = Rufio::ConfigLoader.bookmark_storage
-    assert_kind_of Rufio::YamlBookmarkStorage, storage
-  end
-
-  def test_config_loader_migrate_bookmarks_if_needed
+  def test_config_loader_load_bookmarks
     # テスト用の一時ディレクトリを作成
     test_dir = File.join(Dir.tmpdir, 'rufio_config_test')
     FileUtils.mkdir_p(test_dir)
 
-    json_file = File.join(test_dir, 'bookmarks.json')
     yaml_file = File.join(test_dir, 'config.yml')
+    bookmarks_file = File.join(test_dir, 'bookmarks.yml')
 
     begin
-      # JSONファイルにブックマークを保存
-      File.write(json_file, '[{"path": "/test/path", "name": "test"}]')
+      # YAMLファイルにブックマークを保存（古い形式）
+      File.write(yaml_file, <<~YAML)
+        bookmarks:
+          - path: /test/path
+            name: test
+      YAML
 
-      # マイグレーションを実行
-      result = Rufio::ConfigLoader.migrate_bookmarks_if_needed(json_file, yaml_file)
+      # 一時的にパスを変更してテスト
+      original_yaml_path = Rufio::ConfigLoader::YAML_CONFIG_PATH
+      original_bookmarks_path = Rufio::ConfigLoader::BOOKMARKS_YML
 
-      assert result
-      # YAMLファイルにブックマークが移行されている
-      assert File.exist?(yaml_file)
-      content = YAML.safe_load(File.read(yaml_file), symbolize_names: true)
-      assert_equal 1, content[:bookmarks].length
-      # JSONファイルはバックアップされている
-      assert File.exist?("#{json_file}.bak")
+      Rufio::ConfigLoader.send(:remove_const, :YAML_CONFIG_PATH)
+      Rufio::ConfigLoader.const_set(:YAML_CONFIG_PATH, yaml_file)
+      Rufio::ConfigLoader.send(:remove_const, :BOOKMARKS_YML)
+      Rufio::ConfigLoader.const_set(:BOOKMARKS_YML, bookmarks_file)
+
+      bookmarks = Rufio::ConfigLoader.load_bookmarks
+      assert_equal 1, bookmarks.length
+      assert_equal '/test/path', bookmarks[0][:path]
+      assert_equal 'test', bookmarks[0][:name]
+
+      # 元に戻す
+      Rufio::ConfigLoader.send(:remove_const, :YAML_CONFIG_PATH)
+      Rufio::ConfigLoader.const_set(:YAML_CONFIG_PATH, original_yaml_path)
+      Rufio::ConfigLoader.send(:remove_const, :BOOKMARKS_YML)
+      Rufio::ConfigLoader.const_set(:BOOKMARKS_YML, original_bookmarks_path)
     ensure
       FileUtils.rm_rf(test_dir)
     end
   end
 
-  def test_config_loader_migrate_bookmarks_skips_if_no_json
-    test_dir = File.join(Dir.tmpdir, 'rufio_config_test')
-    FileUtils.mkdir_p(test_dir)
+  # ========================================
+  # Config YAML読み込みテスト
+  # ========================================
 
-    json_file = File.join(test_dir, 'nonexistent.json')
-    yaml_file = File.join(test_dir, 'config.yml')
+  def test_config_yaml_config_path
+    assert_equal File.expand_path('~/.config/rufio/config.yml'), Rufio::Config::YAML_CONFIG_PATH
+  end
+
+  def test_config_local_yaml_path
+    assert_equal './rufio.yml', Rufio::Config::LOCAL_YAML_PATH
+  end
+
+  def test_config_load_yaml_config_returns_empty_hash_when_file_not_exists
+    result = Rufio::Config.load_yaml_config('/nonexistent/path.yml')
+    assert_equal({}, result)
+  end
+
+  def test_config_load_yaml_config_reads_yaml_file
+    test_dir = File.join(Dir.tmpdir, 'rufio_config_yaml_test')
+    FileUtils.mkdir_p(test_dir)
+    yaml_file = File.join(test_dir, 'test_config.yml')
 
     begin
-      result = Rufio::ConfigLoader.migrate_bookmarks_if_needed(json_file, yaml_file)
+      File.write(yaml_file, <<~YAML)
+        script_paths:
+          - /test/scripts
+          - ~/my-scripts
+        bookmarks:
+          - path: /home/user/docs
+            name: Documents
+      YAML
 
-      refute result
-      refute File.exist?(yaml_file)
+      result = Rufio::Config.load_yaml_config(yaml_file)
+
+      assert_equal ['/test/scripts', '~/my-scripts'], result[:script_paths]
+      assert_equal 1, result[:bookmarks].length
+      assert_equal '/home/user/docs', result[:bookmarks][0][:path]
     ensure
       FileUtils.rm_rf(test_dir)
     end
+  end
+
+  def test_config_save_yaml_config
+    test_dir = File.join(Dir.tmpdir, 'rufio_config_yaml_save_test')
+    FileUtils.mkdir_p(test_dir)
+    yaml_file = File.join(test_dir, 'test_config.yml')
+
+    begin
+      # 新しいファイルに保存
+      Rufio::Config.save_yaml_config(yaml_file, :script_paths, ['/new/path'])
+
+      result = Rufio::Config.load_yaml_config(yaml_file)
+      assert_equal ['/new/path'], result[:script_paths]
+
+      # 既存のファイルに別のキーを追加
+      Rufio::Config.save_yaml_config(yaml_file, :bookmarks, [{ path: '/test', name: 'Test' }])
+
+      result = Rufio::Config.load_yaml_config(yaml_file)
+      assert_equal ['/new/path'], result[:script_paths]
+      assert_equal 1, result[:bookmarks].length
+    ensure
+      FileUtils.rm_rf(test_dir)
+    end
+  end
+
+  def test_config_yaml_config_uses_default_path
+    # デフォルトパスでのyaml_configメソッドをテスト
+    # 実際のファイルがない場合は空のハッシュを返す
+    result = Rufio::Config.yaml_config
+    assert result.is_a?(Hash)
+  end
+
+  def test_config_reload_yaml_config
+    Rufio::Config.reload_yaml_config!
+    # エラーなく実行できればOK
+    assert true
   end
 
   private

@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.62.0] - 2026-01-31
+
+### Changed
+- **Configuration File Structure Overhaul**: Separated configuration into multiple files
+  - `~/.config/rufio/config.rb` - DSL-style main configuration (colors, keybinds, language)
+  - `~/.config/rufio/script_paths.yml` - Script directories (list format)
+  - `~/.config/rufio/bookmarks.yml` - Bookmarks (list format)
+  - Old `config.yml` format still supported for backward compatibility
+- **Config Class Refactoring**: Centralized YAML configuration management
+  - All YAML read/write operations now go through `Config` class
+  - Added `load_script_paths`, `save_script_paths`, `add_script_path`, `remove_script_path`
+  - Added `load_bookmarks_from_yml`, `save_bookmarks_to_yml`, `add_bookmark`, `remove_bookmark`
+  - Added `load_config_rb` for DSL configuration loading
+  - Added `migrate_from_config_yml` for migration from old format
+
+### Fixed
+- **Bookmark Menu**: Fixed "View bookmarks" option (key `4`) not working in bookmark menu (`B` key)
+
+### Deprecated
+- **bookmark.json**: JSON bookmark format is deprecated, use `bookmarks.yml` instead
+- **config.yml**: Single config file format is deprecated, use separate files instead
+
+### Technical Details
+- **New Constants in Config**:
+  - `CONFIG_DIR`, `CONFIG_RB_PATH`, `SCRIPT_PATHS_YML`, `BOOKMARKS_YML`
+- **Backward Compatibility**:
+  - `YamlBookmarkStorage` supports both new (list format) and old (section format)
+  - `ScriptPathManager` supports both `script_paths.yml` and legacy `config.yml`
+- **New Example Files**: Added `examples/config.rb`, `examples/script_paths.yml`, `examples/bookmarks.yml`
+
 ## [0.61.0] - 2026-01-25
 
 ### Changed
