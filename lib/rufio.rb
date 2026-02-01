@@ -43,6 +43,7 @@ require_relative "rufio/async_scanner_fiber"
 require_relative "rufio/parallel_scanner"
 require_relative "rufio/screen"
 require_relative "rufio/renderer"
+require_relative "rufio/tab_mode_manager"
 
 # ジョブ管理システム
 require_relative "rufio/task_status"

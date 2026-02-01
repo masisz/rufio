@@ -491,6 +491,9 @@ module Rufio
       return false unless entry
 
       if entry[:type] == 'directory'
+        # ヘルプモードとLogsモードではディレクトリ移動を禁止
+        return false if @in_help_mode || @in_log_viewer_mode
+
         result = @directory_listing.navigate_to(entry[:name])
         if result
           @current_index = 0  # select first entry in new directory

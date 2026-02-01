@@ -6,9 +6,9 @@ require_relative 'text_utils'
 module Rufio
   class TerminalUI
     # Layout constants
-    HEADER_HEIGHT = 1              # Header占有行数
+    HEADER_HEIGHT = 2              # Header占有行数（2段目のモードタブを含む）
     FOOTER_HEIGHT = 1              # Footer占有行数（ブックマーク一覧 + ステータス情報）
-    HEADER_FOOTER_MARGIN = 3       # Header + Footer分のマージン
+    HEADER_FOOTER_MARGIN = 3       # Header(2行) + Footer(1行)分のマージン
 
     # Panel layout ratios
     LEFT_PANEL_RATIO = 0.5         # 左パネルの幅比率
@@ -30,7 +30,7 @@ module Rufio
     GIGABYTE = MEGABYTE * 1024
 
     # Line offsets
-    CONTENT_START_LINE = 2         # コンテンツ開始行（ヘッダー1行スキップ）
+    CONTENT_START_LINE = 2         # コンテンツ開始行（ヘッダー2行: Y=0, Y=1）
 
     def initialize(test_mode: false)
       console = IO.console
@@ -74,6 +74,9 @@ module Rufio
       # Command execution lamp (footer indicator)
       @completion_lamp_message = nil
       @completion_lamp_time = nil
+
+      # Tab mode manager
+      @tab_mode_manager = TabModeManager.new
     end
 
     def start(directory_listing, keybind_handler, file_preview, background_executor = nil)
@@ -371,35 +374,34 @@ module Rufio
 
     # Phase 3: Screenバッファに描画する新しいメソッド
     def draw_screen_to_buffer(screen, notification_message = nil, fps = nil)
-      # ジョブモードの場合は既存の描画メソッドを使用
-      if @in_job_mode
-        if @job_mode_needs_redraw
-          draw_job_mode_screen
-          @job_mode_needs_redraw = false
-        end
-        return
-      end
-
-      # header (1 line) - y=0
+      # header (2 lines) - y=0, y=1（全モード共通）
       draw_header_to_buffer(screen, 0)
-
-      # main content (left: directory list, right: preview)
-      entries = get_display_entries
-      selected_entry = entries[@keybind_handler.current_index]
+      draw_mode_tabs_to_buffer(screen, 1)
 
       # calculate height with header and footer margin
       content_height = @screen_height - HEADER_FOOTER_MARGIN
-      left_width = (@screen_width * LEFT_PANEL_RATIO).to_i
-      right_width = @screen_width - left_width
 
-      # adjust so right panel doesn't overflow into left panel
-      right_width = @screen_width - left_width if left_width + right_width > @screen_width
+      if @in_job_mode
+        # ジョブモード: ジョブ一覧を表示
+        draw_job_list_to_buffer(screen, content_height)
+        draw_job_footer_to_buffer(screen, @screen_height - 1)
+      else
+        # 通常モード: ファイル一覧とプレビューを表示
+        entries = get_display_entries
+        selected_entry = entries[@keybind_handler.current_index]
 
-      draw_directory_list_to_buffer(screen, entries, left_width, content_height)
-      draw_file_preview_to_buffer(screen, selected_entry, right_width, content_height, left_width)
+        left_width = (@screen_width * LEFT_PANEL_RATIO).to_i
+        right_width = @screen_width - left_width
 
-      # footer
-      draw_footer_to_buffer(screen, @screen_height - 1, fps)
+        # adjust so right panel doesn't overflow into left panel
+        right_width = @screen_width - left_width if left_width + right_width > @screen_width
+
+        draw_directory_list_to_buffer(screen, entries, left_width, content_height)
+        draw_file_preview_to_buffer(screen, selected_entry, right_width, content_height, left_width)
+
+        # footer
+        draw_footer_to_buffer(screen, @screen_height - 1, fps)
+      end
 
       # 通知メッセージがある場合は表示
       if notification_message
@@ -410,10 +412,80 @@ module Rufio
         end
         screen.put_string(0, notification_line, message_display.ljust(@screen_width), fg: "\e[7m")
       end
+    end
 
-      # コマンドモードがアクティブな場合はフローティングウィンドウを描画
-      # Phase 4: 暫定的に既存のメソッドを使用
-      # Phase 5でScreenバッファ統合予定
+    # ジョブ一覧をバッファに描画
+    def draw_job_list_to_buffer(screen, height)
+      return unless @job_manager
+
+      jobs = @job_manager.jobs
+      selected_index = @job_mode_instance&.selected_index || 0
+
+      (0...height).each do |i|
+        line_num = i + CONTENT_START_LINE
+
+        if i < jobs.length
+          job = jobs[i]
+          draw_job_line_to_buffer(screen, job, i == selected_index, line_num)
+        else
+          # 空行
+          screen.put_string(0, line_num, ' ' * @screen_width)
+        end
+      end
+    end
+
+    # ジョブ行をバッファに描画
+    def draw_job_line_to_buffer(screen, job, is_selected, y)
+      icon = job.status_icon
+      name = job.name
+      path = "(#{job.path})"
+      duration = job.formatted_duration
+      duration_text = duration.empty? ? "" : "[#{duration}]"
+
+      status_text = case job.status
+                    when :running then "Running"
+                    when :completed then "Done"
+                    when :failed then "Failed"
+                    when :waiting then "Waiting"
+                    when :cancelled then "Cancelled"
+                    else ""
+                    end
+
+      # ステータスに応じた色
+      status_color = case job.status
+                     when :running then "\e[33m"    # Yellow
+                     when :completed then "\e[32m"  # Green
+                     when :failed then "\e[31m"     # Red
+                     else "\e[37m"                  # White
+                     end
+
+      # 行を構築
+      line_content = "#{icon} #{name} #{path}".ljust(40)
+      line_content += "#{duration_text.ljust(12)} #{status_text}"
+      line_content = line_content[0...@screen_width].ljust(@screen_width)
+
+      if is_selected
+        # 選択中: 反転表示
+        line_content.each_char.with_index do |char, x|
+          screen.put(x, y, char, fg: "\e[30m", bg: "\e[47m")
+        end
+      else
+        # 非選択: ステータス色
+        line_content.each_char.with_index do |char, x|
+          screen.put(x, y, char, fg: status_color)
+        end
+      end
+    end
+
+    # ジョブモード用フッターをバッファに描画
+    def draw_job_footer_to_buffer(screen, y)
+      job_count = @job_manager&.job_count || 0
+      help_text = "[Space] View Log | [x] Cancel | [Tab] Switch Mode | Jobs: #{job_count}"
+      footer_content = help_text.center(@screen_width)[0...@screen_width]
+
+      footer_content.each_char.with_index do |char, x|
+        screen.put(x, y, char, fg: "\e[30m", bg: "\e[47m")
+      end
     end
 
     def draw_screen_with_notification(notification_message)
@@ -436,7 +508,7 @@ module Rufio
     # Phase 3: Screenバッファにヘッダーを描画
     def draw_header_to_buffer(screen, y)
       current_path = @directory_listing.current_path
-      header = "📁 rufio - #{current_path}"
+      header = "💎 rufio - #{current_path}"
 
       # Add help mode indicator if in help mode
       if @keybind_handler.help_mode?
@@ -455,23 +527,81 @@ module Rufio
           # prioritize showing help mode indicator
           help_text = " [Help Mode - Press ESC to exit]"
           base_length = @screen_width - help_text.length - FILTER_TEXT_RESERVED
-          header = "📁 rufio - ...#{current_path[-base_length..-1]}#{help_text}"
+          header = "💎 rufio - ...#{current_path[-base_length..-1]}#{help_text}"
         elsif @keybind_handler.filter_active?
           # prioritize showing filter when active
           filter_text = " [Filter: #{@keybind_handler.filter_query}]"
           base_length = @screen_width - filter_text.length - FILTER_TEXT_RESERVED
-          header = "📁 rufio - ...#{current_path[-base_length..-1]}#{filter_text}"
+          header = "💎 rufio - ...#{current_path[-base_length..-1]}#{filter_text}"
         else
-          header = "📁 rufio - ...#{current_path[-(@screen_width - FILTER_TEXT_RESERVED)..-1]}"
+          header = "💎 rufio - ...#{current_path[-(@screen_width - FILTER_TEXT_RESERVED)..-1]}"
         end
       end
 
       screen.put_string(0, y, header.ljust(@screen_width), fg: "\e[7m")
     end
 
+    # Phase 3: Screenバッファにモードタブを描画
+    def draw_mode_tabs_to_buffer(screen, y)
+      # タブモードマネージャの状態を同期
+      sync_tab_mode_with_keybind_handler
+
+      current_x = 0
+      modes = @tab_mode_manager.available_modes
+      labels = @tab_mode_manager.mode_labels
+      current_mode = @tab_mode_manager.current_mode
+
+      modes.each_with_index do |mode, index|
+        label = " #{labels[mode]} "
+
+        if mode == current_mode
+          # 現在のモード: シアン背景 + 黒文字 + 太字
+          label.each_char do |char|
+            screen.put(current_x, y, char, fg: "\e[30m\e[1m", bg: "\e[46m")
+            current_x += 1
+          end
+        else
+          # 非選択モード: グレー文字
+          label.each_char do |char|
+            screen.put(current_x, y, char, fg: "\e[90m")
+            current_x += 1
+          end
+        end
+
+        # 区切り線（最後のモード以外）
+        if index < modes.length - 1
+          screen.put(current_x, y, '│', fg: "\e[90m")
+          current_x += 1
+        end
+      end
+
+      # 残りをスペースで埋める
+      while current_x < @screen_width
+        screen.put(current_x, y, ' ')
+        current_x += 1
+      end
+    end
+
+    # キーバインドハンドラの状態とタブモードを同期
+    def sync_tab_mode_with_keybind_handler
+      return unless @keybind_handler
+
+      current_mode = if @keybind_handler.help_mode?
+                       :help
+                     elsif @keybind_handler.log_viewer_mode?
+                       :logs
+                     elsif @keybind_handler.in_job_mode?
+                       :jobs
+                     else
+                       :files
+                     end
+
+      @tab_mode_manager.switch_to(current_mode) if @tab_mode_manager.current_mode != current_mode
+    end
+
     def draw_header
       current_path = @directory_listing.current_path
-      header = "📁 rufio - #{current_path}"
+      header = "💎 rufio - #{current_path}"
 
       # Add help mode indicator if in help mode
       if @keybind_handler.help_mode?
@@ -490,14 +620,14 @@ module Rufio
           # prioritize showing help mode indicator
           help_text = " [Help Mode - Press ESC to exit]"
           base_length = @screen_width - help_text.length - FILTER_TEXT_RESERVED
-          header = "📁 rufio - ...#{current_path[-base_length..-1]}#{help_text}"
+          header = "💎 rufio - ...#{current_path[-base_length..-1]}#{help_text}"
         elsif @keybind_handler.filter_active?
           # prioritize showing filter when active
           filter_text = " [Filter: #{@keybind_handler.filter_query}]"
           base_length = @screen_width - filter_text.length - FILTER_TEXT_RESERVED
-          header = "📁 rufio - ...#{current_path[-base_length..-1]}#{filter_text}"
+          header = "💎 rufio - ...#{current_path[-base_length..-1]}#{filter_text}"
         else
-          header = "📁 rufio - ...#{current_path[-(@screen_width - FILTER_TEXT_RESERVED)..-1]}"
+          header = "💎 rufio - ...#{current_path[-(@screen_width - FILTER_TEXT_RESERVED)..-1]}"
         end
       end
 
@@ -869,13 +999,20 @@ module Rufio
 
 
     def get_display_entries
-      if @keybind_handler.filter_active?
-        # Get filtered entries from keybind_handler
-        all_entries = @directory_listing.list_entries
-        query = @keybind_handler.filter_query.downcase
-        query.empty? ? all_entries : all_entries.select { |entry| entry[:name].downcase.include?(query) }
+      entries = if @keybind_handler.filter_active?
+                  # Get filtered entries from keybind_handler
+                  all_entries = @directory_listing.list_entries
+                  query = @keybind_handler.filter_query.downcase
+                  query.empty? ? all_entries : all_entries.select { |entry| entry[:name].downcase.include?(query) }
+                else
+                  @directory_listing.list_entries
+                end
+
+      # ヘルプモードとLogsモードでは..を非表示にする
+      if @keybind_handler.help_mode? || @keybind_handler.log_viewer_mode?
+        entries.reject { |entry| entry[:name] == '..' }
       else
-        @directory_listing.list_entries
+        entries
       end
     end
 
@@ -1076,11 +1213,18 @@ module Rufio
           when 'B' then 'j'  # Down arrow
           when 'C' then 'l'  # Right arrow
           when 'D' then 'h'  # Left arrow
+          when 'Z' then handle_shift_tab; return true  # Shift+Tab
           else "\e"  # ESCキー（そのまま保持）
           end
         else
           input = "\e"  # ESCキー（そのまま保持）
         end
+      end
+
+      # Tabキーでモード切り替え
+      if input == "\t"
+        handle_tab_key
+        return true
       end
 
       # キーバインドハンドラーに処理を委譲
@@ -1153,6 +1297,54 @@ module Rufio
       # 終了処理（qキーのみ、確認ダイアログの結果を確認）
       if input == 'q' && result == true
         @running = false
+      end
+    end
+
+    # Tabキーによるモード切り替え
+    def handle_tab_key
+      @tab_mode_manager.next_mode
+      apply_mode_change(@tab_mode_manager.current_mode)
+    end
+
+    # Shift+Tabによる逆順モード切り替え
+    def handle_shift_tab
+      @tab_mode_manager.previous_mode
+      apply_mode_change(@tab_mode_manager.current_mode)
+    end
+
+    # モード変更を適用
+    def apply_mode_change(mode)
+      case mode
+      when :files
+        # ヘルプモードまたはログビューワモードから戻る
+        if @keybind_handler.help_mode?
+          @keybind_handler.send(:exit_help_mode)
+        elsif @keybind_handler.log_viewer_mode?
+          @keybind_handler.send(:exit_log_viewer_mode)
+        elsif @keybind_handler.in_job_mode?
+          @keybind_handler.send(:exit_job_mode)
+        end
+      when :help
+        # ヘルプモードに入る
+        unless @keybind_handler.help_mode?
+          @keybind_handler.send(:exit_log_viewer_mode) if @keybind_handler.log_viewer_mode?
+          @keybind_handler.send(:exit_job_mode) if @keybind_handler.in_job_mode?
+          @keybind_handler.send(:enter_help_mode)
+        end
+      when :logs
+        # ログビューワモードに入る
+        unless @keybind_handler.log_viewer_mode?
+          @keybind_handler.send(:exit_help_mode) if @keybind_handler.help_mode?
+          @keybind_handler.send(:exit_job_mode) if @keybind_handler.in_job_mode?
+          @keybind_handler.send(:enter_log_viewer_mode)
+        end
+      when :jobs
+        # ジョブモードに入る
+        unless @keybind_handler.in_job_mode?
+          @keybind_handler.send(:exit_help_mode) if @keybind_handler.help_mode?
+          @keybind_handler.send(:exit_log_viewer_mode) if @keybind_handler.log_viewer_mode?
+          @keybind_handler.enter_job_mode
+        end
       end
     end
 
@@ -1414,81 +1606,15 @@ module Rufio
       @job_mode_needs_redraw = true
     end
 
-    # ジョブモード画面を描画
+    # ジョブモード画面を描画（バッファベース描画への橋渡し）
     def draw_job_mode_screen
       return unless @in_job_mode && @job_mode_instance && @job_manager
+      return unless @screen && @renderer
 
-      # ヘッダー
-      job_count = @job_manager.job_count
-      header = "Running Jobs (#{job_count})"
-      header_line = header.center(@screen_width)
-      print "\e[1;1H\e[1;36m#{header_line}\e[0m"
-
-      # 区切り線
-      separator = "━" * @screen_width
-      print "\e[2;1H\e[36m#{separator}\e[0m"
-
-      # ジョブ一覧
-      jobs = @job_manager.jobs
-      selected_index = @job_mode_instance.selected_index
-
-      jobs.each_with_index do |job, i|
-        line_num = i + 3
-        break if line_num >= @screen_height - 2
-
-        # ステータスアイコン
-        icon = job.status_icon
-        icon_color = case job.status
-                     when :running then "\e[33m"  # Yellow
-                     when :completed then "\e[32m"  # Green
-                     when :failed then "\e[31m"  # Red
-                     else "\e[37m"  # White
-                     end
-
-        # ジョブ名とパス
-        name = job.name
-        path = "(#{job.path})"
-        duration = job.formatted_duration
-        duration_text = duration.empty? ? "" : "[#{duration}]"
-
-        # ステータステキスト
-        status_text = case job.status
-                      when :running then "Running"
-                      when :completed then "Done"
-                      when :failed then "Failed"
-                      when :waiting then "Waiting"
-                      when :cancelled then "Cancelled"
-                      else ""
-                      end
-
-        # 行を構築
-        line_content = "#{icon} #{name} #{path}".ljust(40)
-        line_content += "#{duration_text.ljust(12)} #{status_text}"
-        line_content = line_content[0...@screen_width - 1].ljust(@screen_width - 1)
-
-        # 選択状態の場合はハイライト
-        if i == selected_index
-          print "\e[#{line_num};1H\e[7m#{icon_color}#{line_content}\e[0m"
-        else
-          print "\e[#{line_num};1H#{icon_color}#{line_content}\e[0m"
-        end
-      end
-
-      # 空行をクリア
-      ((jobs.length + 3)...(@screen_height - 2)).each do |line_num|
-        print "\e[#{line_num};1H#{' ' * @screen_width}"
-      end
-
-      # フッター
-      footer_line = @screen_height - 1
-      footer_separator = "━" * @screen_width
-      print "\e[#{footer_line};1H\e[36m#{footer_separator}\e[0m"
-
-      # ヘルプライン
-      help_line = @screen_height
-      help_text = "[Space] View Log | [x] Cancel | [Esc] Back to Files"
-      help_content = help_text.center(@screen_width)
-      print "\e[#{help_line};1H\e[7m#{help_content}\e[0m"
+      # バッファベースの描画を使用
+      draw_screen_to_buffer(@screen, nil, nil)
+      @renderer.render(@screen)
+      print "\e[#{@screen_height};#{@screen_width}H"
 
       STDOUT.flush
       @job_mode_needs_redraw = false

@@ -133,6 +133,8 @@ rufio /path/to  # Launch in specified directory
 | `J` | Job mode |
 | `L` | View execution logs |
 | `?` | Help |
+| `Tab` | Switch mode (Files → Logs → Jobs → Help) |
+| `Shift+Tab` | Switch mode (reverse) |
 
 ## Command Mode
 

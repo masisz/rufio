@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.63.0] - 2026-02-01
+
+### Added
+- **Tab Mode Switching**: Seamless mode navigation via `Tab` / `Shift+Tab` keys
+  - New `TabModeManager` class for unified mode management
+  - Four modes: Files, Logs, Jobs, Help
+  - Mode tabs displayed in header row 2 (cyan highlight for current mode)
+  - Circular navigation: Files → Logs → Jobs → Help → Files
+
+### Changed
+- **Header UI Overhaul**: Two-row header layout
+  - Row 1: Application name and current path
+  - Row 2: Interactive mode tabs
+  - Header icon changed from 📁 to 💎 (representing Ruby gem)
+- **Job Mode Integration**: Unified buffer-based rendering
+  - `draw_job_list_to_buffer`, `draw_job_line_to_buffer`, `draw_job_footer_to_buffer`
+  - Consistent rendering pipeline with other modes
+- **Help/Logs Mode Improvements**:
+  - Parent directory (`..`) hidden in Help and Logs modes
+  - Directory navigation disabled in these modes
+
+### Technical Details
+- **New Files**: `lib/rufio/tab_mode_manager.rb`, `test/test_tab_mode.rb`
+- **Modified Files**: `lib/rufio.rb`, `lib/rufio/keybind_handler.rb`, `lib/rufio/terminal_ui.rb`
+- **Layout Constants**: `HEADER_HEIGHT` changed from 1 to 2
+
 ## [0.62.0] - 2026-01-31
 
 ### Changed
