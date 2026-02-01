@@ -537,7 +537,8 @@ module Rufio
 
       if entry[:type] == 'file'
         @file_opener.open_file(entry[:path])
-        true
+        # ターミナルアプリ（vim等）を起動した後は画面リフレッシュが必要
+        :needs_refresh
       else
         false
       end
@@ -571,7 +572,8 @@ module Rufio
         @file_opener.open_file(full_path) if File.exist?(full_path)
       end
 
-      true
+      # fzfとvim等はターミナルを占有するので画面リフレッシュが必要
+      :needs_refresh
     end
 
     def fzf_available?
@@ -620,7 +622,8 @@ module Rufio
         @file_opener.open_file_with_line(full_path, line_number) if File.exist?(full_path)
       end
 
-      true
+      # fzfとvim等はターミナルを占有するので画面リフレッシュが必要
+      :needs_refresh
     end
 
     def rga_available?

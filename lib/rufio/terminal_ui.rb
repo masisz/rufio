@@ -1230,6 +1230,11 @@ module Rufio
       # キーバインドハンドラーに処理を委譲
       result = @keybind_handler.handle_key(input) if input
 
+      # 外部ターミナルアプリ（vim等）から戻った後は画面全体を再描画
+      if result == :needs_refresh
+        refresh_display
+      end
+
       # 終了処理（qキーのみ、確認ダイアログの結果を確認）
       if input == 'q' && result == true
         @running = false
@@ -1293,6 +1298,11 @@ module Rufio
 
       # キーバインドハンドラーに処理を委譲
       result = @keybind_handler.handle_key(input)
+
+      # 外部ターミナルアプリ（vim等）から戻った後は画面全体を再描画
+      if result == :needs_refresh
+        refresh_display
+      end
 
       # 終了処理（qキーのみ、確認ダイアログの結果を確認）
       if input == 'q' && result == true
