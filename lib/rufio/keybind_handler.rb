@@ -73,6 +73,9 @@ module Rufio
 
     def set_terminal_ui(terminal_ui)
       @terminal_ui = terminal_ui
+      # terminal_ui が設定されたら、bookmark_manager と zoxide_integration にも渡す
+      @bookmark_manager.set_terminal_ui(terminal_ui)
+      @zoxide_integration.set_terminal_ui(terminal_ui)
     end
 
     def selected_items
@@ -429,6 +432,54 @@ module Rufio
     end
 
     private
+
+    # オーバーレイダイアログを表示してキー入力を待つヘルパーメソッド
+    # terminal_ui が利用可能な場合はオーバーレイを使用、そうでなければ従来の方法を使用
+    # @param title [String] ダイアログタイトル
+    # @param content_lines [Array<String>] コンテンツ行
+    # @param options [Hash] オプション
+    # @yield キー入力処理（ブロックが与えられた場合）
+    # @return [String] 入力されたキー
+    def show_overlay_dialog(title, content_lines, options = {}, &block)
+      # terminal_ui が利用可能で、screen と renderer が存在する場合のみオーバーレイを使用
+      use_overlay = @terminal_ui &&
+                    @terminal_ui.respond_to?(:screen) &&
+                    @terminal_ui.respond_to?(:renderer) &&
+                    @terminal_ui.screen &&
+                    @terminal_ui.renderer
+
+      if use_overlay
+        # オーバーレイを使用
+        @terminal_ui.show_overlay_dialog(title, content_lines, options, &block)
+      else
+        # フォールバック: 従来の方法
+        width = options[:width]
+        height = options[:height]
+
+        unless width && height
+          width, height = @dialog_renderer.calculate_dimensions(content_lines, {
+            title: title,
+            min_width: options[:min_width] || 40,
+            max_width: options[:max_width] || 80
+          })
+        end
+
+        x, y = @dialog_renderer.calculate_center(width, height)
+
+        @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+          border_color: options[:border_color] || "\e[37m",
+          title_color: options[:title_color] || "\e[1;33m",
+          content_color: options[:content_color] || "\e[37m"
+        })
+
+        key = block_given? ? yield : STDIN.getch
+
+        @dialog_renderer.clear_area(x, y, width, height)
+        @terminal_ui&.refresh_display
+
+        key
+      end
+    end
 
     # Enterキーの処理：ファイルならプレビューフォーカス、ディレクトリならナビゲート
     def handle_enter_key
@@ -807,31 +858,30 @@ module Rufio
       title = 'Confirm Delete'
       width = [50, current_name.length + 10].max
       height = content_lines.length + 4
-      x, y = @dialog_renderer.calculate_center(width, height)
-
-      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-        border_color: "\e[31m",    # Red (warning)
-        title_color: "\e[1;31m",   # Bold red
-        content_color: "\e[37m"    # White
-      })
 
       # 確認を待つ
       confirmed = false
-      loop do
-        input = STDIN.getch.downcase
+      show_overlay_dialog(title, content_lines, {
+        width: width,
+        height: height,
+        border_color: "\e[31m",    # Red (warning)
+        title_color: "\e[1;31m",   # Bold red
+        content_color: "\e[37m"    # White
+      }) do
+        loop do
+          input = STDIN.getch.downcase
 
-        case input
-        when 'y'
-          confirmed = true
-          break
-        when 'n', "\e" # n or ESC
-          confirmed = false
-          break
+          case input
+          when 'y'
+            confirmed = true
+            break
+          when 'n', "\e" # n or ESC
+            confirmed = false
+            break
+          end
         end
+        nil
       end
-
-      @dialog_renderer.clear_area(x, y, width, height)
-      @terminal_ui&.refresh_display
 
       return false unless confirmed
 
@@ -972,41 +1022,35 @@ module Rufio
       # タイトルあり: 上枠1 + タイトル1 + 区切り1 + コンテンツ + 下枠1
       dialog_height = DIALOG_BORDER_HEIGHT + content_lines.length
 
-      # ダイアログの位置を中央に設定
-      x, y = @dialog_renderer.calculate_center(dialog_width, dialog_height)
-
-      # ダイアログの描画
-      @dialog_renderer.draw_floating_window(x, y, dialog_width, dialog_height, title, content_lines, {
-                             border_color: "\e[31m", # 赤色（警告）
-                             title_color: "\e[1;31m",   # 太字赤色
-                             content_color: "\e[37m"    # 白色
-                           })
-
       # フラッシュしてユーザーの注意を引く
       print "\a" # ベル音
 
       # キー入力待機
-      loop do
-        input = STDIN.getch.downcase
+      confirmed = false
+      show_overlay_dialog(title, content_lines, {
+        width: dialog_width,
+        height: dialog_height,
+        border_color: "\e[31m", # 赤色（警告）
+        title_color: "\e[1;31m",   # 太字赤色
+        content_color: "\e[37m"    # 白色
+      }) do
+        loop do
+          input = STDIN.getch.downcase
 
-        case input
-        when 'y'
-          # ダイアログをクリア
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          @terminal_ui&.refresh_display # 画面を再描画
-          return true
-        when 'n', "\e", "\x03" # n, ESC, Ctrl+C
-          # ダイアログをクリア
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          @terminal_ui&.refresh_display # 画面を再描画
-          return false
-        when 'q' # qキーでもキャンセル
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          @terminal_ui&.refresh_display
-          return false
+          case input
+          when 'y'
+            confirmed = true
+            break
+          when 'n', "\e", "\x03", 'q' # n, ESC, Ctrl+C, q
+            confirmed = false
+            break
+          end
+          # 無効なキー入力の場合は再度ループ
         end
-        # 無効なキー入力の場合は再度ループ
+        nil
       end
+
+      confirmed
     end
 
     def show_floating_move_confirmation(count, source_path, dest_path)
@@ -1033,38 +1077,32 @@ module Rufio
       dialog_width = CONFIRMATION_DIALOG_WIDTH
       dialog_height = DIALOG_BORDER_HEIGHT + content_lines.length
 
-      # ダイアログの位置を中央に設定
-      x, y = @dialog_renderer.calculate_center(dialog_width, dialog_height)
-
-      # ダイアログの描画（移動は青色で表示）
-      @dialog_renderer.draw_floating_window(x, y, dialog_width, dialog_height, title, content_lines, {
-                             border_color: "\e[34m", # 青色（情報）
-                             title_color: "\e[1;34m",   # 太字青色
-                             content_color: "\e[37m"    # 白色
-                           })
-
       # キー入力待機
-      loop do
-        input = STDIN.getch.downcase
+      confirmed = false
+      show_overlay_dialog(title, content_lines, {
+        width: dialog_width,
+        height: dialog_height,
+        border_color: "\e[34m", # 青色（情報）
+        title_color: "\e[1;34m",   # 太字青色
+        content_color: "\e[37m"    # 白色
+      }) do
+        loop do
+          input = STDIN.getch.downcase
 
-        case input
-        when 'y'
-          # ダイアログをクリア
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          @terminal_ui&.refresh_display # 画面を再描画
-          return true
-        when 'n', "\e", "\x03" # n, ESC, Ctrl+C
-          # ダイアログをクリア
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          @terminal_ui&.refresh_display # 画面を再描画
-          return false
-        when 'q' # qキーでもキャンセル
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          @terminal_ui&.refresh_display
-          return false
+          case input
+          when 'y'
+            confirmed = true
+            break
+          when 'n', "\e", "\x03", 'q' # n, ESC, Ctrl+C, q
+            confirmed = false
+            break
+          end
+          # 無効なキー入力の場合は再度ループ
         end
-        # 無効なキー入力の場合は再度ループ
+        nil
       end
+
+      confirmed
     end
 
     def show_floating_copy_confirmation(count, source_path, dest_path)
@@ -1091,38 +1129,32 @@ module Rufio
       dialog_width = CONFIRMATION_DIALOG_WIDTH
       dialog_height = DIALOG_BORDER_HEIGHT + content_lines.length
 
-      # ダイアログの位置を中央に設定
-      x, y = @dialog_renderer.calculate_center(dialog_width, dialog_height)
-
-      # ダイアログの描画（コピーは緑色で表示）
-      @dialog_renderer.draw_floating_window(x, y, dialog_width, dialog_height, title, content_lines, {
-                             border_color: "\e[32m", # 緑色（安全な操作）
-                             title_color: "\e[1;32m",   # 太字緑色
-                             content_color: "\e[37m"    # 白色
-                           })
-
       # キー入力待機
-      loop do
-        input = STDIN.getch.downcase
+      confirmed = false
+      show_overlay_dialog(title, content_lines, {
+        width: dialog_width,
+        height: dialog_height,
+        border_color: "\e[32m", # 緑色（安全な操作）
+        title_color: "\e[1;32m",   # 太字緑色
+        content_color: "\e[37m"    # 白色
+      }) do
+        loop do
+          input = STDIN.getch.downcase
 
-        case input
-        when 'y'
-          # ダイアログをクリア
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          @terminal_ui&.refresh_display # 画面を再描画
-          return true
-        when 'n', "\e", "\x03" # n, ESC, Ctrl+C
-          # ダイアログをクリア
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          @terminal_ui&.refresh_display # 画面を再描画
-          return false
-        when 'q' # qキーでもキャンセル
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          @terminal_ui&.refresh_display
-          return false
+          case input
+          when 'y'
+            confirmed = true
+            break
+          when 'n', "\e", "\x03", 'q' # n, ESC, Ctrl+C, q
+            confirmed = false
+            break
+          end
+          # 無効なキー入力の場合は再度ループ
         end
-        # 無効なキー入力の場合は再度ループ
+        nil
       end
+
+      confirmed
     end
 
     def show_exit_confirmation
@@ -1142,34 +1174,32 @@ module Rufio
       dialog_width = CONFIRMATION_DIALOG_WIDTH
       dialog_height = DIALOG_BORDER_HEIGHT + content_lines.length
 
-      # ダイアログの位置を中央に設定
-      x, y = @dialog_renderer.calculate_center(dialog_width, dialog_height)
-
-      # ダイアログの描画（終了は黄色で表示）
-      @dialog_renderer.draw_floating_window(x, y, dialog_width, dialog_height, title, content_lines, {
-                             border_color: "\e[33m",    # 黄色（注意）
-                             title_color: "\e[1;33m",   # 太字黄色
-                             content_color: "\e[37m"    # 白色
-                           })
-
       # キー入力待機
-      loop do
-        input = STDIN.getch.downcase
+      confirmed = false
+      show_overlay_dialog(title, content_lines, {
+        width: dialog_width,
+        height: dialog_height,
+        border_color: "\e[33m",    # 黄色（注意）
+        title_color: "\e[1;33m",   # 太字黄色
+        content_color: "\e[37m"    # 白色
+      }) do
+        loop do
+          input = STDIN.getch.downcase
 
-        case input
-        when 'y'
-          # ダイアログをクリア
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          @terminal_ui&.refresh_display # 画面を再描画
-          return true
-        when 'n', "\e", "\x03" # n, ESC, Ctrl+C
-          # ダイアログをクリア
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          @terminal_ui&.refresh_display # 画面を再描画
-          return false
+          case input
+          when 'y'
+            confirmed = true
+            break
+          when 'n', "\e", "\x03" # n, ESC, Ctrl+C
+            confirmed = false
+            break
+          end
+          # 無効なキー入力の場合は再度ループ
         end
-        # 無効なキー入力の場合は再度ループ
+        nil
       end
+
+      confirmed
     end
 
     # パスを指定した長さに短縮
@@ -1252,9 +1282,6 @@ module Rufio
       dialog_width = has_errors ? 50 : 35
       dialog_height = has_errors ? [8 + error_messages.length, 15].min : 6
 
-      # ダイアログの位置を中央に設定
-      x, y = @dialog_renderer.calculate_center(dialog_width, dialog_height)
-
       # 成功・失敗に応じた色設定
       if success_count == total_count && !has_errors
         border_color = "\e[32m"   # 緑色（成功）
@@ -1287,19 +1314,14 @@ module Rufio
       content_lines << ''
       content_lines << 'Press any key to continue...'
 
-      # ダイアログの描画
-      @dialog_renderer.draw_floating_window(x, y, dialog_width, dialog_height, title, content_lines, {
-                             border_color: border_color,
-                             title_color: title_color,
-                             content_color: "\e[37m"
-                           })
-
-      # キー入力待機
-      STDIN.getch
-
-      # ダイアログをクリア
-      @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-      @terminal_ui&.refresh_display
+      # オーバーレイダイアログを表示
+      show_overlay_dialog(title, content_lines, {
+        width: dialog_width,
+        height: dialog_height,
+        border_color: border_color,
+        title_color: title_color,
+        content_color: "\e[37m"
+      })
     end
 
 
@@ -1381,17 +1403,16 @@ module Rufio
         title = 'Bookmark Exists'
         width = 50
         height = content_lines.length + 4
-        x, y = @dialog_renderer.calculate_center(width, height)
 
-        @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+        # オーバーレイダイアログを表示
+        show_overlay_dialog(title, content_lines, {
+          width: width,
+          height: height,
           border_color: "\e[33m",    # Yellow
           title_color: "\e[1;33m",   # Bold yellow
           content_color: "\e[37m"    # White
         })
 
-        STDIN.getch
-        @dialog_renderer.clear_area(x, y, width, height)
-        @terminal_ui&.refresh_display
         return false
       end
 
@@ -1432,16 +1453,15 @@ module Rufio
       title = 'Bookmark Menu'
       width = 45
       height = content_lines.length + 4
-      x, y = @dialog_renderer.calculate_center(width, height)
 
-      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+      # オーバーレイダイアログを表示してキー入力を取得
+      key = show_overlay_dialog(title, content_lines, {
+        width: width,
+        height: height,
         border_color: "\e[36m",    # Cyan
         title_color: "\e[1;36m",   # Bold cyan
         content_color: "\e[37m"    # White
       })
-
-      key = STDIN.getch
-      @dialog_renderer.clear_area(x, y, width, height)
 
       case key
       when '1'
@@ -1506,6 +1526,8 @@ module Rufio
       end
 
       selected_index = 0
+      screen = @terminal_ui&.screen
+      renderer = @terminal_ui&.renderer
 
       loop do
         # メニューを描画
@@ -1519,16 +1541,33 @@ module Rufio
         title = 'Script Paths'
         width = 50
         height = content_lines.length + 4
-        x, y = @dialog_renderer.calculate_center(width, height)
 
-        @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-          border_color: "\e[35m",    # Magenta
-          title_color: "\e[1;35m",   # Bold magenta
-          content_color: "\e[37m"    # White
-        })
+        if screen && renderer
+          # オーバーレイを使用
+          screen.enable_overlay
+          x, y = @dialog_renderer.calculate_center(width, height)
+          @dialog_renderer.draw_floating_window_to_overlay(screen, x, y, width, height, title, content_lines, {
+            border_color: "\e[35m",    # Magenta
+            title_color: "\e[1;35m",   # Bold magenta
+            content_color: "\e[37m"    # White
+          })
+          renderer.render(screen)
 
-        key = STDIN.getch
-        @dialog_renderer.clear_area(x, y, width, height)
+          key = STDIN.getch
+          screen.disable_overlay
+          renderer.render(screen)
+        else
+          # フォールバック: 従来の方法
+          x, y = @dialog_renderer.calculate_center(width, height)
+          @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+            border_color: "\e[35m",    # Magenta
+            title_color: "\e[1;35m",   # Bold magenta
+            content_color: "\e[37m"    # White
+          })
+
+          key = STDIN.getch
+          @dialog_renderer.clear_area(x, y, width, height)
+        end
 
         case key
         when 'j'
@@ -1574,16 +1613,15 @@ module Rufio
       title = 'Confirm Delete'
       width = 50
       height = content_lines.length + 4
-      x, y = @dialog_renderer.calculate_center(width, height)
 
-      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+      # オーバーレイダイアログを表示してキー入力を取得
+      key = show_overlay_dialog(title, content_lines, {
+        width: width,
+        height: height,
         border_color: "\e[31m",    # Red
         title_color: "\e[1;31m",   # Bold red
         content_color: "\e[37m"    # White
       })
-
-      key = STDIN.getch
-      @dialog_renderer.clear_area(x, y, width, height)
 
       key.downcase == 'y'
     end

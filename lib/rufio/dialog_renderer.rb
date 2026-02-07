@@ -75,6 +75,73 @@ module Rufio
       screen.put_string(x, bottom_y, "└#{'─' * (width - 2)}┘", fg: border_color)
     end
 
+    # オーバーレイレイヤーにフローティングウィンドウを描画
+    # @param screen [Screen] Screen buffer with overlay enabled
+    # @param x [Integer] X position (column)
+    # @param y [Integer] Y position (row)
+    # @param width [Integer] Window width
+    # @param height [Integer] Window height
+    # @param title [String, nil] Window title (optional)
+    # @param content_lines [Array<String>] Content lines to display
+    # @param options [Hash] Customization options
+    def draw_floating_window_to_overlay(screen, x, y, width, height, title, content_lines, options = {})
+      # オーバーレイが有効でない場合は有効化
+      screen.enable_overlay unless screen.overlay_enabled?
+
+      border_color = options[:border_color] || "\e[37m"
+      title_color = options[:title_color] || "\e[1;33m"
+      content_color = options[:content_color] || "\e[37m"
+
+      # Draw top border
+      screen.put_overlay_string(x, y, "┌#{'─' * (width - 2)}┐", fg: border_color)
+
+      # Draw title line if title exists
+      if title
+        title_width = TextUtils.display_width(title)
+        title_padding = (width - 2 - title_width) / 2
+        padded_title = ' ' * title_padding + title
+        title_line = TextUtils.pad_string_to_width(padded_title, width - 2)
+
+        screen.put_overlay(x, y + 1, '│', fg: border_color)
+        screen.put_overlay_string(x + 1, y + 1, title_line, fg: title_color)
+        screen.put_overlay(x + width - 1, y + 1, '│', fg: border_color)
+
+        # Draw title separator
+        screen.put_overlay_string(x, y + 2, "├#{'─' * (width - 2)}┤", fg: border_color)
+        content_start_y = y + 3
+      else
+        content_start_y = y + 1
+      end
+
+      # Draw content lines
+      content_height = title ? height - 4 : height - 2
+      content_lines.each_with_index do |line, index|
+        break if index >= content_height
+
+        line_y = content_start_y + index
+        line_content = TextUtils.pad_string_to_width(line, width - 2)
+
+        screen.put_overlay(x, line_y, '│', fg: border_color)
+        screen.put_overlay_string(x + 1, line_y, line_content, fg: content_color)
+        screen.put_overlay(x + width - 1, line_y, '│', fg: border_color)
+      end
+
+      # Fill remaining lines with empty space
+      remaining_lines = content_height - content_lines.length
+      remaining_lines.times do |i|
+        line_y = content_start_y + content_lines.length + i
+        empty_line = ' ' * (width - 2)
+
+        screen.put_overlay(x, line_y, '│', fg: border_color)
+        screen.put_overlay_string(x + 1, line_y, empty_line)
+        screen.put_overlay(x + width - 1, line_y, '│', fg: border_color)
+      end
+
+      # Draw bottom border
+      bottom_y = y + height - 1
+      screen.put_overlay_string(x, bottom_y, "└#{'─' * (width - 2)}┘", fg: border_color)
+    end
+
     # Draw a floating window with title, content, and customizable colors
     # @param x [Integer] X position (column)
     # @param y [Integer] Y position (row)

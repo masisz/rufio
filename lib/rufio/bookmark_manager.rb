@@ -10,6 +10,12 @@ module Rufio
     def initialize(bookmark = nil, dialog_renderer = nil)
       @bookmark = bookmark || create_default_bookmark
       @dialog_renderer = dialog_renderer
+      @terminal_ui = nil
+    end
+
+    # terminal_ui を設定
+    def set_terminal_ui(terminal_ui)
+      @terminal_ui = terminal_ui
     end
 
     private
@@ -46,40 +52,45 @@ module Rufio
 
       dialog_width = 45
       dialog_height = 4 + content_lines.length
-      x, y = @dialog_renderer.calculate_center(dialog_width, dialog_height)
 
-      @dialog_renderer.draw_floating_window(x, y, dialog_width, dialog_height, title, content_lines, {
-                                               border_color: "\e[34m", # Blue
-                                               title_color: "\e[1;34m",   # Bold blue
-                                               content_color: "\e[37m"    # White
-                                             })
+      result = { action: :cancel }
+      show_overlay_dialog(title, content_lines, {
+        width: dialog_width,
+        height: dialog_height,
+        border_color: "\e[34m", # Blue
+        title_color: "\e[1;34m",   # Bold blue
+        content_color: "\e[37m"    # White
+      }) do
+        # Wait for key input
+        loop do
+          input = STDIN.getch.downcase
 
-      # Wait for key input
-      loop do
-        input = STDIN.getch.downcase
-
-        case input
-        when 'a'
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          return { action: :add, path: current_path }
-        when 'l'
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          return { action: :list }
-        when 'r'
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          return { action: :rename }
-        when 'd'
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          return { action: :remove }
-        when '1', '2', '3', '4', '5', '6', '7', '8', '9'
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          return { action: :navigate, number: input.to_i }
-        else
-          # Cancel
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          return { action: :cancel }
+          case input
+          when 'a'
+            result = { action: :add, path: current_path }
+            break
+          when 'l'
+            result = { action: :list }
+            break
+          when 'r'
+            result = { action: :rename }
+            break
+          when 'd'
+            result = { action: :remove }
+            break
+          when '1', '2', '3', '4', '5', '6', '7', '8', '9'
+            result = { action: :navigate, number: input.to_i }
+            break
+          else
+            # Cancel
+            result = { action: :cancel }
+            break
+          end
         end
+        nil
       end
+
+      result
     end
 
     # Add a bookmark interactively
@@ -141,32 +152,33 @@ module Rufio
       title = 'Rename Bookmark'
       width = 60
       height = [content_lines.length + 4, 20].min
-      x, y = @dialog_renderer.calculate_center(width, height)
-
-      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-        border_color: "\e[33m",    # Yellow
-        title_color: "\e[1;33m",   # Bold yellow
-        content_color: "\e[37m"    # White
-      })
 
       # Wait for selection
       selected_number = nil
-      loop do
-        input = STDIN.getch.downcase
+      show_overlay_dialog(title, content_lines, {
+        width: width,
+        height: height,
+        border_color: "\e[33m",    # Yellow
+        title_color: "\e[1;33m",   # Bold yellow
+        content_color: "\e[37m"    # White
+      }) do
+        loop do
+          input = STDIN.getch.downcase
 
-        if input >= '1' && input <= '9'
-          number = input.to_i
-          if number > 0 && number <= bookmarks.length
-            selected_number = number
+          if input >= '1' && input <= '9'
+            number = input.to_i
+            if number > 0 && number <= bookmarks.length
+              selected_number = number
+              break
+            end
+          elsif input == "\e" # ESC
             break
           end
-        elsif input == "\e" # ESC
-          @dialog_renderer.clear_area(x, y, width, height)
-          return false
         end
+        nil
       end
 
-      @dialog_renderer.clear_area(x, y, width, height)
+      return false unless selected_number
 
       # Get new name
       bookmark_to_rename = bookmarks[selected_number - 1]
@@ -216,32 +228,33 @@ module Rufio
       title = 'Delete Bookmark'
       width = 60
       height = [content_lines.length + 4, 20].min
-      x, y = @dialog_renderer.calculate_center(width, height)
-
-      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-        border_color: "\e[31m",    # Red (warning)
-        title_color: "\e[1;31m",   # Bold red
-        content_color: "\e[37m"    # White
-      })
 
       # Wait for selection
       selected_number = nil
-      loop do
-        input = STDIN.getch.downcase
+      show_overlay_dialog(title, content_lines, {
+        width: width,
+        height: height,
+        border_color: "\e[31m",    # Red (warning)
+        title_color: "\e[1;31m",   # Bold red
+        content_color: "\e[37m"    # White
+      }) do
+        loop do
+          input = STDIN.getch.downcase
 
-        if input >= '1' && input <= '9'
-          number = input.to_i
-          if number > 0 && number <= bookmarks.length
-            selected_number = number
+          if input >= '1' && input <= '9'
+            number = input.to_i
+            if number > 0 && number <= bookmarks.length
+              selected_number = number
+              break
+            end
+          elsif input == "\e" # ESC
             break
           end
-        elsif input == "\e" # ESC
-          @dialog_renderer.clear_area(x, y, width, height)
-          return false
         end
+        nil
       end
 
-      @dialog_renderer.clear_area(x, y, width, height)
+      return false unless selected_number
 
       # Confirm deletion
       bookmark_to_remove = bookmarks[selected_number - 1]
@@ -284,31 +297,32 @@ module Rufio
       title = 'Bookmarks'
       width = 60
       height = [content_lines.length + 4, 20].min
-      x, y = @dialog_renderer.calculate_center(width, height)
-
-      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-        border_color: "\e[34m",    # Blue
-        title_color: "\e[1;34m",   # Bold blue
-        content_color: "\e[37m"    # White
-      })
 
       # Wait for selection
       selected_bookmark = nil
-      loop do
-        input = STDIN.getch.downcase
+      show_overlay_dialog(title, content_lines, {
+        width: width,
+        height: height,
+        border_color: "\e[34m",    # Blue
+        title_color: "\e[1;34m",   # Bold blue
+        content_color: "\e[37m"    # White
+      }) do
+        loop do
+          input = STDIN.getch.downcase
 
-        if input >= '1' && input <= '9'
-          number = input.to_i
-          if number > 0 && number <= bookmarks.length
-            selected_bookmark = bookmarks[number - 1]
+          if input >= '1' && input <= '9'
+            number = input.to_i
+            if number > 0 && number <= bookmarks.length
+              selected_bookmark = bookmarks[number - 1]
+              break
+            end
+          elsif input == "\e" # ESC
             break
           end
-        elsif input == "\e" # ESC
-          break
         end
+        nil
       end
 
-      @dialog_renderer.clear_area(x, y, width, height)
       selected_bookmark
     end
 
@@ -376,6 +390,48 @@ module Rufio
 
     private
 
+    # オーバーレイダイアログを表示してキー入力を待つヘルパーメソッド
+    def show_overlay_dialog(title, content_lines, options = {}, &block)
+      # terminal_ui が利用可能で、screen と renderer が存在する場合のみオーバーレイを使用
+      use_overlay = @terminal_ui &&
+                    @terminal_ui.respond_to?(:screen) &&
+                    @terminal_ui.respond_to?(:renderer) &&
+                    @terminal_ui.screen &&
+                    @terminal_ui.renderer
+
+      if use_overlay
+        # オーバーレイを使用
+        @terminal_ui.show_overlay_dialog(title, content_lines, options, &block)
+      else
+        # フォールバック: 従来の方法
+        width = options[:width]
+        height = options[:height]
+
+        unless width && height
+          width, height = @dialog_renderer.calculate_dimensions(content_lines, {
+            title: title,
+            min_width: options[:min_width] || 40,
+            max_width: options[:max_width] || 80
+          })
+        end
+
+        x, y = @dialog_renderer.calculate_center(width, height)
+
+        @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+          border_color: options[:border_color] || "\e[37m",
+          title_color: options[:title_color] || "\e[1;33m",
+          content_color: options[:content_color] || "\e[37m"
+        })
+
+        key = block_given? ? yield : STDIN.getch
+
+        @dialog_renderer.clear_area(x, y, width, height)
+        @terminal_ui&.refresh_display
+
+        key
+      end
+    end
+
     # Show result dialog with success or error styling
     # @param title [String] Dialog title
     # @param message [String] Result message
@@ -401,16 +457,15 @@ module Rufio
 
       width = 50
       height = 6
-      x, y = @dialog_renderer.calculate_center(width, height)
 
-      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+      # オーバーレイダイアログを表示
+      show_overlay_dialog(title, content_lines, {
+        width: width,
+        height: height,
         border_color: border_color,
         title_color: title_color,
         content_color: "\e[37m"
       })
-
-      STDIN.getch
-      @dialog_renderer.clear_area(x, y, width, height)
     end
 
     # Show confirmation dialog for bookmark removal
@@ -431,30 +486,31 @@ module Rufio
       title = 'Confirm Delete'
       width = 50
       height = content_lines.length + 4
-      x, y = @dialog_renderer.calculate_center(width, height)
-
-      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-        border_color: "\e[33m",    # Yellow (warning)
-        title_color: "\e[1;33m",   # Bold yellow
-        content_color: "\e[37m"    # White
-      })
 
       # Wait for confirmation
       confirmed = false
-      loop do
-        input = STDIN.getch.downcase
+      show_overlay_dialog(title, content_lines, {
+        width: width,
+        height: height,
+        border_color: "\e[33m",    # Yellow (warning)
+        title_color: "\e[1;33m",   # Bold yellow
+        content_color: "\e[37m"    # White
+      }) do
+        loop do
+          input = STDIN.getch.downcase
 
-        case input
-        when 'y'
-          confirmed = true
-          break
-        when 'n', "\e" # n or ESC
-          confirmed = false
-          break
+          case input
+          when 'y'
+            confirmed = true
+            break
+          when 'n', "\e" # n or ESC
+            confirmed = false
+            break
+          end
         end
+        nil
       end
 
-      @dialog_renderer.clear_area(x, y, width, height)
       confirmed
     end
   end

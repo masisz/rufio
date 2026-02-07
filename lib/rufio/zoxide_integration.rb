@@ -11,6 +11,12 @@ module Rufio
 
     def initialize(dialog_renderer = nil)
       @dialog_renderer = dialog_renderer
+      @terminal_ui = nil
+    end
+
+    # terminal_ui を設定
+    def set_terminal_ui(terminal_ui)
+      @terminal_ui = terminal_ui
     end
 
     # Check if zoxide is available
@@ -82,6 +88,48 @@ module Rufio
 
     private
 
+    # オーバーレイダイアログを表示してキー入力を待つヘルパーメソッド
+    def show_overlay_dialog(title, content_lines, options = {}, &block)
+      # terminal_ui が利用可能で、screen と renderer が存在する場合のみオーバーレイを使用
+      use_overlay = @terminal_ui &&
+                    @terminal_ui.respond_to?(:screen) &&
+                    @terminal_ui.respond_to?(:renderer) &&
+                    @terminal_ui.screen &&
+                    @terminal_ui.renderer
+
+      if use_overlay
+        # オーバーレイを使用
+        @terminal_ui.show_overlay_dialog(title, content_lines, options, &block)
+      else
+        # フォールバック: 従来の方法
+        width = options[:width]
+        height = options[:height]
+
+        unless width && height
+          width, height = @dialog_renderer.calculate_dimensions(content_lines, {
+            title: title,
+            min_width: options[:min_width] || 40,
+            max_width: options[:max_width] || 80
+          })
+        end
+
+        x, y = @dialog_renderer.calculate_center(width, height)
+
+        @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+          border_color: options[:border_color] || "\e[37m",
+          title_color: options[:title_color] || "\e[1;33m",
+          content_color: options[:content_color] || "\e[37m"
+        })
+
+        key = block_given? ? yield : STDIN.getch
+
+        @dialog_renderer.clear_area(x, y, width, height)
+        @terminal_ui&.refresh_display
+
+        key
+      end
+    end
+
     # Show message when no history is available
     def show_no_history_message
       return unless @dialog_renderer
@@ -99,16 +147,15 @@ module Rufio
 
       dialog_width = DIALOG_WIDTH
       dialog_height = DIALOG_BORDER_HEIGHT + content_lines.length
-      x, y = @dialog_renderer.calculate_center(dialog_width, dialog_height)
 
-      @dialog_renderer.draw_floating_window(x, y, dialog_width, dialog_height, title, content_lines, {
-                                               border_color: "\e[33m", # Yellow
-                                               title_color: "\e[1;33m",   # Bold yellow
-                                               content_color: "\e[37m"    # White
-                                             })
-
-      STDIN.getch
-      @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
+      # オーバーレイダイアログを表示
+      show_overlay_dialog(title, content_lines, {
+        width: dialog_width,
+        height: dialog_height,
+        border_color: "\e[33m", # Yellow
+        title_color: "\e[1;33m",   # Bold yellow
+        content_color: "\e[37m"    # White
+      })
     end
 
     # Select from zoxide history
@@ -137,52 +184,54 @@ module Rufio
 
       dialog_width = 70
       dialog_height = [4 + content_lines.length, 25].min
-      x, y = @dialog_renderer.calculate_center(dialog_width, dialog_height)
-
-      @dialog_renderer.draw_floating_window(x, y, dialog_width, dialog_height, title, content_lines, {
-                                               border_color: "\e[36m", # Cyan
-                                               title_color: "\e[1;36m",   # Bold cyan
-                                               content_color: "\e[37m"    # White
-                                             })
 
       # Number input mode
-      input_buffer = ''
+      selected_path = nil
+      show_overlay_dialog(title, content_lines, {
+        width: dialog_width,
+        height: dialog_height,
+        border_color: "\e[36m", # Cyan
+        title_color: "\e[1;36m",   # Bold cyan
+        content_color: "\e[37m"    # White
+      }) do
+        input_buffer = ''
 
-      loop do
-        char = STDIN.getch
+        loop do
+          char = STDIN.getch
 
-        case char
-        when "\e", "\x03" # ESC, Ctrl+C
-          @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-          return nil
-        when "\r", "\n" # Enter
-          unless input_buffer.empty?
+          case char
+          when "\e", "\x03" # ESC, Ctrl+C
+            break
+          when "\r", "\n" # Enter
+            unless input_buffer.empty?
+              number = input_buffer.to_i
+              if number > 0 && number <= display_history.length
+                selected_path = display_history[number - 1][:path]
+                break
+              end
+            end
+            # Invalid input, ask again
+            input_buffer = ''
+          when "\u007f", "\b" # Backspace
+            input_buffer = input_buffer[0...-1] unless input_buffer.empty?
+          when /[0-9]/
+            input_buffer += char
+            # Max 2 digits
+            input_buffer = input_buffer[-2..-1] if input_buffer.length > 2
+
+            # If number is within range, select immediately
             number = input_buffer.to_i
-            if number > 0 && number <= display_history.length
-              selected_entry = display_history[number - 1]
-              @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-              return selected_entry[:path]
+            if number > 0 && number <= display_history.length &&
+               (number >= 10 || input_buffer.length == 1)
+              selected_path = display_history[number - 1][:path]
+              break
             end
           end
-          # Invalid input, ask again
-          input_buffer = ''
-        when "\u007f", "\b" # Backspace
-          input_buffer = input_buffer[0...-1] unless input_buffer.empty?
-        when /[0-9]/
-          input_buffer += char
-          # Max 2 digits
-          input_buffer = input_buffer[-2..-1] if input_buffer.length > 2
-
-          # If number is within range, select immediately
-          number = input_buffer.to_i
-          if number > 0 && number <= display_history.length &&
-             (number >= 10 || input_buffer.length == 1)
-            selected_entry = display_history[number - 1]
-            @dialog_renderer.clear_area(x, y, dialog_width, dialog_height)
-            return selected_entry[:path]
-          end
         end
+        nil
       end
+
+      selected_path
     end
   end
 end

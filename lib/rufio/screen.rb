@@ -30,6 +30,7 @@ module Rufio
       @width = width
       @height = height
       @cells = Array.new(height) { Array.new(width) { default_cell } }
+      @overlay_cells = nil  # オーバーレイレイヤー（ダイアログ用）
       @dirty_rows = Set.new  # Phase1: Dirty row tracking
     end
 
@@ -116,12 +117,30 @@ module Rufio
       result = String.new(capacity: @width * 20)
       current_width = 0  # Phase1: Accumulate width from cells (no recalculation)
 
-      @cells[y].each do |cell|
-        # Skip marker cells for full-width characters
-        next if cell[:width] == 0
+      # オーバーレイがある場合はベース + オーバーレイを合成
+      if @overlay_cells
+        @width.times do |x|
+          overlay_cell = @overlay_cells[y][x]
+          base_cell = @cells[y][x]
 
-        result << format_cell(cell)
-        current_width += cell[:width]  # Phase1: Use pre-calculated width
+          # オーバーレイがあればオーバーレイを使用、なければベースを使用
+          cell = overlay_cell || base_cell
+
+          # マーカーセル（全角文字の2セル目）はスキップ
+          next if cell[:width] == 0
+
+          result << format_cell(cell)
+          current_width += cell[:width]
+        end
+      else
+        # オーバーレイなしの場合は従来の処理
+        @cells[y].each do |cell|
+          # Skip marker cells for full-width characters
+          next if cell[:width] == 0
+
+          result << format_cell(cell)
+          current_width += cell[:width]  # Phase1: Use pre-calculated width
+        end
       end
 
       # Pad the row to full width
@@ -152,6 +171,95 @@ module Rufio
     # Phase1: Clear dirty row tracking
     def clear_dirty
       @dirty_rows.clear
+    end
+
+    # ===========================================
+    # オーバーレイレイヤー（ダイアログ用）
+    # ===========================================
+
+    # オーバーレイレイヤーを有効化
+    def enable_overlay
+      return if @overlay_cells
+
+      @overlay_cells = Array.new(@height) { Array.new(@width) { nil } }
+    end
+
+    # オーバーレイレイヤーを無効化してクリア
+    def disable_overlay
+      return unless @overlay_cells
+
+      # オーバーレイが描画されていた行をdirtyにマーク
+      @height.times do |y|
+        if @overlay_cells[y].any? { |cell| cell }
+          @dirty_rows.add(y)
+        end
+      end
+
+      @overlay_cells = nil
+    end
+
+    # オーバーレイレイヤーをクリア
+    def clear_overlay
+      return unless @overlay_cells
+
+      @height.times do |y|
+        if @overlay_cells[y].any? { |cell| cell }
+          @dirty_rows.add(y)
+          @overlay_cells[y] = Array.new(@width) { nil }
+        end
+      end
+    end
+
+    # オーバーレイレイヤーが有効かどうか
+    def overlay_enabled?
+      !@overlay_cells.nil?
+    end
+
+    # オーバーレイレイヤーに描画
+    def put_overlay(x, y, char, fg: nil, bg: nil, width: nil)
+      return unless @overlay_cells
+      return if out_of_bounds?(x, y)
+
+      char_width = width || TextUtils.display_width(char)
+      @overlay_cells[y][x] = {
+        char: char,
+        fg: fg,
+        bg: bg,
+        width: char_width
+      }
+
+      @dirty_rows.add(y)
+
+      # 全角文字の場合、次のセルをマーク
+      if char_width >= 2 && x + 1 < @width
+        (char_width - 1).times do |offset|
+          next_x = x + 1 + offset
+          break if next_x >= @width
+          @overlay_cells[y][next_x] = {
+            char: '',
+            fg: nil,
+            bg: nil,
+            width: 0
+          }
+        end
+      end
+    end
+
+    # オーバーレイレイヤーに文字列を描画
+    def put_overlay_string(x, y, str, fg: nil, bg: nil)
+      return unless @overlay_cells
+      return if out_of_bounds?(x, y)
+
+      clean_str = str.include?("\e") ? ColorHelper.strip_ansi(str) : str
+
+      current_x = x
+      clean_str.each_char do |char|
+        break if current_x >= @width
+
+        char_width = TextUtils.display_width(char)
+        put_overlay(current_x, y, char, fg: fg, bg: bg, width: char_width)
+        current_x += char_width
+      end
     end
 
     private

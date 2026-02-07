@@ -87,6 +87,9 @@ module Rufio
       @keybind_handler.set_directory_listing(@directory_listing)
       @keybind_handler.set_terminal_ui(self)
 
+      # command_mode_ui にも terminal_ui を設定
+      @command_mode_ui.set_terminal_ui(self)
+
       # コマンドモードにバックグラウンドエグゼキュータを設定
       @command_mode.background_executor = @background_executor if @background_executor
 
@@ -300,7 +303,15 @@ module Rufio
             draw_screen_to_buffer(@screen, nil, current_fps)
           end
 
-          # 差分レンダリング（dirty rowsのみ）
+          # コマンドモードがアクティブな場合はオーバーレイにダイアログを描画
+          if @command_mode_active
+            draw_command_mode_to_overlay
+          else
+            # コマンドモードでない場合はオーバーレイをクリア
+            @screen.clear_overlay if @screen.overlay_enabled?
+          end
+
+          # 差分レンダリング（dirty rowsのみ、オーバーレイを含む）
           @renderer.render(@screen)
 
           # 描画後にカーソルを画面外に移動
@@ -309,12 +320,6 @@ module Rufio
           end
 
           needs_redraw = false
-        end
-
-        # コマンドモードがアクティブな場合はフローティングウィンドウを表示
-        # Phase 4: 暫定的に直接描画（Screenバッファ外）
-        if @command_mode_active
-          @command_mode_ui.show_input_prompt(@command_input)
         end
 
         # SLEEP phase - CPU使用率削減のため適切にスリープ
@@ -1371,6 +1376,42 @@ module Rufio
     def deactivate_command_mode
       @command_mode_active = false
       @command_input = ""
+      # オーバーレイをクリア
+      @screen&.clear_overlay if @screen&.overlay_enabled?
+    end
+
+    # コマンドモードダイアログをオーバーレイに描画
+    def draw_command_mode_to_overlay
+      return unless @screen
+
+      title = "Command Mode"
+      content_lines = [
+        "",
+        "#{@command_input}_",  # カーソル表示
+        "",
+        "Tab: Complete | Enter: Execute | ESC: Cancel"
+      ]
+
+      border_color = "\e[34m"      # Blue
+      title_color = "\e[1;34m"     # Bold blue
+      content_color = "\e[37m"     # White
+
+      # ウィンドウサイズを計算
+      width, height = @dialog_renderer.calculate_dimensions(content_lines, {
+        title: title,
+        min_width: 50,
+        max_width: 80
+      })
+
+      # 中央位置を計算
+      x, y = @dialog_renderer.calculate_center(width, height)
+
+      # オーバーレイにダイアログを描画
+      @dialog_renderer.draw_floating_window_to_overlay(@screen, x, y, width, height, title, content_lines, {
+        border_color: border_color,
+        title_color: title_color,
+        content_color: content_color
+      })
     end
 
     # コマンドモードがアクティブかどうか
@@ -1485,36 +1526,14 @@ module Rufio
       content_lines << ""
       content_lines << "Press any key to continue..."
 
-      # ウィンドウの色設定（黄色）
-      border_color = "\e[33m"
-      title_color = "\e[1;33m"
-      content_color = "\e[37m"
-
-      # ウィンドウサイズを計算
-      width, height = @dialog_renderer.calculate_dimensions(content_lines, {
-                                                               title: title,
-                                                               min_width: 40,
-                                                               max_width: 80
-                                                             })
-
-      # 中央位置を計算
-      x, y = @dialog_renderer.calculate_center(width, height)
-
-      # フローティングウィンドウを描画
-      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-                                               border_color: border_color,
-                                               title_color: title_color,
-                                               content_color: content_color
-                                             })
-
-      # キー入力を待つ
-      STDIN.getch
-
-      # ウィンドウをクリア
-      @dialog_renderer.clear_area(x, y, width, height)
-
-      # 画面を再描画
-      draw_screen
+      # オーバーレイダイアログを表示
+      show_overlay_dialog(title, content_lines, {
+        min_width: 40,
+        max_width: 80,
+        border_color: "\e[33m",    # Yellow
+        title_color: "\e[1;33m",   # Bold yellow
+        content_color: "\e[37m"    # White
+      })
     end
 
     # Show info notices from the info directory if any are unread
@@ -1537,36 +1556,18 @@ module Rufio
       # Calculate height based on content length
       content_length = notice[:content].length
       height = [content_length + 4, @screen_height - 4].min # +4 for borders and title
-      x = (@screen_width - width) / 2
-      y = (@screen_height - height) / 2
 
-      # Display the notice window
-      @dialog_renderer.draw_floating_window(
-        x, y, width, height,
-        notice[:title],
-        notice[:content],
-        {
-          border_color: "\e[36m",  # Cyan
-          title_color: "\e[1;36m", # Bold cyan
-          content_color: "\e[37m"  # White
-        }
-      )
-
-      # Force flush to ensure display
-      $stdout.flush
-
-      # Wait for any key press
-      require 'io/console'
-      IO.console.getch
+      # オーバーレイダイアログを表示
+      show_overlay_dialog(notice[:title], notice[:content], {
+        width: width,
+        height: height,
+        border_color: "\e[36m",  # Cyan
+        title_color: "\e[1;36m", # Bold cyan
+        content_color: "\e[37m"  # White
+      })
 
       # Mark as shown
       info_notice.mark_as_shown(notice[:file])
-
-      # Clear the notice window
-      @dialog_renderer.clear_area(x, y, width, height)
-
-      # Redraw the screen
-      draw_screen
     end
 
     # ログモードに入る（廃止済み: 空のメソッド）
@@ -1680,6 +1681,65 @@ module Rufio
       end
     end
 
+    # オーバーレイダイアログを表示してキー入力を待つヘルパーメソッド
+    # @param title [String] ダイアログタイトル
+    # @param content_lines [Array<String>] コンテンツ行
+    # @param options [Hash] オプション
+    # @option options [String] :border_color ボーダー色
+    # @option options [String] :title_color タイトル色
+    # @option options [String] :content_color コンテンツ色
+    # @option options [Integer] :width 幅（省略時は自動計算）
+    # @option options [Integer] :height 高さ（省略時は自動計算）
+    # @option options [Integer] :min_width 最小幅
+    # @option options [Integer] :max_width 最大幅
+    # @yield キー入力処理（ブロックが与えられた場合）
+    # @return [String] 入力されたキー
+    def show_overlay_dialog(title, content_lines, options = {}, &block)
+      return nil unless @screen && @renderer
+
+      # オーバーレイを有効化
+      @screen.enable_overlay
+
+      # ウィンドウサイズを計算
+      if options[:width] && options[:height]
+        width = options[:width]
+        height = options[:height]
+      else
+        width, height = @dialog_renderer.calculate_dimensions(content_lines, {
+          title: title,
+          min_width: options[:min_width] || 40,
+          max_width: options[:max_width] || 80
+        })
+      end
+
+      # 中央位置を計算
+      x, y = @dialog_renderer.calculate_center(width, height)
+
+      # オーバーレイにダイアログを描画
+      @dialog_renderer.draw_floating_window_to_overlay(@screen, x, y, width, height, title, content_lines, {
+        border_color: options[:border_color] || "\e[37m",
+        title_color: options[:title_color] || "\e[1;33m",
+        content_color: options[:content_color] || "\e[37m"
+      })
+
+      # レンダリング
+      @renderer.render(@screen)
+
+      # キー入力を待つ
+      key = block_given? ? yield : STDIN.getch
+
+      # オーバーレイを無効化
+      @screen.disable_overlay
+
+      # 画面を再描画
+      @renderer.render(@screen)
+
+      key
+    end
+
+    # Screen と Renderer のアクセサ（他のクラスから利用可能に）
+    attr_reader :screen, :renderer
+
     # ヘルプダイアログを表示
     def show_help_dialog
       content_lines = [
@@ -1726,20 +1786,15 @@ module Rufio
 
       width = 60
       height = [content_lines.length + 4, @screen_height - 4].min
-      x, y = @dialog_renderer.calculate_center(width, height)
 
-      @dialog_renderer.draw_floating_window(x, y, width, height, 'rufio - Help', content_lines, {
+      # オーバーレイダイアログを表示
+      show_overlay_dialog('rufio - Help', content_lines, {
+        width: width,
+        height: height,
         border_color: "\e[36m",    # Cyan
         title_color: "\e[1;36m",   # Bold cyan
         content_color: "\e[37m"    # White
       })
-
-      require 'io/console'
-      IO.console.getch
-      @dialog_renderer.clear_area(x, y, width, height)
-
-      # 画面を再描画
-      refresh_display
     end
 
   end

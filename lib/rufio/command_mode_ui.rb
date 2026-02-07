@@ -8,8 +8,14 @@ module Rufio
     def initialize(command_mode, dialog_renderer)
       @command_mode = command_mode
       @dialog_renderer = dialog_renderer
+      @terminal_ui = nil
       # 最後に表示したウィンドウの位置とサイズを保存
       @last_window = nil
+    end
+
+    # terminal_ui を設定
+    def set_terminal_ui(terminal_ui)
+      @terminal_ui = terminal_ui
     end
 
     # 入力文字列に対する補完候補を取得
@@ -124,21 +130,14 @@ module Rufio
                                                                max_width: 100
                                                              })
 
-      # 中央位置を計算
-      x, y = @dialog_renderer.calculate_center(width, height)
-
-      # フローティングウィンドウを描画
-      @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-                                               border_color: border_color,
-                                               title_color: title_color,
-                                               content_color: content_color
-                                             })
-
-      # キー入力を待つ
-      STDIN.getch
-
-      # ウィンドウをクリア
-      @dialog_renderer.clear_area(x, y, width, height)
+      # オーバーレイダイアログを表示
+      show_overlay_dialog(title, content_lines, {
+        width: width,
+        height: height,
+        border_color: border_color,
+        title_color: title_color,
+        content_color: content_color
+      })
     end
 
     # コマンド入力プロンプトをクリア
@@ -155,6 +154,48 @@ module Rufio
     end
 
     private
+
+    # オーバーレイダイアログを表示してキー入力を待つヘルパーメソッド
+    def show_overlay_dialog(title, content_lines, options = {}, &block)
+      # terminal_ui が利用可能で、screen と renderer が存在する場合のみオーバーレイを使用
+      use_overlay = @terminal_ui &&
+                    @terminal_ui.respond_to?(:screen) &&
+                    @terminal_ui.respond_to?(:renderer) &&
+                    @terminal_ui.screen &&
+                    @terminal_ui.renderer
+
+      if use_overlay
+        # オーバーレイを使用
+        @terminal_ui.show_overlay_dialog(title, content_lines, options, &block)
+      else
+        # フォールバック: 従来の方法
+        width = options[:width]
+        height = options[:height]
+
+        unless width && height
+          width, height = @dialog_renderer.calculate_dimensions(content_lines, {
+            title: title,
+            min_width: options[:min_width] || 40,
+            max_width: options[:max_width] || 80
+          })
+        end
+
+        x, y = @dialog_renderer.calculate_center(width, height)
+
+        @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
+          border_color: options[:border_color] || "\e[37m",
+          title_color: options[:title_color] || "\e[1;33m",
+          content_color: options[:content_color] || "\e[37m"
+        })
+
+        key = block_given? ? yield : STDIN.getch
+
+        @dialog_renderer.clear_area(x, y, width, height)
+        @terminal_ui&.refresh_display
+
+        key
+      end
+    end
 
     # 文字列配列の共通プレフィックスを見つける
     # @param strings [Array<String>] 文字列配列
