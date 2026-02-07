@@ -10,33 +10,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.64.0] - 2026-02-07
 
 ### Added
-- **Screen Overlay Layer**: ダイアログ描画用のオーバーレイレイヤーをScreenクラスに追加
+- **Screen Overlay Layer**: Added overlay layer to Screen class for dialog rendering
   - `enable_overlay` / `disable_overlay` / `clear_overlay` / `overlay_enabled?`
-  - `put_overlay` / `put_overlay_string` でオーバーレイレイヤーに描画
-  - `row()` メソッドがオーバーレイとベースレイヤーを自動合成
-  - オーバーレイ無効化時にdirty行を自動マーク（再描画保証）
-- **`show_overlay_dialog` ヘルパーメソッド**: TerminalUI, KeybindHandler, BookmarkManager, CommandModeUI, ZoxideIntegration に統一的なオーバーレイダイアログ表示メソッドを追加
-  - `terminal_ui` が利用可能な場合はオーバーレイを使用、なければ従来の直接描画にフォールバック
-- **`draw_floating_window_to_overlay`**: DialogRendererにオーバーレイレイヤーへのフローティングウィンドウ描画メソッドを追加
-- **Screen Overlay テスト**: `test/test_screen_overlay.rb` を追加
+  - Draw to overlay layer with `put_overlay` / `put_overlay_string`
+  - `row()` method automatically composites overlay and base layers
+  - Automatically marks dirty rows when overlay is disabled (guarantees redraw)
+- **`show_overlay_dialog` helper method**: Added unified overlay dialog display method to TerminalUI, KeybindHandler, BookmarkManager, CommandModeUI, and ZoxideIntegration
+  - Uses overlay when `terminal_ui` is available, falls back to direct drawing otherwise
+- **`draw_floating_window_to_overlay`**: Added floating window drawing method to DialogRenderer for overlay layer
+- **Screen Overlay tests**: Added `test/test_screen_overlay.rb`
 
 ### Changed
-- **ダイアログ描画のバッファベース化**: 全ダイアログ表示をScreenオーバーレイ経由に変更
-  - BookmarkManager: ブックマークメニュー、一覧、リネーム、削除、確認ダイアログ
-  - KeybindHandler: 削除確認、コピー/移動確認、終了確認、スクリプトパス管理、ブックマーク操作結果
-  - CommandModeUI: コマンド実行結果表示
-  - ZoxideIntegration: 履歴なしメッセージ、履歴選択ダイアログ
-  - TerminalUI: ヘルプダイアログ、お知らせ表示、プラグイン読み込みエラー
-- **コマンドモードのオーバーレイ化**: 直接描画（Screenバッファ外）からオーバーレイベースのバッファ描画に変更
-  - `draw_command_mode_to_overlay` メソッドでメインループ内のバッファ描画に統合
-- **Box Drawing文字の幅修正**: `TextUtils.char_width` で罫線文字（U+2500-U+257F）を幅1として扱うように修正（ターミナルでの実際の表示幅に合わせた）
-- **コードスタイル統一**: `lib/rufio.rb` の `require_relative` をダブルクォートからシングルクォートに統一
-- **`set_terminal_ui` の伝播**: KeybindHandler経由でBookmarkManager, ZoxideIntegrationにも `terminal_ui` を設定
-- **TerminalUI**: `screen` と `renderer` の `attr_reader` を公開
+- **Buffer-based dialog rendering**: Changed all dialog rendering to go through Screen overlay
+  - BookmarkManager: bookmark menu, list, rename, delete, and confirmation dialogs
+  - KeybindHandler: delete confirmation, copy/move confirmation, exit confirmation, script path management, bookmark operation results
+  - CommandModeUI: command execution result display
+  - ZoxideIntegration: no history message, history selection dialog
+  - TerminalUI: help dialog, announcements, plugin loading errors
+- **Overlay-based command mode**: Changed from direct drawing (outside Screen buffer) to overlay-based buffer drawing
+  - Integrated into main loop buffer drawing via `draw_command_mode_to_overlay` method
+- **Box drawing character width fix**: Fixed `TextUtils.char_width` to treat box drawing characters (U+2500-U+257F) as width 1 (matching actual terminal display width)
+- **Code style unification**: Unified `require_relative` in `lib/rufio.rb` from double quotes to single quotes
+- **`set_terminal_ui` propagation**: Set `terminal_ui` on BookmarkManager and ZoxideIntegration via KeybindHandler
+- **TerminalUI**: Exposed `screen` and `renderer` `attr_reader`
 
 ### Technical Details
-- **新規ファイル**: `test/test_screen_overlay.rb`
-- **変更ファイル**: `lib/rufio.rb`, `lib/rufio/screen.rb`, `lib/rufio/dialog_renderer.rb`, `lib/rufio/terminal_ui.rb`, `lib/rufio/keybind_handler.rb`, `lib/rufio/bookmark_manager.rb`, `lib/rufio/command_mode_ui.rb`, `lib/rufio/text_utils.rb`, `lib/rufio/zoxide_integration.rb`
+- **New files**: `test/test_screen_overlay.rb`
+- **Modified files**: `lib/rufio.rb`, `lib/rufio/screen.rb`, `lib/rufio/dialog_renderer.rb`, `lib/rufio/terminal_ui.rb`, `lib/rufio/keybind_handler.rb`, `lib/rufio/bookmark_manager.rb`, `lib/rufio/command_mode_ui.rb`, `lib/rufio/text_utils.rb`, `lib/rufio/zoxide_integration.rb`
 
 ## [0.63.0] - 2026-02-01
 
@@ -123,28 +123,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.60.0] - 2026-01-24
 
 ### Added
-- **⌨️ スクリプト補完機能**: コマンドモードでスクリプトのTab補完が可能に
-  - `@`プレフィックスでスクリプト専用補完（例: `@bu` + Tab → `@build.sh`）
-  - 通常補完時も登録済みスクリプトが候補に表示
-  - `CommandCompletion`が`CommandMode`と連携してスクリプト候補を取得
+- **⌨️ Script Tab Completion**: Tab completion for scripts in command mode
+  - `@` prefix for script-specific completion (e.g., `@bu` + Tab → `@build.sh`)
+  - Registered scripts also appear in regular completion candidates
+  - `CommandCompletion` works with `CommandMode` to retrieve script candidates
 
 ### Removed
-- **🗑️ プロジェクトモード廃止**: `P`キーで起動するプロジェクトモードを削除
-  - `lib/rufio/project_mode.rb` - ProjectModeクラス
-  - `lib/rufio/project_command.rb` - ProjectCommandクラス
-  - `lib/rufio/project_log.rb` - ProjectLogクラス
-  - 関連するUI描画メソッド（`draw_project_mode_screen`等）
-  - 関連するキーハンドリング（`handle_project_mode_key`等）
-  - 関連するテストファイル
+- **🗑️ Project Mode Removal**: Removed project mode launched by `P` key
+  - `lib/rufio/project_mode.rb` - ProjectMode class
+  - `lib/rufio/project_command.rb` - ProjectCommand class
+  - `lib/rufio/project_log.rb` - ProjectLog class
+  - Related UI drawing methods (`draw_project_mode_screen`, etc.)
+  - Related key handling (`handle_project_mode_key`, etc.)
+  - Related test files
 
 ### Changed
-- **📋 ヘルプ表示更新**: ヘルプダイアログに`J`キー（Job mode）を追加
-- **🧹 コードクリーンアップ**: プロジェクトモード関連の未使用コードを削除
+- **📋 Help Display Update**: Added `J` key (Job mode) to help dialog
+- **🧹 Code Cleanup**: Removed unused code related to project mode
 
 ### Technical Details
-- **テストカバレッジ**: 684 tests, 2474 assertions (all passing)
-- **削除ファイル**: 7ファイル（ライブラリ3、テスト4）
-- **影響範囲**: `keybind_handler.rb`, `terminal_ui.rb`, `rufio.rb`
+- **Test coverage**: 684 tests, 2474 assertions (all passing)
+- **Deleted files**: 7 files (3 library, 4 test)
+- **Affected files**: `keybind_handler.rb`, `terminal_ui.rb`, `rufio.rb`
 
 ## [0.41.0] - 2026-01-13
 
