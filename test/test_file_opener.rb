@@ -11,13 +11,17 @@ class TestFileOpener < Minitest::Test
     # テスト用一時ファイルを作成
     file_path = "/tmp/test.rb"
     File.write(file_path, "puts 'hello'")
-    
-    # プライベートメソッドをテストするため、sendを使用
-    application = @file_opener.send(:find_application_for_file, file_path)
-    
-    # 設定に基づいてcodeアプリケーションが選択されることを確認
-    assert_equal 'code', application
-    
+
+    test_applications = {
+      %w[rb py js] => 'code',
+      :default => 'open'
+    }
+
+    Rufio::ConfigLoader.stub(:applications, test_applications) do
+      application = @file_opener.send(:find_application_for_file, file_path)
+      assert_equal 'code', application
+    end
+
     # クリーンアップ
     File.delete(file_path) if File.exist?(file_path)
   end
@@ -25,12 +29,17 @@ class TestFileOpener < Minitest::Test
   def test_find_application_for_unknown_extension
     file_path = "/tmp/test.unknown"
     File.write(file_path, "test content")
-    
-    application = @file_opener.send(:find_application_for_file, file_path)
-    
-    # 未知の拡張子に対してはデフォルトアプリケーションが選択されることを確認
-    assert_equal 'open', application
-    
+
+    test_applications = {
+      %w[rb py js] => 'code',
+      :default => 'open'
+    }
+
+    Rufio::ConfigLoader.stub(:applications, test_applications) do
+      application = @file_opener.send(:find_application_for_file, file_path)
+      assert_equal 'open', application
+    end
+
     File.delete(file_path) if File.exist?(file_path)
   end
 

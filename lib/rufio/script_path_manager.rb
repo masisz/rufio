@@ -75,7 +75,7 @@ module Rufio
       @paths.each do |path|
         next unless Dir.exist?(path)
 
-        Dir.glob(File.join(path, '*')).each do |file|
+        Dir.glob(File.join(path, '**', '*')).each do |file|
           next unless File.file?(file)
 
           basename = File.basename(file)
@@ -240,7 +240,7 @@ module Rufio
       @paths.each do |path|
         next unless Dir.exist?(path)
 
-        Dir.glob(File.join(path, '*')).each do |file|
+        Dir.glob(File.join(path, '**', '*')).each do |file|
           next unless File.file?(file)
 
           file_basename = File.basename(file)
@@ -276,7 +276,7 @@ module Rufio
       @paths.each do |path|
         next unless Dir.exist?(path)
 
-        Dir.glob(File.join(path, '*')).each do |file|
+        Dir.glob(File.join(path, '**', '*')).each do |file|
           next unless File.file?(file)
 
           file_basename = File.basename(file)

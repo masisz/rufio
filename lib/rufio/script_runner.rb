@@ -81,7 +81,7 @@ module Rufio
       @script_paths.each do |dir|
         next unless Dir.exist?(dir)
 
-        Dir.glob(File.join(dir, '*')).each do |path|
+        Dir.glob(File.join(dir, '**', '*')).each do |path|
           next unless File.file?(path)
           next unless executable_script?(path)
 

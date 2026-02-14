@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.65.0] - 2026-02-14
+
+### Changed
+- **Display version in title bar**: Changed header format from `💎 rufio - /path` to `💎 rufio v0.65.0 - /path`
+
 ## [0.64.0] - 2026-02-07
 
 ### Added

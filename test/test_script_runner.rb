@@ -110,6 +110,47 @@ class TestScriptRunner < Minitest::Test
     assert_includes names, 'setup.rb'
     assert_includes names, 'init.py'
   end
+
+  # --- サブディレクトリ再帰検索 ---
+
+  # ScriptRunner: サブディレクトリ内のスクリプトも検索できる
+  def test_script_runner_finds_scripts_in_subdirectories
+    subdir = File.join(@scripts_dir1, 'utils')
+    FileUtils.mkdir_p(subdir)
+    create_script(subdir, 'helper.sh', '#!/bin/bash\necho "Helper"')
+
+    runner = Rufio::ScriptRunner.new(script_paths: [@scripts_dir1])
+
+    scripts = runner.available_scripts
+    names = scripts.map { |s| s[:name] }
+    assert_includes names, 'helper.sh'
+  end
+
+  # ScriptRunner: サブディレクトリ内のスクリプトを名前で検索できる
+  def test_script_runner_finds_subdirectory_script_by_name
+    subdir = File.join(@scripts_dir1, 'utils')
+    FileUtils.mkdir_p(subdir)
+    create_script(subdir, 'helper.sh', '#!/bin/bash\necho "Helper"')
+
+    runner = Rufio::ScriptRunner.new(script_paths: [@scripts_dir1])
+
+    script = runner.find_script('helper')
+    refute_nil script
+    assert_equal 'helper.sh', script[:name]
+  end
+
+  # ScriptRunner: 深いネストのサブディレクトリも検索できる
+  def test_script_runner_finds_deeply_nested_scripts
+    deep_dir = File.join(@scripts_dir1, 'a', 'b')
+    FileUtils.mkdir_p(deep_dir)
+    create_script(deep_dir, 'deep.sh', '#!/bin/bash\necho "Deep"')
+
+    runner = Rufio::ScriptRunner.new(script_paths: [@scripts_dir1])
+
+    scripts = runner.available_scripts
+    names = scripts.map { |s| s[:name] }
+    assert_includes names, 'deep.sh'
+  end
 end
 
 class TestConfigLoaderScriptPaths < Minitest::Test

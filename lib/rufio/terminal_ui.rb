@@ -513,7 +513,7 @@ module Rufio
     # Phase 3: Screenバッファにヘッダーを描画
     def draw_header_to_buffer(screen, y)
       current_path = @directory_listing.current_path
-      header = "💎 rufio - #{current_path}"
+      header = "💎 rufio v#{VERSION} - #{current_path}"
 
       # Add help mode indicator if in help mode
       if @keybind_handler.help_mode?
@@ -532,14 +532,14 @@ module Rufio
           # prioritize showing help mode indicator
           help_text = " [Help Mode - Press ESC to exit]"
           base_length = @screen_width - help_text.length - FILTER_TEXT_RESERVED
-          header = "💎 rufio - ...#{current_path[-base_length..-1]}#{help_text}"
+          header = "💎 rufio v#{VERSION} - ...#{current_path[-base_length..-1]}#{help_text}"
         elsif @keybind_handler.filter_active?
           # prioritize showing filter when active
           filter_text = " [Filter: #{@keybind_handler.filter_query}]"
           base_length = @screen_width - filter_text.length - FILTER_TEXT_RESERVED
-          header = "💎 rufio - ...#{current_path[-base_length..-1]}#{filter_text}"
+          header = "💎 rufio v#{VERSION} - ...#{current_path[-base_length..-1]}#{filter_text}"
         else
-          header = "💎 rufio - ...#{current_path[-(@screen_width - FILTER_TEXT_RESERVED)..-1]}"
+          header = "💎 rufio v#{VERSION} - ...#{current_path[-(@screen_width - FILTER_TEXT_RESERVED)..-1]}"
         end
       end
 
@@ -606,7 +606,7 @@ module Rufio
 
     def draw_header
       current_path = @directory_listing.current_path
-      header = "💎 rufio - #{current_path}"
+      header = "💎 rufio v#{VERSION} - #{current_path}"
 
       # Add help mode indicator if in help mode
       if @keybind_handler.help_mode?
@@ -625,14 +625,14 @@ module Rufio
           # prioritize showing help mode indicator
           help_text = " [Help Mode - Press ESC to exit]"
           base_length = @screen_width - help_text.length - FILTER_TEXT_RESERVED
-          header = "💎 rufio - ...#{current_path[-base_length..-1]}#{help_text}"
+          header = "💎 rufio v#{VERSION} - ...#{current_path[-base_length..-1]}#{help_text}"
         elsif @keybind_handler.filter_active?
           # prioritize showing filter when active
           filter_text = " [Filter: #{@keybind_handler.filter_query}]"
           base_length = @screen_width - filter_text.length - FILTER_TEXT_RESERVED
-          header = "💎 rufio - ...#{current_path[-base_length..-1]}#{filter_text}"
+          header = "💎 rufio v#{VERSION} - ...#{current_path[-base_length..-1]}#{filter_text}"
         else
-          header = "💎 rufio - ...#{current_path[-(@screen_width - FILTER_TEXT_RESERVED)..-1]}"
+          header = "💎 rufio v#{VERSION} - ...#{current_path[-(@screen_width - FILTER_TEXT_RESERVED)..-1]}"
         end
       end
 

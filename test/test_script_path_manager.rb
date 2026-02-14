@@ -222,6 +222,78 @@ class TestScriptPathManager < Minitest::Test
     # パスが展開されている
     assert manager.paths.first.start_with?(Dir.home)
   end
+
+  # --- サブディレクトリ再帰検索 ---
+
+  # all_scriptsがサブディレクトリ内のスクリプトも返す
+  def test_all_scripts_finds_scripts_in_subdirectories
+    subdir = File.join(@scripts_dir1, 'utils')
+    FileUtils.mkdir_p(subdir)
+    create_script(subdir, 'helper.sh', "#!/bin/bash\necho 'Helper'")
+
+    write_config(<<~YAML)
+      script_paths:
+        - #{@scripts_dir1}
+    YAML
+
+    manager = Rufio::ScriptPathManager.new(@config_file)
+    scripts = manager.all_scripts
+
+    assert_includes scripts, 'helper'
+  end
+
+  # resolveがサブディレクトリ内のスクリプトを解決できる
+  def test_resolve_finds_script_in_subdirectory
+    subdir = File.join(@scripts_dir1, 'utils')
+    FileUtils.mkdir_p(subdir)
+    create_script(subdir, 'helper.sh', "#!/bin/bash\necho 'Helper'")
+
+    write_config(<<~YAML)
+      script_paths:
+        - #{@scripts_dir1}
+    YAML
+
+    manager = Rufio::ScriptPathManager.new(@config_file)
+    script = manager.resolve('helper')
+
+    assert_equal File.join(subdir, 'helper.sh'), script
+  end
+
+  # find_all_matchesがサブディレクトリ内のスクリプトも含む
+  def test_find_all_matches_includes_subdirectory_scripts
+    subdir = File.join(@scripts_dir2, 'tools')
+    FileUtils.mkdir_p(subdir)
+    create_script(subdir, 'build.sh', "#!/bin/bash\necho 'Build from subdir'")
+
+    write_config(<<~YAML)
+      script_paths:
+        - #{@scripts_dir1}
+        - #{@scripts_dir2}
+    YAML
+
+    manager = Rufio::ScriptPathManager.new(@config_file)
+    matches = manager.find_all_matches('build')
+
+    # scripts_dir1/build.rb と scripts_dir2/tools/build.sh の両方が見つかる
+    assert_equal 2, matches.size
+  end
+
+  # 深いネストのサブディレクトリも検索できる
+  def test_all_scripts_finds_deeply_nested_scripts
+    deep_dir = File.join(@scripts_dir1, 'a', 'b', 'c')
+    FileUtils.mkdir_p(deep_dir)
+    create_script(deep_dir, 'deep.rb', "#!/usr/bin/env ruby\nputs 'Deep'")
+
+    write_config(<<~YAML)
+      script_paths:
+        - #{@scripts_dir1}
+    YAML
+
+    manager = Rufio::ScriptPathManager.new(@config_file)
+    scripts = manager.all_scripts
+
+    assert_includes scripts, 'deep'
+  end
 end
 
 class TestCommandModeScriptIntegration < Minitest::Test
