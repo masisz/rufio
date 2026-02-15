@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.70.0] - 2026-02-14
+
+### Added
+- **Local Script Scanning**: Automatically detect script files (`.sh`, `.rb`, `.py`, `.pl`, `.js`, `.ts`, `.ps1`) in the currently browsed directory
+  - Displayed and executable as `@script.sh` format in command mode
+  - Falls back to local scripts when not found in registered script paths
+  - Cached per directory with automatic invalidation on directory change
+- **Rakefile Task Execution**: Parse Rakefile to extract task names and execute them
+  - `rake:task_name` format in command mode (e.g., `:rake:test`, `:rake:build`)
+  - Supports `Rakefile`, `rakefile`, `Rakefile.rb`
+  - Recognizes symbol, string, and hash-style task definitions
+- **Rake Task Tab Completion**: Full Tab completion support for rake tasks
+  - `rake:` prefix triggers task-specific completion
+  - Partial input (`r`, `rak`, `rake`) also suggests matching `rake:xxx` commands
+  - Common prefix completion (e.g., `rak` → `rake:`)
+- **New classes**: `LocalScriptScanner`, `RakefileParser`
+- **New tests**: `test_local_script_scanner.rb` (16 tests), `test_rakefile_parser.rb` (19 tests), `test_command_mode_local.rb` (11 tests), `test_command_completion_local.rb` (13 tests), `test_overlay_clearing.rb` (2 tests)
+
+### Fixed
+- **Floating window border remnants**: Fixed old dialog borders remaining when switching between overlay dialogs (e.g., command prompt → completion list)
+  - Added `@screen.clear_overlay` in `show_overlay_dialog` before drawing new dialog
+  - Added overlay clearing before each frame's `draw_command_mode_to_overlay` in main loop
+- **CommandResult display artifact**: Fixed command window top border remaining visible when showing command execution results
+  - Root cause: `execute_command` called legacy `draw_screen` (direct terminal print) which has a coordinate offset from the overlay-based rendering system
+  - Removed `draw_screen` call from `execute_command`, letting the main loop handle re-rendering via the buffer system
+
+### Changed
+- **CommandMode**: Added `update_browsing_directory` method, `rake:` routing, local script fallback
+- **CommandCompletion**: Added rake task and local script completion integration
+- **TerminalUI**: `activate_command_mode` now notifies `CommandMode` of current browsing directory
+
+### Technical Details
+- **New files**: `lib/rufio/local_script_scanner.rb`, `lib/rufio/rakefile_parser.rb`, 5 test files
+- **Modified files**: `lib/rufio.rb`, `lib/rufio/command_mode.rb`, `lib/rufio/command_completion.rb`, `lib/rufio/terminal_ui.rb`
+- **Test coverage**: 821 runs, 2816 assertions, 0 failures
+
 ## [0.65.0] - 2026-02-14
 
 ### Changed

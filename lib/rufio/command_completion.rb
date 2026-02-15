@@ -16,9 +16,11 @@ module Rufio
     # @param input [String] 入力されたテキスト
     # @return [Array<String>] 補完候補のリスト
     def complete(input)
-      # 入力が空の場合は内部コマンドとスクリプトを返す
+      # 入力が空の場合は内部コマンド + スクリプト + rakeタスクを返す
       if input.nil? || input.strip.empty?
-        return @command_mode.available_commands.map(&:to_s) + script_candidates('')
+        return @command_mode.available_commands.map(&:to_s) +
+               script_candidates('') +
+               rake_candidates('')
       end
 
       # シェルコマンド補完（!で始まる場合）
@@ -31,12 +33,22 @@ module Rufio
         return @command_mode.complete_script(input.strip)
       end
 
-      # 通常のコマンド補完（内部コマンド + スクリプト）
+      # rakeタスク補完（rake:で始まる場合）
+      if input.strip.start_with?('rake:')
+        prefix = input.strip[5..-1]
+        return @command_mode.complete_rake_task(prefix)
+      end
+
+      # 通常のコマンド補完（内部コマンド + rakeタスク）
       available_commands = @command_mode.available_commands.map(&:to_s)
       input_lower = input.downcase
       candidates = available_commands.select do |command|
         command.downcase.start_with?(input_lower)
       end
+
+      # rakeタスクも候補に追加（"r", "ra", "rak", "rake" 等にマッチ）
+      rake_tasks = rake_candidates('')
+      candidates += rake_tasks.select { |task| task.downcase.start_with?(input_lower) }
 
       candidates
     end
@@ -67,13 +79,18 @@ module Rufio
 
     private
 
-    # スクリプト候補を取得
+    # スクリプト候補を取得（ScriptRunner + ローカルスクリプト）
     # @param prefix [String] 入力中の文字列
     # @return [Array<String>] スクリプト候補（@付き）
     def script_candidates(prefix)
-      return [] unless @command_mode&.script_runner
-
       @command_mode.complete_script("@#{prefix}")
+    end
+
+    # rakeタスク候補を取得
+    # @param prefix [String] 入力中の文字列
+    # @return [Array<String>] rakeタスク候補（rake:付き）
+    def rake_candidates(prefix)
+      @command_mode.complete_rake_task(prefix)
     end
 
     # シェルコマンドの補完

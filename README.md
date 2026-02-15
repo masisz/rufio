@@ -145,7 +145,17 @@ Press `:` to enter command mode and execute various commands.
 ```
 :@build           # @ prefix triggers script completion
 :@deploy.rb       # Execute registered script
+:@local.sh        # Scripts in current directory are also available
 ```
+
+### Rake Task Execution
+
+```
+:rake:test        # Execute rake task
+:rake:build       # Tab completion supported
+```
+
+Rakefile in the current directory is automatically parsed. Supports `Rakefile`, `rakefile`, `Rakefile.rb`.
 
 ### Shell Commands
 
@@ -182,8 +192,11 @@ Press `B` → `3` to open the script path management menu:
 |-----------|----------|
 | `.rb` | Ruby |
 | `.py` | Python |
-| `.ps1` | PowerShell |
 | `.sh` | Shell (bash/zsh) |
+| `.js` | JavaScript (Node.js) |
+| `.ts` | TypeScript (ts-node/deno) |
+| `.pl` | Perl |
+| `.ps1` | PowerShell |
 
 ## DSL Commands
 

@@ -305,6 +305,8 @@ module Rufio
 
           # コマンドモードがアクティブな場合はオーバーレイにダイアログを描画
           if @command_mode_active
+            # 前回のオーバーレイ残留を防ぐためクリアしてから描画
+            @screen.clear_overlay if @screen.overlay_enabled?
             draw_command_mode_to_overlay
           else
             # コマンドモードでない場合はオーバーレイをクリア
@@ -1370,6 +1372,9 @@ module Rufio
     def activate_command_mode
       @command_mode_active = true
       @command_input = ""
+      # 閲覧中ディレクトリをコマンドモードに通知（ローカルスクリプト・Rakefileの検出用）
+      browsing_dir = @directory_listing&.current_path || Dir.pwd
+      @command_mode.update_browsing_directory(browsing_dir)
     end
 
     # コマンドモードを終了
@@ -1476,8 +1481,9 @@ module Rufio
         @command_mode_ui.show_result(result)
       end
 
-      # 画面を再描画
-      draw_screen
+      # メインループの次フレームで再描画される（draw_screenは使わない）
+      # draw_screen（レガシー直接出力）はバッファベースのオーバーレイと座標系が異なるため、
+      # 使用するとコマンドプロンプトの枠線が残る不具合が発生する
     end
 
     # Tab補完を処理
@@ -1697,8 +1703,9 @@ module Rufio
     def show_overlay_dialog(title, content_lines, options = {}, &block)
       return nil unless @screen && @renderer
 
-      # オーバーレイを有効化
+      # オーバーレイを有効化し、前回のダイアログ残留を除去
       @screen.enable_overlay
+      @screen.clear_overlay
 
       # ウィンドウサイズを計算
       if options[:width] && options[:height]

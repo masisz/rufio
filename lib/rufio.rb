@@ -53,6 +53,8 @@ require_relative 'rufio/job_mode'
 require_relative 'rufio/script_runner'
 require_relative 'rufio/script_path_manager'
 require_relative 'rufio/script_config_loader'
+require_relative 'rufio/local_script_scanner'
+require_relative 'rufio/rakefile_parser'
 
 module Rufio
   class Error < StandardError; end

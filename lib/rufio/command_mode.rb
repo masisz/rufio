@@ -15,6 +15,8 @@ module Rufio
       @script_runner = nil
       @script_path_manager = nil
       @job_manager = nil
+      @local_script_scanner = LocalScriptScanner.new
+      @rakefile_parser = RakefileParser.new
       load_builtin_commands
       load_dsl_commands
     end
@@ -43,6 +45,13 @@ module Rufio
       )
     end
 
+    # 閲覧中ディレクトリを更新
+    # @param directory [String] 現在の閲覧ディレクトリ
+    def update_browsing_directory(directory)
+      @local_script_scanner.update_directory(directory)
+      @rakefile_parser.update_directory(directory)
+    end
+
     # コマンドを実行する
     # @param command_string [String] コマンド文字列
     # @param working_dir [String, nil] 作業ディレクトリ（スクリプト実行時に使用）
@@ -53,6 +62,12 @@ module Rufio
       # スクリプト実行 (@ で始まる場合)
       if command_string.strip.start_with?('@')
         return execute_script(command_string.strip[1..-1], working_dir)
+      end
+
+      # rakeタスク実行 (rake: で始まる場合)
+      if command_string.strip.start_with?('rake:')
+        task_name = command_string.strip[5..-1]
+        return execute_rake_task(task_name, working_dir)
       end
 
       # シェルコマンドの実行 (! で始まる場合)
@@ -132,11 +147,28 @@ module Rufio
     # @param prefix [String] 入力中の文字列（@を含む）
     # @return [Array<String>] 補完候補（@付き）
     def complete_script(prefix)
-      return [] unless @script_runner
-
       # @を除去して検索
       search_prefix = prefix.sub(/^@/, '')
-      @script_runner.complete(search_prefix).map { |name| "@#{name}" }
+
+      candidates = []
+
+      # ScriptRunnerからの候補
+      if @script_runner
+        candidates += @script_runner.complete(search_prefix)
+      end
+
+      # ローカルスクリプトからの候補
+      candidates += @local_script_scanner.complete(search_prefix)
+
+      # 重複排除してソート、@付きで返す
+      candidates.uniq.sort.map { |name| "@#{name}" }
+    end
+
+    # rakeタスク名を補完する
+    # @param prefix [String] 入力中の文字列（rake:を含まない）
+    # @return [Array<String>] 補完候補（rake:付き）
+    def complete_rake_task(prefix)
+      @rakefile_parser.complete(prefix).map { |name| "rake:#{name}" }
     end
 
     private
@@ -204,22 +236,143 @@ module Rufio
     end
 
     # スクリプトを実行する（@プレフィックス用）
+    # ScriptRunner → LocalScriptScanner の順にフォールバック
     # @param script_name [String] スクリプト名
     # @param working_dir [String, nil] 作業ディレクトリ
     # @return [String] 実行結果メッセージ
     def execute_script(script_name, working_dir)
-      unless @script_runner
-        return "⚠️  スクリプトランナーが設定されていません"
+      working_dir ||= Dir.pwd
+
+      # ScriptRunnerで検索
+      if @script_runner
+        job = @script_runner.run(script_name, working_dir: working_dir)
+        return "🚀 ジョブを開始: #{script_name}" if job
+      end
+
+      # LocalScriptScannerにフォールバック
+      local_script = @local_script_scanner.find_script(script_name)
+      if local_script
+        return execute_local_script(local_script, working_dir)
+      end
+
+      # どちらにも見つからない
+      if @script_runner
+        "⚠️  スクリプトが見つかりません: #{script_name}"
+      else
+        "⚠️  スクリプトランナーが設定されていません"
+      end
+    end
+
+    # ローカルスクリプトを実行する
+    # @param script [Hash] スクリプト情報 { name:, path:, dir: }
+    # @param working_dir [String] 作業ディレクトリ
+    # @return [String] 実行結果メッセージ
+    def execute_local_script(script, working_dir)
+      if @job_manager
+        job = @job_manager.add_job(
+          name: script[:name],
+          path: working_dir,
+          command: build_script_command(script)
+        )
+        job.start
+
+        Thread.new do
+          execute_script_in_background(job, script, working_dir)
+        end
+
+        "🚀 ジョブを開始: #{script[:name]}"
+      else
+        # 同期実行
+        command = build_script_command(script)
+        stdout, stderr, status = Open3.capture3(command, chdir: working_dir)
+        {
+          success: status.success?,
+          output: stdout.strip,
+          stderr: stderr.strip
+        }
+      end
+    end
+
+    # スクリプトの実行コマンドを構築
+    # @param script [Hash] スクリプト情報
+    # @return [String] 実行コマンド
+    def build_script_command(script)
+      path = script[:path]
+      ext = File.extname(path).downcase
+
+      case ext
+      when '.rb'
+        "ruby #{path.shellescape}"
+      when '.py'
+        "python3 #{path.shellescape}"
+      when '.js'
+        "node #{path.shellescape}"
+      when '.ts'
+        "ts-node #{path.shellescape}"
+      when '.pl'
+        "perl #{path.shellescape}"
+      when '.ps1'
+        "pwsh #{path.shellescape}"
+      else
+        path.shellescape
+      end
+    end
+
+    # ローカルスクリプトをバックグラウンドで実行
+    def execute_script_in_background(job, script, working_dir)
+      command = build_script_command(script)
+      stdout, stderr, status = Open3.capture3(command, chdir: working_dir)
+
+      job.append_log(stdout) unless stdout.empty?
+      job.append_log(stderr) unless stderr.empty?
+
+      if status.success?
+        job.complete(exit_code: status.exitstatus)
+      else
+        job.fail(exit_code: status.exitstatus)
+      end
+
+      @job_manager&.notify_completion(job)
+    rescue StandardError => e
+      job.append_log("Error: #{e.message}")
+      job.fail(exit_code: -1)
+      @job_manager&.notify_completion(job)
+    end
+
+    # rakeタスクを実行する
+    # @param task_name [String] タスク名
+    # @param working_dir [String, nil] 作業ディレクトリ
+    # @return [String, Hash] 実行結果
+    def execute_rake_task(task_name, working_dir)
+      unless @rakefile_parser.rakefile_exists?
+        return "⚠️  Rakefileが見つかりません"
+      end
+
+      unless @rakefile_parser.tasks.include?(task_name)
+        return "⚠️  rakeタスクが見つかりません: #{task_name}"
       end
 
       working_dir ||= Dir.pwd
+      shell_command = "rake #{task_name.shellescape}"
 
-      job = @script_runner.run(script_name, working_dir: working_dir)
+      begin
+        stdout, stderr, status = Open3.capture3(shell_command, chdir: working_dir)
 
-      if job
-        "🚀 ジョブを開始: #{script_name}"
-      else
-        "⚠️  スクリプトが見つかりません: #{script_name}"
+        result = {
+          success: status.success?,
+          output: stdout.strip,
+          stderr: stderr.strip
+        }
+
+        unless status.success?
+          result[:error] = "コマンドが失敗しました (終了コード: #{status.exitstatus})"
+        end
+
+        result
+      rescue Errno::ENOENT => e
+        { success: false, error: "rakeが見つかりません: #{e.message}" }
+      rescue StandardError => e
+        { success: false, error: "rake実行エラー: #{e.message}" }
       end
     end
 
