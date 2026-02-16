@@ -216,6 +216,7 @@ module Rufio
       last_frame_time = Time.now
       current_fps = 0.0
       last_fps_update = Time.now
+      @last_displayed_fps = 0.0
 
       # 再描画フラグ
       needs_redraw = false
@@ -237,8 +238,11 @@ module Rufio
             last_fps_update = start
           end
 
-          # test_modeでは毎フレーム描画してFPS計測の精度を上げる
-          needs_redraw = true
+          # FPS表示の更新タイミングで再描画（1秒ごと）
+          if current_fps != @last_displayed_fps
+            @last_displayed_fps = current_fps
+            needs_redraw = true
+          end
         end
 
         # UPDATE phase - ノンブロッキング入力処理
