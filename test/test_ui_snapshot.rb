@@ -201,5 +201,8 @@ class TestUISnapshot < Minitest::Test
         .gsub(%r{/tmp/rufio_\w+\d+-\d+-\w+}, "/tmp/TEST_DIR")
         .gsub(%r{\.\.\._test\d+-\d+-\w+}, ".../TEST_DIR")
         .gsub(%r{test\d+-\d+-\w+}, "TEST_DIR")
+        # ディレクトリサイズを正規化（ファイルシステム依存を回避）
+        # 4.0K, 4096B などを DIR_SIZE に置き換え
+        .gsub(/\b\d+\.?\d*[BKMG]\b(?=\s*\|)/, "SIZE")
   end
 end

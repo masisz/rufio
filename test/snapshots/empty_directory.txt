@@ -1,6 +1,6 @@
 rufio - /tmp/TEST_DIR                               
  Files | Logs | Jobs | Help                                                     
-  D ..                             4.0K  | ..                                   
+  D ..                             SIZE  | ..                                   
                                          |                                      
                                          |                                      
                                          |                                      
