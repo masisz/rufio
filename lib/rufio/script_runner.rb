@@ -11,9 +11,11 @@ module Rufio
 
     # @param script_paths [Array<String>] スクリプトを検索するディレクトリのリスト
     # @param job_manager [JobManager, nil] ジョブマネージャー（nilの場合は同期実行）
-    def initialize(script_paths:, job_manager: nil)
+    # @param command_logger [CommandLogger, nil] コマンドロガー
+    def initialize(script_paths:, job_manager: nil, command_logger: nil)
       @script_paths = script_paths.map { |p| File.expand_path(p) }
       @job_manager = job_manager
+      @command_logger = command_logger
       @scripts_cache = nil
     end
 
@@ -54,15 +56,16 @@ module Rufio
     # スクリプトをジョブとして実行
     # @param name [String] スクリプト名
     # @param working_dir [String] 作業ディレクトリ
+    # @param args [String, nil] スクリプトに渡す引数
     # @param selected_file [String, nil] 選択中のファイル
     # @param selected_dir [String, nil] 選択中のディレクトリ
     # @return [TaskStatus, nil] 作成されたジョブ、またはスクリプトが見つからない場合nil
-    def run(name, working_dir:, selected_file: nil, selected_dir: nil)
+    def run(name, working_dir:, args: nil, selected_file: nil, selected_dir: nil)
       script = find_script(name)
       return nil unless script
 
       env = build_environment(working_dir, selected_file, selected_dir)
-      execute_script(script, working_dir, env)
+      execute_script(script, working_dir, env, args)
     end
 
     # キャッシュをクリア
@@ -130,9 +133,11 @@ module Rufio
     # @param script [Hash] スクリプト情報
     # @param working_dir [String] 作業ディレクトリ
     # @param env [Hash] 環境変数
+    # @param args [String, nil] スクリプトに渡す引数
     # @return [TaskStatus] 作成されたジョブ
-    def execute_script(script, working_dir, env = {})
+    def execute_script(script, working_dir, env = {}, args = nil)
       command = build_command(script)
+      command = "#{command} #{args}" if args && !args.empty?
 
       if @job_manager
         # ジョブマネージャーにジョブを追加
@@ -205,12 +210,24 @@ module Rufio
         job.fail(exit_code: status.exitstatus)
       end
 
+      # CommandLoggerに記録
+      log_to_command_logger(job.name, stdout, stderr, status.success?)
+
       # 通知を送信
       @job_manager&.notify_completion(job)
     rescue StandardError => e
       job.append_log("Error: #{e.message}")
       job.fail(exit_code: -1)
+      log_to_command_logger(job.name, '', e.message, false)
       @job_manager&.notify_completion(job)
+    end
+
+    # CommandLoggerに実行結果を記録
+    def log_to_command_logger(name, stdout, stderr, success)
+      return unless @command_logger
+
+      output = [stdout, stderr].compact.map(&:strip).reject(&:empty?).join("\n")
+      @command_logger.log("@#{name}", output, success: success)
     end
   end
 end

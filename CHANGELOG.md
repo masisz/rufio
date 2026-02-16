@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.71.0] - 2026-02-16
+
+### Added
+- **Script Arguments**: Pass arguments to scripts via command mode (e.g., `@retag.sh v0.70.0`)
+  - Supports both ScriptRunner and LocalScriptScanner
+- **Script/Rake Execution Logging**: Log execution results of `@script` and `rake:task` commands to CommandLogger
+  - Covers both synchronous and background execution
+
+### Fixed
+- **Selection across directories**: Clear selection state when navigating to a different directory
+- **Help/Log viewer entries**: Exclude `..` entry in help mode and log viewer mode
+
 ## [0.70.0] - 2026-02-14
 
 ### Added

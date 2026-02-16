@@ -28,7 +28,8 @@ module Rufio
       @job_manager = job_manager
       @script_runner = ScriptRunner.new(
         script_paths: script_paths,
-        job_manager: job_manager
+        job_manager: job_manager,
+        command_logger: @background_executor&.command_logger
       )
     end
 
@@ -41,7 +42,8 @@ module Rufio
       # ScriptRunnerも設定（ScriptPathManagerのパスを使用）
       @script_runner = ScriptRunner.new(
         script_paths: @script_path_manager.paths,
-        job_manager: job_manager
+        job_manager: job_manager,
+        command_logger: @background_executor&.command_logger
       )
     end
 
@@ -237,22 +239,27 @@ module Rufio
 
     # スクリプトを実行する（@プレフィックス用）
     # ScriptRunner → LocalScriptScanner の順にフォールバック
-    # @param script_name [String] スクリプト名
+    # @param script_input [String] スクリプト名（引数を含む場合あり）
     # @param working_dir [String, nil] 作業ディレクトリ
     # @return [String] 実行結果メッセージ
-    def execute_script(script_name, working_dir)
+    def execute_script(script_input, working_dir)
       working_dir ||= Dir.pwd
+
+      # スクリプト名と引数を分離（例: "retag.sh v0.70.0" → name="retag.sh", args="v0.70.0"）
+      parts = script_input.split(' ', 2)
+      script_name = parts[0]
+      script_args = parts[1]
 
       # ScriptRunnerで検索
       if @script_runner
-        job = @script_runner.run(script_name, working_dir: working_dir)
+        job = @script_runner.run(script_name, working_dir: working_dir, args: script_args)
         return "🚀 ジョブを開始: #{script_name}" if job
       end
 
       # LocalScriptScannerにフォールバック
       local_script = @local_script_scanner.find_script(script_name)
       if local_script
-        return execute_local_script(local_script, working_dir)
+        return execute_local_script(local_script, working_dir, script_args)
       end
 
       # どちらにも見つからない
@@ -266,31 +273,55 @@ module Rufio
     # ローカルスクリプトを実行する
     # @param script [Hash] スクリプト情報 { name:, path:, dir: }
     # @param working_dir [String] 作業ディレクトリ
-    # @return [String] 実行結果メッセージ
-    def execute_local_script(script, working_dir)
+    # @param args [String, nil] スクリプトに渡す引数
+    # @return [String, Hash] 実行結果メッセージ
+    def execute_local_script(script, working_dir, args = nil)
+      command = build_script_command(script)
+      command = "#{command} #{args}" if args && !args.empty?
+
       if @job_manager
         job = @job_manager.add_job(
           name: script[:name],
           path: working_dir,
-          command: build_script_command(script)
+          command: command
         )
         job.start
 
         Thread.new do
-          execute_script_in_background(job, script, working_dir)
+          execute_script_in_background(job, script, working_dir, command)
         end
 
         "🚀 ジョブを開始: #{script[:name]}"
       else
         # 同期実行
-        command = build_script_command(script)
         stdout, stderr, status = Open3.capture3(command, chdir: working_dir)
-        {
+        result = {
           success: status.success?,
           output: stdout.strip,
           stderr: stderr.strip
         }
+
+        # Logsに記録
+        log_execution("@#{script[:name]}", result)
+
+        result
       end
+    end
+
+    # 実行結果をCommandLoggerに記録
+    # @param command_name [String] コマンド名
+    # @param result [Hash] 実行結果 { success:, output:, stderr:, error: }
+    def log_execution(command_name, result)
+      logger = @background_executor&.command_logger
+      return unless logger
+
+      output = [result[:output], result[:stderr]].compact.reject(&:empty?).join("\n")
+      logger.log(
+        command_name,
+        output,
+        success: result[:success],
+        error: result[:error]
+      )
     end
 
     # スクリプトの実行コマンドを構築
@@ -319,8 +350,7 @@ module Rufio
     end
 
     # ローカルスクリプトをバックグラウンドで実行
-    def execute_script_in_background(job, script, working_dir)
-      command = build_script_command(script)
+    def execute_script_in_background(job, script, working_dir, command)
       stdout, stderr, status = Open3.capture3(command, chdir: working_dir)
 
       job.append_log(stdout) unless stdout.empty?
@@ -332,10 +362,18 @@ module Rufio
         job.fail(exit_code: status.exitstatus)
       end
 
+      # Logsに記録
+      log_execution("@#{script[:name]}", {
+        success: status.success?,
+        output: stdout.strip,
+        stderr: stderr.strip
+      })
+
       @job_manager&.notify_completion(job)
     rescue StandardError => e
       job.append_log("Error: #{e.message}")
       job.fail(exit_code: -1)
+      log_execution("@#{script[:name]}", { success: false, output: '', stderr: e.message })
       @job_manager&.notify_completion(job)
     end
 
@@ -368,11 +406,18 @@ module Rufio
           result[:error] = "コマンドが失敗しました (終了コード: #{status.exitstatus})"
         end
 
+        # Logsに記録
+        log_execution("rake:#{task_name}", result)
+
         result
       rescue Errno::ENOENT => e
-        { success: false, error: "rakeが見つかりません: #{e.message}" }
+        result = { success: false, error: "rakeが見つかりません: #{e.message}" }
+        log_execution("rake:#{task_name}", result)
+        result
       rescue StandardError => e
-        { success: false, error: "rake実行エラー: #{e.message}" }
+        result = { success: false, error: "rake実行エラー: #{e.message}" }
+        log_execution("rake:#{task_name}", result)
+        result
       end
     end
 

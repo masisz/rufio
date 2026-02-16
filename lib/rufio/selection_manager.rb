@@ -17,6 +17,12 @@ module Rufio
     def toggle_selection(entry, current_directory = nil)
       return false unless entry
 
+      # 異なるディレクトリで選択した場合、古い選択をクリアしてリセット
+      if current_directory && @source_directory && current_directory != @source_directory
+        @selected_items.clear
+        @source_directory = nil
+      end
+
       if @selected_items.include?(entry[:name])
         @selected_items.delete(entry[:name])
         # Clear source_directory if no items are selected

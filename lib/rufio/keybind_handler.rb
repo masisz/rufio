@@ -218,10 +218,15 @@ module Rufio
     end
 
     def get_active_entries
-      if @filter_manager.filter_active?
-        @filter_manager.filtered_entries
+      entries = if @filter_manager.filter_active?
+                  @filter_manager.filtered_entries
+                else
+                  @directory_listing&.list_entries || []
+                end
+      if @in_help_mode || @in_log_viewer_mode
+        entries.reject { |e| e[:name] == '..' }
       else
-        @directory_listing&.list_entries || []
+        entries
       end
     end
 
