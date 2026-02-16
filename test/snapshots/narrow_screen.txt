@@ -1,0 +1,24 @@
+rufio - .../TEST_DIR    
+ Files | Logs | Jobs | Help             
+  D ..         4.0K  | ..               
+  D subdir1    4.0K  |                  
+  D subdir2    4.0K  |                  
+  T file...     25B  |                  
+  R file...     25B  |                  
+  T READ...     30B  |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                                  ?:help
