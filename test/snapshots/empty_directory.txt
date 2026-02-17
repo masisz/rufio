@@ -1,0 +1,24 @@
+rufio - /tmp/TEST_DIR                               
+ Files | Logs | Jobs | Help                                                     
+  D ..                             SIZE  | ..                                   
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                                                          ?:help

@@ -1,0 +1,24 @@
+rufio - .../TEST_DIR    
+ Files | Logs | Jobs | Help             
+  D ..         SIZE  | ..               
+  D subdir1    SIZE  |                  
+  D subdir2    SIZE  |                  
+  T file...     SIZE  |                  
+  R file...     SIZE  |                  
+  T READ...     SIZE  |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                     |                  
+                                  ?:help
