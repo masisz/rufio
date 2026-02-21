@@ -21,6 +21,7 @@ module Rufio
         { name: ConfigLoader.message('health.fzf'), method: :check_fzf },
         { name: ConfigLoader.message('health.rga'), method: :check_rga },
         { name: ConfigLoader.message('health.zoxide'), method: :check_zoxide },
+        { name: ConfigLoader.message('health.bat'), method: :check_bat },
         { name: ConfigLoader.message('health.file_opener'), method: :check_file_opener }
       ]
 
@@ -136,6 +137,23 @@ module Rufio
       end
     end
 
+    def check_bat
+      if system("which bat > /dev/null 2>&1")
+        version = `bat --version 2>/dev/null`.strip
+        {
+          status: :ok,
+          message: version,
+          details: nil
+        }
+      else
+        {
+          status: :warning,
+          message: "bat #{ConfigLoader.message('health.tool_not_found')}",
+          details: install_instruction_for('bat')
+        }
+      end
+    end
+
     def check_file_opener
       case RUBY_PLATFORM
       when /darwin/
@@ -180,6 +198,8 @@ module Rufio
           "#{ConfigLoader.message('health.install_brew')} rga"
         when 'zoxide'
           "#{ConfigLoader.message('health.install_brew')} zoxide"
+        when 'bat'
+          "#{ConfigLoader.message('health.install_brew')} bat  # optional: syntax highlight"
         end
       when /linux/
         case tool
@@ -189,6 +209,8 @@ module Rufio
           ConfigLoader.message('health.rga_releases')
         when 'zoxide'
           "#{ConfigLoader.message('health.install_apt')} zoxide (Ubuntu/Debian) or check your package manager"
+        when 'bat'
+          "#{ConfigLoader.message('health.install_apt')} bat (Ubuntu/Debian) or check your package manager  # optional: syntax highlight"
         end
       else
         ConfigLoader.message('health.install_guide')

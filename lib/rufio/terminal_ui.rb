@@ -66,6 +66,11 @@ module Rufio
       @preview_cache = {}
       @last_preview_path = nil
 
+      # シンタックスハイライター（bat が利用可能な場合のみ動作）
+      @syntax_highlighter = SyntaxHighlighter.new
+      # 非同期ハイライト完了フラグ（Thread → メインループへの通知）
+      @highlight_updated = false
+
       # Footer cache (bookmark list)
       @cached_bookmarks = nil
       @cached_bookmark_time = nil
@@ -295,6 +300,12 @@ module Rufio
         if current_notification != previous_notification
           previous_notification = current_notification
           notification_message = nil if current_notification.nil?
+          needs_redraw = true
+        end
+
+        # 非同期シンタックスハイライト完了チェック（バックグラウンドスレッドからの通知）
+        if @highlight_updated
+          @highlight_updated = false
           needs_redraw = true
         end
 
@@ -829,14 +840,19 @@ module Rufio
       # プレビューコンテンツをキャッシュから取得（毎フレームのファイルI/Oを回避）
       preview_content = nil
       wrapped_lines = nil
+      highlighted_wrapped_lines = nil
 
       if selected_entry && selected_entry[:type] == 'file'
         # キャッシュチェック: 選択ファイルが変わった場合のみプレビューを更新
         if @last_preview_path != selected_entry[:path]
-          preview_content = get_preview_content(selected_entry)
+          full_preview = @file_preview.preview_file(selected_entry[:path])
+          preview_content = extract_preview_lines(full_preview)
           @preview_cache[selected_entry[:path]] = {
             content: preview_content,
-            wrapped: {}  # 幅ごとにキャッシュ
+            preview_data: full_preview,
+            highlighted: nil,       # nil = 未取得
+            wrapped: {},
+            highlighted_wrapped: {}
           }
           @last_preview_path = selected_entry[:path]
         else
@@ -845,8 +861,49 @@ module Rufio
           preview_content = cache_entry[:content] if cache_entry
         end
 
-        # 折り返し処理もキャッシュ
-        if preview_content && safe_width > 0
+        # bat が利用可能な場合はシンタックスハイライトを取得（非同期）
+        if @syntax_highlighter&.available? && preview_content
+          cache_entry = @preview_cache[selected_entry[:path]]
+          if cache_entry
+            preview_data = cache_entry[:preview_data]
+            if preview_data && preview_data[:type] == 'code' && preview_data[:encoding] == 'UTF-8'
+              # ハイライト行を未取得なら非同期で bat を呼び出す
+              # nil = 未リクエスト、false = リクエスト済み（結果待ち）、Array = 取得済み
+              if cache_entry[:highlighted].nil?
+                # 即座に false をセットしてペンディング状態にする（重複リクエスト防止）
+                cache_entry[:highlighted] = false
+                file_path = selected_entry[:path]
+                @syntax_highlighter.highlight_async(file_path) do |lines|
+                  # バックグラウンドスレッドからキャッシュを更新
+                  if (ce = @preview_cache[file_path])
+                    ce[:highlighted] = lines
+                    ce[:highlighted_wrapped] = {}  # 折り返しキャッシュをクリア
+                  end
+                  @highlight_updated = true  # メインループに再描画を通知
+                end
+                # このフレームはプレーンテキストで表示（次フレームでハイライト表示）
+              end
+
+              highlighted = cache_entry[:highlighted]
+              if highlighted.is_a?(Array) && !highlighted.empty? && safe_width > 0
+                if cache_entry[:highlighted_wrapped][safe_width]
+                  highlighted_wrapped_lines = cache_entry[:highlighted_wrapped][safe_width]
+                else
+                  # 各ハイライト行をトークン化して折り返す
+                  hl_wrapped = highlighted.flat_map do |hl_line|
+                    tokens = AnsiLineParser.parse(hl_line)
+                    tokens.empty? ? [[]] : AnsiLineParser.wrap(tokens, safe_width - 1)
+                  end
+                  cache_entry[:highlighted_wrapped][safe_width] = hl_wrapped
+                  highlighted_wrapped_lines = hl_wrapped
+                end
+              end
+            end
+          end
+        end
+
+        # プレーンテキストの折り返し（ハイライトなしのフォールバック）
+        if preview_content && safe_width > 0 && highlighted_wrapped_lines.nil?
           cache_entry = @preview_cache[selected_entry[:path]]
           if cache_entry && cache_entry[:wrapped][safe_width]
             wrapped_lines = cache_entry[:wrapped][safe_width]
@@ -857,48 +914,55 @@ module Rufio
         end
       end
 
+      content_x = cursor_position + 1
+
       (0...height).each do |i|
         line_num = i + CONTENT_START_LINE
 
         # 区切り線
         screen.put(cursor_position, line_num, '│')
 
-        content_to_print = ''
+        next if safe_width <= 0
 
         if selected_entry && i == 0
           # プレビューヘッダー
           header = " #{selected_entry[:name]} "
-          if @keybind_handler&.preview_focused?
-            header += "[PREVIEW MODE]"
-          end
-          content_to_print = header
-        elsif wrapped_lines && i >= 2
-          # ファイルプレビュー（折り返し対応）
+          header += "[PREVIEW MODE]" if @keybind_handler&.preview_focused?
+          header = TextUtils.truncate_to_width(header, safe_width) if TextUtils.display_width(header) > safe_width
+          remaining_space = safe_width - TextUtils.display_width(header)
+          header += ' ' * remaining_space if remaining_space > 0
+          screen.put_string(content_x, line_num, header)
+
+        elsif i >= 2 && highlighted_wrapped_lines
+          # シンタックスハイライト付きコンテンツ
           scroll_offset = @keybind_handler&.preview_scroll_offset || 0
           display_line_index = i - 2 + scroll_offset
 
-          if display_line_index < wrapped_lines.length
-            line = wrapped_lines[display_line_index] || ''
-            content_to_print = " #{line}"
+          if display_line_index < highlighted_wrapped_lines.length
+            draw_highlighted_line_to_buffer(screen, content_x, line_num,
+                                            highlighted_wrapped_lines[display_line_index], safe_width)
           else
-            content_to_print = ' '
+            screen.put_string(content_x, line_num, ' ' * safe_width)
           end
+
+        elsif i >= 2 && wrapped_lines
+          # プレーンテキストコンテンツ
+          scroll_offset = @keybind_handler&.preview_scroll_offset || 0
+          display_line_index = i - 2 + scroll_offset
+
+          content_to_print = if display_line_index < wrapped_lines.length
+                               " #{wrapped_lines[display_line_index] || ''}"
+                             else
+                               ' '
+                             end
+          content_to_print = TextUtils.truncate_to_width(content_to_print, safe_width) if TextUtils.display_width(content_to_print) > safe_width
+          remaining_space = safe_width - TextUtils.display_width(content_to_print)
+          content_to_print += ' ' * remaining_space if remaining_space > 0
+          screen.put_string(content_x, line_num, content_to_print)
+
         else
-          content_to_print = ' '
+          screen.put_string(content_x, line_num, ' ' * safe_width)
         end
-
-        # safe_widthを超えないよう切り詰め
-        next if safe_width <= 0
-
-        if TextUtils.display_width(content_to_print) > safe_width
-          content_to_print = TextUtils.truncate_to_width(content_to_print, safe_width)
-        end
-
-        # パディングを追加
-        remaining_space = safe_width - TextUtils.display_width(content_to_print)
-        content_to_print += ' ' * remaining_space if remaining_space > 0
-
-        screen.put_string(cursor_position + 1, line_num, content_to_print)
       end
     end
 
@@ -994,6 +1058,13 @@ module Rufio
       return [] unless entry && entry[:type] == 'file'
 
       preview = @file_preview.preview_file(entry[:path])
+      extract_preview_lines(preview)
+    rescue StandardError
+      ["(#{ConfigLoader.message('file.preview_error')})"]
+    end
+
+    # FilePreview の結果ハッシュからプレーンテキスト行を抽出する
+    def extract_preview_lines(preview)
       case preview[:type]
       when 'text', 'code'
         preview[:lines]
@@ -1006,6 +1077,36 @@ module Rufio
       end
     rescue StandardError
       ["(#{ConfigLoader.message('file.preview_error')})"]
+    end
+
+    # ハイライト済みトークン列を1行分 Screen バッファに描画する
+    # 先頭に1スペースを追加し、残りをスペースで埋める
+    def draw_highlighted_line_to_buffer(screen, x, y, tokens, max_width)
+      current_x = x
+      max_x = x + max_width
+
+      # 先頭スペース
+      if current_x < max_x
+        screen.put(current_x, y, ' ')
+        current_x += 1
+      end
+
+      # トークンを描画
+      tokens&.each do |token|
+        break if current_x >= max_x
+        token[:text].each_char do |char|
+          char_w = TextUtils.char_width(char)
+          break if current_x + char_w > max_x
+          screen.put(current_x, y, char, fg: token[:fg])
+          current_x += char_w
+        end
+      end
+
+      # 残りをスペースで埋める
+      while current_x < max_x
+        screen.put(current_x, y, ' ')
+        current_x += 1
+      end
     end
 
 

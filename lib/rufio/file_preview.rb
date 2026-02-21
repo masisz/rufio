@@ -127,7 +127,16 @@ module Rufio
 
     def determine_file_type(file_path)
       extension = File.extname(file_path).downcase
-      
+      basename = File.basename(file_path)
+
+      # 拡張子なしファイル名での判定（Dockerfile 等）
+      case basename
+      when "Dockerfile", /\ADockerfile\./
+        return { type: "code", language: "dockerfile" }
+      when "Makefile", "GNUmakefile"
+        return { type: "code", language: "makefile" }
+      end
+
       case extension
       when ".rb"
         { type: "code", language: "ruby" }
@@ -147,6 +156,22 @@ module Rufio
         { type: "code", language: "yaml" }
       when ".md", ".markdown"
         { type: "code", language: "markdown" }
+      when ".go"
+        { type: "code", language: "go" }
+      when ".rs"
+        { type: "code", language: "rust" }
+      when ".sh", ".bash", ".zsh"
+        { type: "code", language: "shell" }
+      when ".toml"
+        { type: "code", language: "toml" }
+      when ".sql"
+        { type: "code", language: "sql" }
+      when ".c", ".h"
+        { type: "code", language: "c" }
+      when ".cpp", ".cc", ".cxx", ".hpp"
+        { type: "code", language: "cpp" }
+      when ".java"
+        { type: "code", language: "java" }
       when ".txt", ".log"
         { type: "text", language: nil }
       when ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z"

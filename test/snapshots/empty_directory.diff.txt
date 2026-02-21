@@ -1,0 +1,51 @@
+=== EXPECTED ===
+rufio - /tmp/TEST_DIR                               
+ Files | Logs | Jobs | Help                                                     
+  D ..                             SIZE  | ..                                   
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                                                          ?:help
+
+=== ACTUAL ===
+rufio - ...fzdx3cb3h58nm7m8x6mh0000gn/T/rufio_empty_TEST_DIR    
+ Files | Logs | Jobs | Help                                                     
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                         |                                      
+                                                                          ?:help

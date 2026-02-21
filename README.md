@@ -40,7 +40,7 @@ rufio is not just a file manager. It's a **tool runtime execution environment**.
 ### As a File Manager
 
 - **Vim-like Key Bindings**: Intuitive navigation
-- **Real-time Preview**: Instantly display file contents
+- **Real-time Preview**: Instantly display file contents with syntax highlighting (via `bat`)
 - **Fast Search**: Integration with fzf/rga
 - **Bookmarks**: Quick access to frequently used directories
 - **zoxide Integration**: Smart directory history
@@ -290,22 +290,41 @@ script_paths:
 
 ## External Tool Integration
 
-rufio integrates with the following external tools to extend functionality:
+rufio integrates with the following external tools to extend functionality.
+All tools are **optional** — rufio works without them, falling back to built-in behavior.
 
-| Tool | Purpose | Key |
-|------|---------|-----|
-| fzf | File name search | `s` |
-| rga | File content search | `F` |
-| zoxide | Directory history | `z` |
+| Tool | Purpose | Key | Required? |
+|------|---------|-----|-----------|
+| fzf | File name search | `s` | Optional |
+| rga | File content search | `F` | Optional |
+| zoxide | Directory history | `z` | Optional |
+| bat | Syntax highlighting in preview | — | Optional |
 
-### Installation
+### bat — Syntax Highlighting
+
+When `bat` is installed, code files in the preview pane are displayed with full syntax
+highlighting (Ruby, Python, Go, Rust, TypeScript, and 15+ more languages).
+
+Highlighting is loaded asynchronously — navigation stays fast even on large source trees.
 
 ```bash
 # macOS
-brew install fzf rga zoxide
+brew install bat
 
 # Ubuntu/Debian
-apt install fzf zoxide
+apt install bat
+```
+
+Run `rufio -c` to verify bat is detected correctly.
+
+### Installation (all tools)
+
+```bash
+# macOS
+brew install fzf bat rga zoxide
+
+# Ubuntu/Debian
+apt install fzf bat zoxide
 # rga requires separate installation: https://github.com/phiresky/ripgrep-all
 ```
 

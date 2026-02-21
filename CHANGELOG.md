@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.80.0] - 2026-02-21
+
+### Added
+- **Syntax Highlighting**: File preview now supports syntax highlighting via `bat`
+  - 19 languages supported: Ruby, Python, JS, TS, Go, Rust, Shell, C, C++, Java, SQL, TOML, YAML, JSON, HTML, CSS, Markdown, Dockerfile, Makefile
+  - Graceful fallback to plain text when `bat` is not installed
+  - mtime-based cache for instant re-display of previously viewed files
+  - Health check support (`rufio -c`) now reports `bat` availability
+- **New classes**: `AnsiLineParser`, `SyntaxHighlighter`
+- **New tests**: `test_ansi_line_parser.rb` (25 tests), `test_syntax_highlighter.rb` (+7 async tests)
+
+### Fixed
+- **Cursor flickering** when navigating source directories: Changed `Renderer#render` from per-line `print` (immediate flush) to a single buffered `write` call — terminal updates are now atomic
+- **Navigation lag** when moving between source files: `bat` is now executed asynchronously in a background thread; the current frame immediately falls back to plain text, then re-renders with highlighting on completion
+
+### Changed
+- **`Renderer#render`**: Replaced row-by-row `print` with single `write(buf)` + `flush` for atomic output
+- **`SyntaxHighlighter`**: Added `highlight_async` (Thread + Mutex + pending guard) alongside existing `highlight`
+- **`TerminalUI`**: Preview caching extended with `highlighted` / `highlighted_wrapped` keys; `@highlight_updated` flag added for async re-render notification
+- **`FilePreview#determine_file_type`**: Added Go, Rust, Shell, TOML, SQL, C, C++, Java, Dockerfile, Makefile language detection
+
+### Technical Details
+- **New files**: `lib/rufio/ansi_line_parser.rb`, `lib/rufio/syntax_highlighter.rb`
+- **Modified files**: `lib/rufio/renderer.rb`, `lib/rufio/terminal_ui.rb`, `lib/rufio/file_preview.rb`, `lib/rufio/health_checker.rb`, `lib/rufio/config.rb`, `lib/rufio.rb`
+- **For details**: [CHANGELOG_v0.80.0.md](./docs/CHANGELOG_v0.80.0.md)
+
 ## [0.71.0] - 2026-02-16
 
 ### Added
@@ -611,6 +637,7 @@ For detailed information, see [CHANGELOG_v0.4.0.md](./docs/CHANGELOG_v0.4.0.md)
 
 ### Detailed Release Notes
 
+- [v0.80.0](./docs/CHANGELOG_v0.80.0.md) - Syntax Highlighting & Rendering Fixes
 - [v0.31.0](./docs/CHANGELOG_v0.31.0.md) - Experimental Native Scanner Implementation
 - [v0.30.0](./docs/CHANGELOG_v0.30.0.md) - Help System Overhaul
 - [v0.21.0](./docs/CHANGELOG_v0.21.0.md) - Copy Feature & Code Refactoring

@@ -31,13 +31,17 @@ module Rufio
       end
 
       # Phase1: Only process dirty rows (rows that have changed)
+      # 全dirty rowsの出力を1つのバッファに積んでから単一の write() で書き出す。
+      # STDOUT sync=true 環境で print を行ごとに呼ぶと各行で即座にフラッシュされ
+      # 中間状態が表示されてちらつきが発生するため、アトミックな更新を保証する。
+      buf = String.new
       rendered_count = 0
       dirty.each do |y|
         line = screen.row(y)
         next if line == @front[y]  # Skip if content is actually the same
 
-        # Move cursor to line y (1-indexed) and output the line
-        @output.print "\e[#{y + 1};1H#{line}"
+        # Move cursor to line y (1-indexed) and buffer the line
+        buf << "\e[#{y + 1};1H#{line}"
         @front[y] = line
         rendered_count += 1
       end
@@ -45,8 +49,11 @@ module Rufio
       # Phase1: Clear dirty tracking after rendering
       screen.clear_dirty
 
-      # Only flush if we actually rendered something
-      @output.flush if rendered_count > 0
+      # 単一の write() でアトミックに出力し、その後 flush する
+      if rendered_count > 0
+        @output.write(buf)
+        @output.flush
+      end
 
       true
     end
