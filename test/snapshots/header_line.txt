@@ -1,1 +1,1 @@
-rufio - /tmp/TEST_DIR    
+rufio - /tmp/TEST_DIR

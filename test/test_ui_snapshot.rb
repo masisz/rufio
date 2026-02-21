@@ -198,16 +198,25 @@ class TestUISnapshot < Minitest::Test
     # macOS: /var/folders/xx/xxxx/T/rufio_xxx → /tmp/TEST_DIR
     # Linux: /tmp/rufio_xxx_test20260216-1234-abc123 → /tmp/TEST_DIR
     # ヘッダー短縮版: ...xxx/T/rufio_ui_TEST_DIR → /tmp/TEST_DIR
-    text.gsub(%r{/var/folders/[\w/]+/T/rufio_\w+}, "/tmp/TEST_DIR")
-        .gsub(%r{/tmp/rufio_\w+_test\d+-\d+-\w+}, "/tmp/TEST_DIR")
-        .gsub(%r{/tmp/rufio_\w+\d+-\d+-\w+}, "/tmp/TEST_DIR")
-        .gsub(%r{\.\.\._test\d+-\d+-\w+}, ".../TEST_DIR")
-        .gsub(%r{test\d+-\d+-\w+}, "TEST_DIR")
-        # ヘッダー短縮版の残りパターン: ...xxx/T/rufio_ui_TEST_DIR → /tmp/TEST_DIR
-        .gsub(%r{\.\.\.[\w/]+/T/rufio_\w*TEST_DIR}, "/tmp/TEST_DIR")
-        # ディレクトリサイズを正規化（ファイルシステム依存を回避）
-        # 先頭スペース込みでマッチし、元の文字数を保ったまま SIZE に置き換える（長さ保存）
-        # 例: "  4.0K" (6文字) → "  SIZE" (6文字), "   32B" (6文字) → "  SIZE" (6文字)
-        .gsub(/ *\d+\.?\d*[BKMG](?=\s*\|)/) { |m| "SIZE".rjust(m.length) }
+    result = text
+      .gsub(%r{/var/folders/[\w/]+/T/rufio_\w+}, "/tmp/TEST_DIR")
+      .gsub(%r{/tmp/rufio_\w+_test\d+-\d+-\w+}, "/tmp/TEST_DIR")
+      .gsub(%r{/tmp/rufio_\w+\d+-\d+-\w+}, "/tmp/TEST_DIR")
+      .gsub(%r{\.\.\._test\d+-\d+-\w+}, ".../TEST_DIR")
+      .gsub(%r{test\d+-\d+-\w+}, "TEST_DIR")
+      # ヘッダー短縮版の残りパターン: ...xxx/T/rufio_ui_TEST_DIR → /tmp/TEST_DIR
+      .gsub(%r{\.\.\.[\w/]+/T/rufio_\w*TEST_DIR}, "/tmp/TEST_DIR")
+      # 短縮パスの統一: Linux/macOS でスラッシュ有無が異なるため .../TEST_DIR に統一
+      # 例: "...TEST_DIR", ".../TEST_DIR", "...i_TEST_DIR" → "...TEST_DIR"
+      .gsub(/\.\.\.[^"\n]*TEST_DIR/, "...TEST_DIR")
+      # ディレクトリサイズを正規化（ファイルシステム依存を回避）
+      # 先頭スペース込みでマッチし、元の文字数を保ったまま SIZE に置き換える（長さ保存）
+      # 例: "  4.0K" (6文字) → "  SIZE" (6文字), "   32B" (6文字) → "  SIZE" (6文字)
+      .gsub(/ *\d+\.?\d*[BKMG](?=\s*\|)/) { |m| "SIZE".rjust(m.length) }
+
+    # 各行の末尾スペースをトリム
+    # パス正規化後に行長が変わるためプラットフォーム間の差異を吸収する
+    # 例: macOS (長パス→短縮後スペース少) vs Linux (短パス→正規化後スペース多)
+    result.lines.map(&:rstrip).join("\n")
   end
 end
