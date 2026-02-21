@@ -34,7 +34,7 @@ module Rufio
       # 全dirty rowsの出力を1つのバッファに積んでから単一の write() で書き出す。
       # STDOUT sync=true 環境で print を行ごとに呼ぶと各行で即座にフラッシュされ
       # 中間状態が表示されてちらつきが発生するため、アトミックな更新を保証する。
-      buf = String.new
+      buf = String.new("")
       rendered_count = 0
       dirty.each do |y|
         line = screen.row(y)

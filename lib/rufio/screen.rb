@@ -114,7 +114,8 @@ module Rufio
       return " " * @width if y < 0 || y >= @height
 
       # Phase1: Pre-allocate string capacity for better performance
-      result = String.new(capacity: @width * 20)
+      # String.new("", capacity: N) inherits UTF-8 encoding from ""; String.new(capacity: N) creates ASCII-8BIT
+      result = String.new("", capacity: @width * 20)
       current_width = 0  # Phase1: Accumulate width from cells (no recalculation)
 
       # オーバーレイがある場合はベース + オーバーレイを合成
@@ -281,7 +282,7 @@ module Rufio
       return char if fg.nil? && bg.nil?
 
       # Phase1: String builder with pre-allocated capacity (no array generation)
-      result = String.new(capacity: 30)
+      result = String.new("", capacity: 30)
       result << fg if fg
       result << bg if bg
       result << char

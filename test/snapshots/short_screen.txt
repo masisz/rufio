@@ -1,10 +1,10 @@
-rufio - /tmp/TEST_DIR                                  
+rufio - /tmp/TEST_DIR    
  Files | Logs | Jobs | Help                                                     
   D ..                             SIZE  | ..                                   
   D subdir1                        SIZE  |                                      
   D subdir2                        SIZE  |                                      
-  T file1.txt                       SIZE  |                                      
-  R file2.rb                        SIZE  |                                      
-  T README.md                       SIZE  |                                      
+  T file1.txt                      SIZE  |                                      
+  R file2.rb                       SIZE  |                                      
+  T README.md                      SIZE  |                                      
                                          |                                      
                                                                           ?:help

@@ -195,14 +195,19 @@ class TestUISnapshot < Minitest::Test
   # 動的な値を正規化（一時ディレクトリパスなど）
   def normalize_dynamic_values(text)
     # 一時ディレクトリパスを固定値に置き換え
-    # /tmp/rufio_xxx_test20260216-1234-abc123 → /tmp/TEST_DIR
-    # 短縮版: ..._test20260216-1234-abc123 → .../TEST_DIR
-    text.gsub(%r{/tmp/rufio_\w+_test\d+-\d+-\w+}, "/tmp/TEST_DIR")
+    # macOS: /var/folders/xx/xxxx/T/rufio_xxx → /tmp/TEST_DIR
+    # Linux: /tmp/rufio_xxx_test20260216-1234-abc123 → /tmp/TEST_DIR
+    # ヘッダー短縮版: ...xxx/T/rufio_ui_TEST_DIR → /tmp/TEST_DIR
+    text.gsub(%r{/var/folders/[\w/]+/T/rufio_\w+}, "/tmp/TEST_DIR")
+        .gsub(%r{/tmp/rufio_\w+_test\d+-\d+-\w+}, "/tmp/TEST_DIR")
         .gsub(%r{/tmp/rufio_\w+\d+-\d+-\w+}, "/tmp/TEST_DIR")
         .gsub(%r{\.\.\._test\d+-\d+-\w+}, ".../TEST_DIR")
         .gsub(%r{test\d+-\d+-\w+}, "TEST_DIR")
+        # ヘッダー短縮版の残りパターン: ...xxx/T/rufio_ui_TEST_DIR → /tmp/TEST_DIR
+        .gsub(%r{\.\.\.[\w/]+/T/rufio_\w*TEST_DIR}, "/tmp/TEST_DIR")
         # ディレクトリサイズを正規化（ファイルシステム依存を回避）
-        # 4.0K, 4096B などを DIR_SIZE に置き換え
-        .gsub(/\b\d+\.?\d*[BKMG]\b(?=\s*\|)/, "SIZE")
+        # 先頭スペース込みでマッチし、元の文字数を保ったまま SIZE に置き換える（長さ保存）
+        # 例: "  4.0K" (6文字) → "  SIZE" (6文字), "   32B" (6文字) → "  SIZE" (6文字)
+        .gsub(/ *\d+\.?\d*[BKMG](?=\s*\|)/) { |m| "SIZE".rjust(m.length) }
   end
 end

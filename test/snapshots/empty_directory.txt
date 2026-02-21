@@ -1,4 +1,4 @@
-rufio - /tmp/TEST_DIR                               
+rufio - /tmp/TEST_DIR    
  Files | Logs | Jobs | Help                                                     
   D ..                             SIZE  | ..                                   
                                          |                                      
