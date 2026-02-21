@@ -1,12 +1,12 @@
 === EXPECTED ===
-rufio - /tmp/TEST_DIR                                  
+rufio - /tmp/TEST_DIR    
  Files | Logs | Jobs | Help                                                     
   D ..                             SIZE  | subdir2                              
   D subdir1                        SIZE  |                                      
   D subdir2                        SIZE  |                                      
-  T file1.txt                       SIZE  |                                      
-  R file2.rb                        SIZE  |                                      
-  T README.md                       SIZE  |                                      
+  T file1.txt                      SIZE  |                                      
+  R file2.rb                       SIZE  |                                      
+  T README.md                      SIZE  |                                      
                                          |                                      
                                          |                                      
                                          |                                      
@@ -25,13 +25,13 @@ rufio - /tmp/TEST_DIR
                                                                           ?:help
 
 === ACTUAL ===
-rufio - ...q_4fzdx3cb3h58nm7m8x6mh0000gn/T/rufio_ui_TEST_DIR    
+rufio - /tmp/TEST_DIR    
  Files | Logs | Jobs | Help                                                     
-  D subdir1                         SIZE  | file1.txt                            
-  D subdir2                         SIZE  |                                      
-  T file1.txt                       SIZE  | Hello World                          
-  R file2.rb                        SIZE  | Line 2                               
-  T README.md                       SIZE  | Line 3                               
+  D subdir1                        SIZE  | file1.txt                            
+  D subdir2                        SIZE  |                                      
+  T file1.txt                      SIZE  | Hello World                          
+  R file2.rb                       SIZE  | Line 2                               
+  T README.md                      SIZE  | Line 3                               
                                          |                                      
                                          |                                      
                                          |                                      

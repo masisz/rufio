@@ -2,4 +2,4 @@
 rufio - /tmp/TEST_DIR                                  
 
 === ACTUAL ===
-rufio - ...q_4fzdx3cb3h58nm7m8x6mh0000gn/T/rufio_ui_TEST_DIR    
+rufio - ..._4fzdx3cb3h58nm7m8x6mh0000gn/T/rufio_ui_TEST_DIR    

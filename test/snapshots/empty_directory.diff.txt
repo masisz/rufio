@@ -1,5 +1,5 @@
 === EXPECTED ===
-rufio - /tmp/TEST_DIR                               
+rufio - /tmp/TEST_DIR    
  Files | Logs | Jobs | Help                                                     
   D ..                             SIZE  | ..                                   
                                          |                                      
@@ -25,7 +25,7 @@ rufio - /tmp/TEST_DIR
                                                                           ?:help
 
 === ACTUAL ===
-rufio - ...fzdx3cb3h58nm7m8x6mh0000gn/T/rufio_empty_TEST_DIR    
+rufio - /tmp/TEST_DIR    
  Files | Logs | Jobs | Help                                                     
                                          |                                      
                                          |                                      
