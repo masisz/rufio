@@ -1185,7 +1185,7 @@ module Rufio
         unless bookmarks.empty?
           bookmark_parts.concat(bookmarks.take(9).map.with_index(1) { |bm, idx| "#{idx}.#{bm[:name]}" })
         end
-        bookmark_text = bookmark_parts.join(" ")
+        bookmark_text = bookmark_parts.join(" │ ")
 
         # 右側の情報: ジョブ数 | コマンド実行ランプ | FPS（test modeの時のみ）| ?:help
         right_parts = []
@@ -1283,7 +1283,7 @@ module Rufio
         unless bookmarks.empty?
           bookmark_parts.concat(bookmarks.take(9).map.with_index(1) { |bm, idx| "#{idx}.#{bm[:name]}" })
         end
-        bookmark_text = bookmark_parts.join(" ")
+        bookmark_text = bookmark_parts.join(" │ ")
 
         # フッタ全体を構築（ブックマーク左寄せ）
         footer_content = bookmark_text.ljust(@screen_width)[0...@screen_width]
