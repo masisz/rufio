@@ -1238,7 +1238,7 @@ module Rufio
           footer_content = "#{bookmark_text}#{' ' * padding}#{right_info}"
           footer_content = footer_content.ljust(@screen_width)[0...@screen_width]
         end
-        screen.put_string(0, y, footer_content, fg: "\e[7m")
+        screen.put_string(0, y, footer_content, fg: "\e[90m")
       end
     end
 
@@ -1285,7 +1285,7 @@ module Rufio
 
         # フッタ全体を構築（ブックマーク左寄せ）
         footer_content = bookmark_text.ljust(@screen_width)[0...@screen_width]
-        print "\e[7m#{footer_content}\e[0m"
+        print "\e[90m#{footer_content}\e[0m"
       end
     end
 

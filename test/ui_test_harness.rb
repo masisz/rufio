@@ -316,7 +316,7 @@ module Rufio
         footer_content = "".ljust(@screen_width - right_info.length) + right_info
       end
       footer_content = footer_content[0...@screen_width]
-      screen.put_string(0, y, footer_content, fg: "\e[7m")
+      screen.put_string(0, y, footer_content, fg: "\e[90m")
     end
 
     def get_display_entries
