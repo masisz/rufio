@@ -176,7 +176,16 @@ module Rufio
         header = "rufio - ...#{current_path[-(@screen_width - 15)..-1]}"
       end
 
-      screen.put_string(0, y, header.ljust(@screen_width), fg: "\e[7m")
+      # モードタブと同じ表示方法: グレー文字で1文字ずつ描画
+      current_x = 0
+      header.each_char do |char|
+        screen.put(current_x, y, char, fg: "\e[90m")
+        current_x += 1
+      end
+      while current_x < @screen_width
+        screen.put(current_x, y, ' ')
+        current_x += 1
+      end
     end
 
     def draw_mode_tabs_to_buffer(screen, y)
