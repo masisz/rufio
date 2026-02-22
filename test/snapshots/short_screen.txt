@@ -6,5 +6,5 @@
   R file2.rb                       SIZE  |
   T README.md                      SIZE  |
                                          |
- Files | Logs | Jobs | Help
+ Files | L:Logs | J:Jobs | ?:Help
 rufio - /tmp/TEST_DIR

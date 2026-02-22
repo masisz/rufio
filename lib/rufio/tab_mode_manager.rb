@@ -13,6 +13,13 @@ module Rufio
       help: 'Help'
     }.freeze
 
+    MODE_KEYS = {
+      files: nil,
+      logs: 'L',
+      jobs: 'J',
+      help: '?'
+    }.freeze
+
     attr_reader :current_mode
 
     def initialize
@@ -28,6 +35,11 @@ module Rufio
     # モードのラベル一覧
     def mode_labels
       MODE_LABELS
+    end
+
+    # モードのキーバインド一覧
+    def mode_keys
+      MODE_KEYS
     end
 
     # 次のモードに切り替え

@@ -20,5 +20,5 @@
                      |
                      |
                      |
- Files | Logs | Jobs | Help
+ Files | L:Logs | J:Jobs | ?:Help
 rufio - ...TEST_DIR

@@ -191,11 +191,13 @@ module Rufio
     def draw_mode_tabs_to_buffer(screen, y)
       modes = @tab_mode_manager.available_modes
       labels = @tab_mode_manager.mode_labels
+      keys = @tab_mode_manager.mode_keys
       current_mode = @tab_mode_manager.current_mode
 
       current_x = 0
       modes.each_with_index do |mode, index|
-        label = " #{labels[mode]} "
+        key = keys[mode]
+        label = key ? " #{key}:#{labels[mode]} " : " #{labels[mode]} "
 
         if mode == current_mode
           label.each_char do |char|

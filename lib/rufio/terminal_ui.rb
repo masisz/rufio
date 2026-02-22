@@ -587,10 +587,12 @@ module Rufio
       current_x = 0
       modes = @tab_mode_manager.available_modes
       labels = @tab_mode_manager.mode_labels
+      keys = @tab_mode_manager.mode_keys
       current_mode = @tab_mode_manager.current_mode
 
       modes.each_with_index do |mode, index|
-        label = " #{labels[mode]} "
+        key = keys[mode]
+        label = key ? " #{key}:#{labels[mode]} " : " #{labels[mode]} "
 
         if mode == current_mode
           # 現在のモード: シアン背景 + 黒文字 + 太字
