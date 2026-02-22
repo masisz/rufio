@@ -1,11 +1,11 @@
 === EXPECTED ===
 
-  D ..                             SIZE  | README.md
-  D subdir1                        SIZE  |
-  D subdir2                        SIZE  | # README
-  T file1.txt                      SIZE  |
-  R file2.rb                       SIZE  | This is a test file.
-  T README.md                      SIZE  |
+  D subdir1                        SIZE  | README.md
+  D subdir2                        SIZE  |
+  T file1.txt                      SIZE  | # README
+  R file2.rb                       SIZE  |
+  T README.md                      SIZE  | This is a test file.
+                                         |
                                          |
                                          |
                                          |
@@ -26,12 +26,12 @@ rufio - /tmp/TEST_DIR
 
 === ACTUAL ===
 
-  D subdir1                        SIZE  | README.md
-  D subdir2                        SIZE  |
-  T file1.txt                      SIZE  | # README
-  R file2.rb                       SIZE  |
-  T README.md                      SIZE  | This is a test file.
-                                         |
+  D ..                             SIZE  | README.md
+  D subdir1                        SIZE  |
+  D subdir2                        SIZE  | # README
+  T file1.txt                      SIZE  |
+  R file2.rb                       SIZE  | This is a test file.
+  T README.md                      SIZE  |
                                          |
                                          |
                                          |

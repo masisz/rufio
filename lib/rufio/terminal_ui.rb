@@ -543,28 +543,34 @@ module Rufio
         header += filter_text
       end
 
-      # abbreviate if path is too long
-      if header.length > @screen_width - HEADER_PADDING
+      # abbreviate if path is too long (use visual width to account for wide chars like emoji)
+      if TextUtils.display_width(header) > @screen_width - HEADER_PADDING
+        prefix = "💎 rufio v#{VERSION} - ..."
+        prefix_width = TextUtils.display_width(prefix)
         if @keybind_handler.help_mode?
           # prioritize showing help mode indicator
           help_text = " [Help Mode - Press ESC to exit]"
-          base_length = @screen_width - help_text.length - FILTER_TEXT_RESERVED
-          header = "💎 rufio v#{VERSION} - ...#{current_path[-base_length..-1]}#{help_text}"
+          available = [@screen_width - prefix_width - help_text.length, 0].max
+          header = "#{prefix}#{current_path[-available..-1]}#{help_text}"
         elsif @keybind_handler.filter_active?
           # prioritize showing filter when active
           filter_text = " [Filter: #{@keybind_handler.filter_query}]"
-          base_length = @screen_width - filter_text.length - FILTER_TEXT_RESERVED
-          header = "💎 rufio v#{VERSION} - ...#{current_path[-base_length..-1]}#{filter_text}"
+          available = [@screen_width - prefix_width - filter_text.length, 0].max
+          header = "#{prefix}#{current_path[-available..-1]}#{filter_text}"
         else
-          header = "💎 rufio v#{VERSION} - ...#{current_path[-(@screen_width - FILTER_TEXT_RESERVED)..-1]}"
+          available = [@screen_width - prefix_width, 0].max
+          header = "#{prefix}#{current_path[-available..-1]}"
         end
       end
 
       # モードタブと同じ表示方法: グレー文字で1文字ずつ描画
+      # current_x は表示幅（カラム数）で管理（絵文字等の全角文字対応）
       current_x = 0
       header.each_char do |char|
+        char_width = TextUtils.display_width(char)
+        break if current_x + char_width > @screen_width
         screen.put(current_x, y, char, fg: "\e[90m")
-        current_x += 1
+        current_x += char_width
       end
       # 残りをスペースで埋める
       while current_x < @screen_width
@@ -646,20 +652,23 @@ module Rufio
         header += filter_text
       end
 
-      # abbreviate if path is too long
-      if header.length > @screen_width - HEADER_PADDING
+      # abbreviate if path is too long (use visual width to account for wide chars like emoji)
+      if TextUtils.display_width(header) > @screen_width - HEADER_PADDING
+        prefix = "💎 rufio v#{VERSION} - ..."
+        prefix_width = TextUtils.display_width(prefix)
         if @keybind_handler.help_mode?
           # prioritize showing help mode indicator
           help_text = " [Help Mode - Press ESC to exit]"
-          base_length = @screen_width - help_text.length - FILTER_TEXT_RESERVED
-          header = "💎 rufio v#{VERSION} - ...#{current_path[-base_length..-1]}#{help_text}"
+          available = [@screen_width - prefix_width - help_text.length, 0].max
+          header = "#{prefix}#{current_path[-available..-1]}#{help_text}"
         elsif @keybind_handler.filter_active?
           # prioritize showing filter when active
           filter_text = " [Filter: #{@keybind_handler.filter_query}]"
-          base_length = @screen_width - filter_text.length - FILTER_TEXT_RESERVED
-          header = "💎 rufio v#{VERSION} - ...#{current_path[-base_length..-1]}#{filter_text}"
+          available = [@screen_width - prefix_width - filter_text.length, 0].max
+          header = "#{prefix}#{current_path[-available..-1]}#{filter_text}"
         else
-          header = "💎 rufio v#{VERSION} - ...#{current_path[-(@screen_width - FILTER_TEXT_RESERVED)..-1]}"
+          available = [@screen_width - prefix_width, 0].max
+          header = "#{prefix}#{current_path[-available..-1]}"
         end
       end
 

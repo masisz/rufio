@@ -1,10 +1,10 @@
 
-  D ..                             SIZE  | ..
-  D subdir1                        SIZE  |
+  D subdir1                        SIZE  | subdir1
   D subdir2                        SIZE  |
   T file1.txt                      SIZE  |
   R file2.rb                       SIZE  |
   T README.md                      SIZE  |
+                                         |
                                          |
  Files | Logs | Jobs | Help
 rufio - /tmp/TEST_DIR
