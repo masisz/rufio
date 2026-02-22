@@ -56,9 +56,7 @@ class TestUISnapshot < Minitest::Test
     @harness.render_frame
     footer_line = @harness.line(0)  # フッタは最上行（y=0）
 
-    # フッターに"help"が含まれることを確認
-    assert_match(/help/, footer_line, "Footer should contain 'help'")
-
+    # スナップショット（?:helpは削除済み）
     assert_snapshot("footer_line", footer_line)
   end
 

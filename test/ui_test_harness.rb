@@ -299,10 +299,13 @@ module Rufio
     end
 
     def draw_footer_to_buffer(screen, y, fps = nil)
-      help_text = "?:help"
-      right_info = fps ? "#{fps.round(1)} FPS | #{help_text}" : help_text
+      right_info = fps ? "#{fps.round(1)} FPS" : ""
 
-      footer_content = "".ljust(@screen_width - right_info.length) + right_info
+      if right_info.empty?
+        footer_content = "".ljust(@screen_width)
+      else
+        footer_content = "".ljust(@screen_width - right_info.length) + right_info
+      end
       footer_content = footer_content[0...@screen_width]
       screen.put_string(0, y, footer_content, fg: "\e[7m")
     end

@@ -1,5 +1,5 @@
 === EXPECTED ===
-                                                                          ?:help
+
   D ..                             SIZE  | ..
                                          |
                                          |
@@ -25,7 +25,7 @@
 rufio - /tmp/TEST_DIR
 
 === ACTUAL ===
-                                                                          ?:help
+
                                          |
                                          |
                                          |

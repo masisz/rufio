@@ -1,5 +1,5 @@
 === EXPECTED ===
-                                                                          ?:help
+
   D ..                             SIZE  | subdir2
   D subdir1                        SIZE  |
   D subdir2                        SIZE  |
@@ -25,7 +25,7 @@
 rufio - /tmp/TEST_DIR
 
 === ACTUAL ===
-                                                                          ?:help
+
   D subdir1                        SIZE  | file1.txt
   D subdir2                        SIZE  |
   T file1.txt                      SIZE  | Hello World

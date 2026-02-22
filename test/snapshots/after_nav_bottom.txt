@@ -1,4 +1,4 @@
-                                                                          ?:help
+
   D ..                             SIZE  | README.md
   D subdir1                        SIZE  |
   D subdir2                        SIZE  | # README

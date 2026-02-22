@@ -1197,23 +1197,28 @@ module Rufio
           right_parts << "#{fps.round(1)} FPS"
         end
 
-        # ヘルプ表示
-        right_parts << "?:help"
-
         right_info = right_parts.join(" | ")
 
         # ブックマーク一覧を利用可能な幅に収める
-        available_width = @screen_width - right_info.length - 3
+        if right_info.empty?
+          available_width = @screen_width
+        else
+          available_width = @screen_width - right_info.length - 3
+        end
         if bookmark_text.length > available_width && available_width > 3
           bookmark_text = bookmark_text[0...available_width - 3] + "..."
         elsif available_width <= 3
           bookmark_text = ""
         end
 
-        # フッタ全体を構築
-        padding = @screen_width - bookmark_text.length - right_info.length
-        footer_content = "#{bookmark_text}#{' ' * padding}#{right_info}"
-        footer_content = footer_content.ljust(@screen_width)[0...@screen_width]
+        # フッタ全体を構築（左にブックマーク、右に情報がある場合のみ右寄せ）
+        if right_info.empty?
+          footer_content = bookmark_text.ljust(@screen_width)[0...@screen_width]
+        else
+          padding = @screen_width - bookmark_text.length - right_info.length
+          footer_content = "#{bookmark_text}#{' ' * padding}#{right_info}"
+          footer_content = footer_content.ljust(@screen_width)[0...@screen_width]
+        end
         screen.put_string(0, y, footer_content, fg: "\e[7m")
       end
     end
@@ -1259,24 +1264,8 @@ module Rufio
         end
         bookmark_text = bookmark_parts.join(" ")
 
-        # ステータス情報を作成
-        time_info = render_time ? "#{(render_time * 1000).round(1)}ms" : "-ms"
-
-        # 右側の情報: 処理時間 | ?:help
-        right_info = "#{time_info} | ?:help"
-
-        # ブックマーク一覧を利用可能な幅に収める
-        available_width = @screen_width - right_info.length - 3
-        if bookmark_text.length > available_width && available_width > 3
-          bookmark_text = bookmark_text[0...available_width - 3] + "..."
-        elsif available_width <= 3
-          bookmark_text = ""
-        end
-
-        # フッタ全体を構築
-        padding = @screen_width - bookmark_text.length - right_info.length
-        footer_content = "#{bookmark_text}#{' ' * padding}#{right_info}"
-        footer_content = footer_content.ljust(@screen_width)[0...@screen_width]
+        # フッタ全体を構築（ブックマーク左寄せ）
+        footer_content = bookmark_text.ljust(@screen_width)[0...@screen_width]
         print "\e[7m#{footer_content}\e[0m"
       end
     end

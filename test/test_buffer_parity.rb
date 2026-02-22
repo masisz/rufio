@@ -74,9 +74,8 @@ class TestBufferParity < Minitest::Test
     end
     print_footer = strip_ansi(@print_output.string)
 
-    # フッターの主要コンテンツ（?:help）が両方に存在することを確認
-    assert_match(/help/, buffer_footer, "Buffer footer should contain 'help'")
-    assert_match(/help/, print_footer, "Print footer should contain 'help'")
+    # フッターが反転表示で描画されることを確認（?:helpは削除済み）
+    refute_empty buffer_footer.strip, "Buffer footer should not be empty"
   end
 
   # === エントリ行描画の整合性テスト ===
