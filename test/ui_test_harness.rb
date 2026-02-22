@@ -114,7 +114,7 @@ module Rufio
     FOOTER_HEIGHT = 1
     HEADER_FOOTER_MARGIN = 3
     LEFT_PANEL_RATIO = 0.5
-    CONTENT_START_LINE = 2
+    CONTENT_START_LINE = 1
 
     def initialize(screen:, renderer:, directory_listing:, keybind_handler:, file_preview:, width:, height:)
       @screen = screen
@@ -133,8 +133,8 @@ module Rufio
 
     # バッファへの描画（TerminalUIのメソッドを模倣）
     def draw_screen_to_buffer(screen, notification_message = nil, fps = nil)
-      draw_header_to_buffer(screen, 0)
-      draw_mode_tabs_to_buffer(screen, 1)
+      # フッタ y=0（上部）、コンテンツ y=1〜h-3、モードタブ y=h-2、ヘッダ y=h-1（下部）
+      draw_footer_to_buffer(screen, 0, fps)
 
       content_height = @screen_height - HEADER_FOOTER_MARGIN
       entries = get_display_entries
@@ -145,7 +145,9 @@ module Rufio
 
       draw_directory_list_to_buffer(screen, entries, left_width, content_height)
       draw_file_preview_to_buffer(screen, selected_entry, right_width, content_height, left_width)
-      draw_footer_to_buffer(screen, @screen_height - 1, fps)
+
+      draw_mode_tabs_to_buffer(screen, @screen_height - 2)
+      draw_header_to_buffer(screen, @screen_height - 1)
 
       if notification_message
         notification_line = @screen_height - 1

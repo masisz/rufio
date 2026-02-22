@@ -436,6 +436,19 @@ module Rufio
       @preview_scroll_offset = 0
     end
 
+    # Tabキー: 次のブックマークへ循環移動
+    def goto_next_bookmark
+      bookmarks = @bookmark_manager.list
+      return unless bookmarks&.any?
+
+      current_path = @directory_listing.current_path
+      current_idx = bookmarks.find_index { |bm| bm[:path] == current_path }
+
+      next_idx = current_idx ? (current_idx + 1) % bookmarks.length : 0
+      next_bookmark = bookmarks[next_idx]
+      navigate_to_directory(next_bookmark[:path])
+    end
+
     private
 
     # オーバーレイダイアログを表示してキー入力を待つヘルパーメソッド
@@ -1387,6 +1400,7 @@ module Rufio
       # ディレクトリに移動
       navigate_to_directory(bookmark[:path])
     end
+
 
     def add_bookmark
       current_path = @directory_listing&.current_path || Dir.pwd

@@ -30,7 +30,7 @@ module Rufio
     GIGABYTE = MEGABYTE * 1024
 
     # Line offsets
-    CONTENT_START_LINE = 2         # コンテンツ開始行（ヘッダー2行: Y=0, Y=1）
+    CONTENT_START_LINE = 1         # コンテンツ開始行（フッタ1行: Y=0）
 
     def initialize(test_mode: false)
       console = IO.console
@@ -396,19 +396,19 @@ module Rufio
 
     # Phase 3: Screenバッファに描画する新しいメソッド
     def draw_screen_to_buffer(screen, notification_message = nil, fps = nil)
-      # header (2 lines) - y=0, y=1（全モード共通）
-      draw_header_to_buffer(screen, 0)
-      draw_mode_tabs_to_buffer(screen, 1)
-
       # calculate height with header and footer margin
       content_height = @screen_height - HEADER_FOOTER_MARGIN
 
       if @in_job_mode
-        # ジョブモード: ジョブ一覧を表示
+        # ジョブモード: フッタ y=0（上部）、コンテンツ y=1〜h-3、モードタブ y=h-2、ヘッダ y=h-1（下部）
+        draw_job_footer_to_buffer(screen, 0)
         draw_job_list_to_buffer(screen, content_height)
-        draw_job_footer_to_buffer(screen, @screen_height - 1)
+        draw_mode_tabs_to_buffer(screen, @screen_height - 2)
+        draw_header_to_buffer(screen, @screen_height - 1)
       else
-        # 通常モード: ファイル一覧とプレビューを表示
+        # 通常モード: フッタ y=0（上部）、コンテンツ y=1〜h-3、モードタブ y=h-2、ヘッダ y=h-1（下部）
+        draw_footer_to_buffer(screen, 0, fps)
+
         entries = get_display_entries
         selected_entry = entries[@keybind_handler.current_index]
 
@@ -421,8 +421,8 @@ module Rufio
         draw_directory_list_to_buffer(screen, entries, left_width, content_height)
         draw_file_preview_to_buffer(screen, selected_entry, right_width, content_height, left_width)
 
-        # footer
-        draw_footer_to_buffer(screen, @screen_height - 1, fps)
+        draw_mode_tabs_to_buffer(screen, @screen_height - 2)
+        draw_header_to_buffer(screen, @screen_height - 1)
       end
 
       # 通知メッセージがある場合は表示
@@ -1422,10 +1422,9 @@ module Rufio
       end
     end
 
-    # Tabキーによるモード切り替え
+    # Tabキー: 次のブックマークへ循環移動
     def handle_tab_key
-      @tab_mode_manager.next_mode
-      apply_mode_change(@tab_mode_manager.current_mode)
+      @keybind_handler.goto_next_bookmark
     end
 
     # Shift+Tabによる逆順モード切り替え

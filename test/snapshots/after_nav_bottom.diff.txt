@@ -1,51 +1,51 @@
 === EXPECTED ===
-rufio - /tmp/TEST_DIR    
- Files | Logs | Jobs | Help                                                     
-  D ..                             SIZE  | README.md                            
-  D subdir1                        SIZE  |                                      
-  D subdir2                        SIZE  | # README                             
-  T file1.txt                      SIZE  |                                      
-  R file2.rb                       SIZE  | This is a test file.                 
-  T README.md                      SIZE  |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
                                                                           ?:help
+  D ..                             SIZE  | README.md
+  D subdir1                        SIZE  |
+  D subdir2                        SIZE  | # README
+  T file1.txt                      SIZE  |
+  R file2.rb                       SIZE  | This is a test file.
+  T README.md                      SIZE  |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+ Files | Logs | Jobs | Help
+rufio - /tmp/TEST_DIR
 
 === ACTUAL ===
-rufio - /tmp/TEST_DIR    
- Files | Logs | Jobs | Help                                                     
-  D subdir1                        SIZE  | README.md                            
-  D subdir2                        SIZE  |                                      
-  T file1.txt                      SIZE  | # README                             
-  R file2.rb                       SIZE  |                                      
-  T README.md                      SIZE  | This is a test file.                 
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
                                                                           ?:help
+  D subdir1                        SIZE  | README.md
+  D subdir2                        SIZE  |
+  T file1.txt                      SIZE  | # README
+  R file2.rb                       SIZE  |
+  T README.md                      SIZE  | This is a test file.
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+ Files | Logs | Jobs | Help
+rufio - /tmp/TEST_DIR

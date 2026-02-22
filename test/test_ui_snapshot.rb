@@ -33,7 +33,7 @@ class TestUISnapshot < Minitest::Test
 
   def test_header_display
     @harness.render_frame
-    header_line = @harness.line(0)
+    header_line = @harness.line(23)  # ヘッダは最下行（y=h-1）
 
     # ヘッダーに"rufio"が含まれることを確認
     assert_match(/rufio/, header_line, "Header should contain 'rufio'")
@@ -44,7 +44,7 @@ class TestUISnapshot < Minitest::Test
 
   def test_mode_tabs_display
     @harness.render_frame
-    tab_line = @harness.line(1)
+    tab_line = @harness.line(22)  # モードタブは下から2行目（y=h-2）
 
     # タブに"Files"が含まれることを確認
     assert_match(/Files/, tab_line, "Tab line should contain 'Files'")
@@ -54,7 +54,7 @@ class TestUISnapshot < Minitest::Test
 
   def test_footer_display
     @harness.render_frame
-    footer_line = @harness.line(23)  # 最下行
+    footer_line = @harness.line(0)  # フッタは最上行（y=0）
 
     # フッターに"help"が含まれることを確認
     assert_match(/help/, footer_line, "Footer should contain 'help'")
@@ -90,8 +90,8 @@ class TestUISnapshot < Minitest::Test
   def test_directory_list_content
     @harness.render_frame
 
-    # ディレクトリリスト領域（行2〜22）を取得
-    dir_list_lines = (2..20).map { |y| @harness.line(y) }.join("\n")
+    # ディレクトリリスト領域（行1〜21）を取得（フッタ1行分移動）
+    dir_list_lines = (1..20).map { |y| @harness.line(y) }.join("\n")
 
     assert_snapshot("directory_list", dir_list_lines)
   end
@@ -103,7 +103,7 @@ class TestUISnapshot < Minitest::Test
     5.times { @harness.send_keys("j") }
 
     # プレビュー領域を取得（右側40カラム）
-    preview_lines = (2..10).map do |y|
+    preview_lines = (1..9).map do |y|
       line = @harness.line(y)
       line[40..-1] || ""
     end.join("\n")

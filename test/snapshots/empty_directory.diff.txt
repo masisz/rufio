@@ -1,51 +1,51 @@
 === EXPECTED ===
-rufio - /tmp/TEST_DIR    
- Files | Logs | Jobs | Help                                                     
-  D ..                             SIZE  | ..                                   
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
                                                                           ?:help
+  D ..                             SIZE  | ..
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+ Files | Logs | Jobs | Help
+rufio - /tmp/TEST_DIR
 
 === ACTUAL ===
-rufio - /tmp/TEST_DIR    
- Files | Logs | Jobs | Help                                                     
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
-                                         |                                      
                                                                           ?:help
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+                                         |
+ Files | Logs | Jobs | Help
+rufio - /tmp/TEST_DIR

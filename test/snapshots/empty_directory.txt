@@ -1,5 +1,4 @@
-rufio - /tmp/TEST_DIR
- Files | Logs | Jobs | Help
+                                                                          ?:help
   D ..                             SIZE  | ..
                                          |
                                          |
@@ -21,4 +20,5 @@ rufio - /tmp/TEST_DIR
                                          |
                                          |
                                          |
-                                                                          ?:help
+ Files | Logs | Jobs | Help
+rufio - /tmp/TEST_DIR
