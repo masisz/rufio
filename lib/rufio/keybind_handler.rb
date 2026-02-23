@@ -5,6 +5,8 @@ require_relative 'file_opener'
 require_relative 'filter_manager'
 require_relative 'navigation_controller'
 require_relative 'file_operation_controller'
+require_relative 'bookmark_controller'
+require_relative 'search_controller'
 require_relative 'selection_manager'
 require_relative 'file_operations'
 require_relative 'bookmark_manager'
@@ -64,6 +66,15 @@ module Rufio
         nil, @file_operations, @dialog_renderer, @nav_controller, @selection_manager
       )
 
+      # BookmarkController（ブックマーク・zoxide・スクリプトパス管理を担当）
+      @bookmark_controller = BookmarkController.new(
+        nil, @bookmark_manager, @dialog_renderer, @nav_controller,
+        @script_path_manager, @notification_manager, @zoxide_integration
+      )
+
+      # SearchController（fzf・rga検索を担当）
+      @search_controller = SearchController.new(nil, @file_opener)
+
       # Help mode
       @in_help_mode = false
       @pre_help_directory = nil
@@ -86,12 +97,15 @@ module Rufio
       @directory_listing = directory_listing
       @nav_controller.set_directory_listing(directory_listing)
       @file_op_controller.set_directory_listing(directory_listing)
+      @bookmark_controller.set_directory_listing(directory_listing)
+      @search_controller.set_directory_listing(directory_listing)
     end
 
     def set_terminal_ui(terminal_ui)
       @terminal_ui = terminal_ui
       @nav_controller.set_terminal_ui(terminal_ui)
       @file_op_controller.set_terminal_ui(terminal_ui)
+      @bookmark_controller.set_terminal_ui(terminal_ui)
       # terminal_ui が設定されたら、bookmark_manager と zoxide_integration にも渡す
       @bookmark_manager.set_terminal_ui(terminal_ui)
       @zoxide_integration.set_terminal_ui(terminal_ui)
@@ -487,79 +501,11 @@ module Rufio
     end
 
     def fzf_search
-      return false unless fzf_available?
-
-      current_path = @directory_listing&.current_path || Dir.pwd
-
-      # fzfでファイル検索を実行
-      # Dir.chdirを使用してディレクトリ移動を安全に行う
-      selected_file = nil
-      Dir.chdir(current_path) do
-        selected_file = `find . -type f | fzf --preview 'cat {}'`.strip
-      end
-
-      # ファイルが選択された場合、そのファイルを開く
-      if !selected_file.empty?
-        full_path = File.expand_path(selected_file, current_path)
-        @file_opener.open_file(full_path) if File.exist?(full_path)
-      end
-
-      # fzfとvim等はターミナルを占有するので画面リフレッシュが必要
-      :needs_refresh
-    end
-
-    def fzf_available?
-      system('which fzf > /dev/null 2>&1')
+      @search_controller.fzf_search
     end
 
     def rga_search
-      return false unless rga_available?
-
-      current_path = @directory_listing&.current_path || Dir.pwd
-
-      # input search keyword
-      print ConfigLoader.message('keybind.search_text')
-      search_query = STDIN.gets.chomp
-      return false if search_query.empty?
-
-      # execute rga file content search
-      # Dir.chdirを使用してディレクトリ移動を安全に行う
-      search_results = nil
-      Dir.chdir(current_path) do
-        # Shellwords.escapeで検索クエリをエスケープ
-        escaped_query = Shellwords.escape(search_query)
-        search_results = `rga --line-number --with-filename #{escaped_query} . 2>/dev/null`
-      end
-
-      if search_results.empty?
-        puts "\n#{ConfigLoader.message('keybind.no_matches')}"
-        print ConfigLoader.message('keybind.press_any_key')
-        STDIN.getch
-        return true
-      end
-
-      # pass results to fzf for selection
-      selected_result = IO.popen('fzf', 'r+') do |fzf|
-        fzf.write(search_results)
-        fzf.close_write
-        fzf.read.strip
-      end
-
-      # extract file path and line number from selected result
-      if !selected_result.empty? && selected_result.match(/^(.+?):(\d+):/)
-        file_path = ::Regexp.last_match(1)
-        line_number = ::Regexp.last_match(2).to_i
-        full_path = File.expand_path(file_path, current_path)
-
-        @file_opener.open_file_with_line(full_path, line_number) if File.exist?(full_path)
-      end
-
-      # fzfとvim等はターミナルを占有するので画面リフレッシュが必要
-      :needs_refresh
-    end
-
-    def rga_available?
-      system('which rga > /dev/null 2>&1')
+      @search_controller.rga_search
     end
 
     def start_filter_mode
@@ -1187,340 +1133,37 @@ module Rufio
     end
 
 
-    # ブックマーク機能
-    def show_bookmark_menu
-      current_path = @directory_listing&.current_path || Dir.pwd
-      result = @bookmark_manager.show_menu(current_path)
-
-      @terminal_ui&.refresh_display
-
-      case result[:action]
-      when :add
-        success = @bookmark_manager.add_interactive(result[:path])
-        @terminal_ui&.refresh_display
-        success
-      when :list
-        selected_bookmark = @bookmark_manager.list_interactive
-        @terminal_ui&.refresh_display
-        if selected_bookmark
-          # Navigate to selected bookmark
-          if @bookmark_manager.path_exists?(selected_bookmark)
-            navigate_to_directory(selected_bookmark[:path])
-          else
-            show_error_and_wait('bookmark.path_not_exist', selected_bookmark[:path])
-          end
-        else
-          false
-        end
-      when :rename
-        @bookmark_manager.rename_interactive
-        @terminal_ui&.refresh_display
-        true
-      when :remove
-        @bookmark_manager.remove_interactive
-        @terminal_ui&.refresh_display
-        true
-      when :navigate
-        goto_bookmark(result[:number])
-      else
-        false
-      end
-    end
-
     def goto_start_directory
-      start_dir = @directory_listing&.start_directory
-      return false unless start_dir
-
-      # 起動ディレクトリに移動
-      navigate_to_directory(start_dir)
+      @bookmark_controller.goto_start_directory
     end
 
     def goto_bookmark(number)
-      bookmark = @bookmark_manager.find_by_number(number)
-
-      return false unless bookmark
-      return false unless @bookmark_manager.path_exists?(bookmark)
-
-      # ディレクトリに移動
-      navigate_to_directory(bookmark[:path])
+      @bookmark_controller.goto_bookmark(number)
     end
 
 
     def add_bookmark
-      current_path = @directory_listing&.current_path || Dir.pwd
-
-      # カレントディレクトリが既にブックマークされているかチェック
-      bookmarks = @bookmark_manager.list
-      existing = bookmarks.find { |b| b[:path] == current_path }
-
-      if existing
-        # 既に存在する場合はメッセージを表示して終了
-        content_lines = [
-          '',
-          'This directory is already bookmarked',
-          "Name: #{existing[:name]}",
-          '',
-          'Press any key to continue...'
-        ]
-
-        title = 'Bookmark Exists'
-        width = 50
-        height = content_lines.length + 4
-
-        # オーバーレイダイアログを表示
-        show_overlay_dialog(title, content_lines, {
-          width: width,
-          height: height,
-          border_color: "\e[33m",    # Yellow
-          title_color: "\e[1;33m",   # Bold yellow
-          content_color: "\e[37m"    # White
-        })
-
-        return false
-      end
-
-      # ディレクトリ名を取得
-      dir_name = File.basename(current_path)
-
-      # ダイアログレンダラーを使用して入力ダイアログを表示
-      title = "Add Bookmark: #{dir_name}"
-      prompt = "Enter bookmark name:"
-      bookmark_name = @dialog_renderer.show_input_dialog(title, prompt, {
-        border_color: "\e[32m",    # Green
-        title_color: "\e[1;32m",   # Bold green
-        content_color: "\e[37m"    # White
-      })
-
-      return false if bookmark_name.nil? || bookmark_name.empty?
-
-      # ブックマークを追加
-      result = @bookmark_manager.add(current_path, bookmark_name)
-
-      @terminal_ui&.refresh_display if @terminal_ui
-      result
+      @bookmark_controller.add_bookmark
     end
 
     # ブックマークメニューを表示（スクリプトパス機能を含む）
     def show_bookmark_menu
-      current_path = @directory_listing&.current_path || Dir.pwd
-
-      menu_items = [
-        '1. Add current dir to bookmarks',
-        '2. Add to script paths',
-        '3. Manage script paths',
-        '4. View bookmarks'
-      ]
-
-      content_lines = [''] + menu_items + ['', '[1-4] Select | [Esc] Cancel']
-
-      title = 'Bookmark Menu'
-      width = 45
-      height = content_lines.length + 4
-
-      # オーバーレイダイアログを表示してキー入力を取得
-      key = show_overlay_dialog(title, content_lines, {
-        width: width,
-        height: height,
-        border_color: "\e[36m",    # Cyan
-        title_color: "\e[1;36m",   # Bold cyan
-        content_color: "\e[37m"    # White
-      })
-
-      case key
-      when '1'
-        add_bookmark
-      when '2'
-        add_to_script_paths
-      when '3'
-        show_script_paths_manager
-      when '4'
-        # ブックマーク一覧表示
-        selected_bookmark = @bookmark_manager.list_interactive
-        @terminal_ui&.refresh_display
-        if selected_bookmark
-          if @bookmark_manager.path_exists?(selected_bookmark)
-            navigate_to_directory(selected_bookmark[:path])
-          else
-            show_error_and_wait('bookmark.path_not_exist', selected_bookmark[:path])
-          end
-        end
-      else
-        @terminal_ui&.refresh_display
-      end
-
-      true
+      @bookmark_controller.show_bookmark_menu
     end
 
     # カレントディレクトリをスクリプトパスに追加
     def add_to_script_paths
-      current_path = @directory_listing&.current_path || Dir.pwd
-
-      unless @script_path_manager
-        # ScriptPathManagerがない場合は作成（新形式: script_paths.yml）
-        @script_path_manager = ScriptPathManager.new(Config::SCRIPT_PATHS_YML)
-      end
-
-      if @script_path_manager.paths.include?(current_path)
-        # 既に登録されている
-        show_notification('Already in paths', current_path, :info)
-      elsif @script_path_manager.add_path(current_path)
-        show_notification('Added to scripts', current_path, :success)
-      else
-        show_notification('Failed to add', current_path, :error)
-      end
-
-      @terminal_ui&.refresh_display
-      true
+      @bookmark_controller.add_to_script_paths
     end
 
     # スクリプトパス管理UIを表示
     def show_script_paths_manager
-      unless @script_path_manager
-        show_notification('No script paths configured', '', :info)
-        @terminal_ui&.refresh_display
-        return false
-      end
-
-      paths = @script_path_manager.paths
-      if paths.empty?
-        show_notification('No script paths', 'Press B > 2 to add', :info)
-        @terminal_ui&.refresh_display
-        return false
-      end
-
-      selected_index = 0
-      screen = @terminal_ui&.screen
-      renderer = @terminal_ui&.renderer
-
-      loop do
-        # メニューを描画
-        menu_items = paths.each_with_index.map do |path, i|
-          prefix = i == selected_index ? '> ' : '  '
-          "#{prefix}#{i + 1}. #{truncate_path(path, 35)}"
-        end
-
-        content_lines = [''] + menu_items + ['', '[j/k] Move | [d] Delete | [Enter] Jump | [Esc] Back']
-
-        title = 'Script Paths'
-        width = 50
-        height = content_lines.length + 4
-
-        if screen && renderer
-          # オーバーレイを使用
-          screen.enable_overlay
-          x, y = @dialog_renderer.calculate_center(width, height)
-          @dialog_renderer.draw_floating_window_to_overlay(screen, x, y, width, height, title, content_lines, {
-            border_color: "\e[35m",    # Magenta
-            title_color: "\e[1;35m",   # Bold magenta
-            content_color: "\e[37m"    # White
-          })
-          renderer.render(screen)
-
-          key = STDIN.getch
-          screen.disable_overlay
-          renderer.render(screen)
-        else
-          # フォールバック: 従来の方法
-          x, y = @dialog_renderer.calculate_center(width, height)
-          @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-            border_color: "\e[35m",    # Magenta
-            title_color: "\e[1;35m",   # Bold magenta
-            content_color: "\e[37m"    # White
-          })
-
-          key = STDIN.getch
-          @dialog_renderer.clear_area(x, y, width, height)
-        end
-
-        case key
-        when 'j'
-          selected_index = [selected_index + 1, paths.length - 1].min
-        when 'k'
-          selected_index = [selected_index - 1, 0].max
-        when 'd'
-          # 削除確認
-          path_to_delete = paths[selected_index]
-          if confirm_delete_script_path(path_to_delete)
-            @script_path_manager.remove_path(path_to_delete)
-            paths = @script_path_manager.paths
-            selected_index = [selected_index, paths.length - 1].min
-            break if paths.empty?
-          end
-        when "\r", "\n"
-          # ディレクトリにジャンプ
-          path = paths[selected_index]
-          if Dir.exist?(path)
-            navigate_to_directory(path)
-          end
-          break
-        when "\e"
-          break
-        end
-      end
-
-      @terminal_ui&.refresh_display
-      true
-    end
-
-    # スクリプトパス削除の確認
-    def confirm_delete_script_path(path)
-      content_lines = [
-        '',
-        'Delete this script path?',
-        '',
-        truncate_path(path, 40),
-        '',
-        '[y] Yes | [n] No'
-      ]
-
-      title = 'Confirm Delete'
-      width = 50
-      height = content_lines.length + 4
-
-      # オーバーレイダイアログを表示してキー入力を取得
-      key = show_overlay_dialog(title, content_lines, {
-        width: width,
-        height: height,
-        border_color: "\e[31m",    # Red
-        title_color: "\e[1;31m",   # Bold red
-        content_color: "\e[37m"    # White
-      })
-
-      key.downcase == 'y'
-    end
-
-    # 通知を表示
-    def show_notification(title, message, type)
-      return unless @notification_manager
-
-      @notification_manager.add(title, type, duration: 3, exit_code: nil)
-    end
-
-    # パスを短縮表示
-    def truncate_path(path, max_length)
-      return path if path.length <= max_length
-
-      # ホームディレクトリを~に置換
-      display_path = path.sub(Dir.home, '~')
-      return display_path if display_path.length <= max_length
-
-      # 先頭と末尾を残して中間を...に
-      "...#{display_path[-(max_length - 3)..]}"
-    end
-
-    # ヘルパーメソッド
-    def wait_for_keypress
-      print ConfigLoader.message('keybind.press_any_key') || 'Press any key to continue...'
-      STDIN.getch
-    end
-
-    def show_error_and_wait(message_key, value)
-      puts "\n#{ConfigLoader.message(message_key) || message_key}: #{value}"
-      wait_for_keypress
-      false
+      @bookmark_controller.show_script_paths_manager
     end
 
     def navigate_to_directory(path)
+      return false unless @directory_listing
+
       result = @directory_listing.navigate_to_path(path)
       if result
         @nav_controller.select_index(0)
@@ -1533,19 +1176,7 @@ module Rufio
 
     # zoxide 機能
     def show_zoxide_menu
-      selected_path = @zoxide_integration.show_menu
-
-      if selected_path && Dir.exist?(selected_path)
-        if navigate_to_directory(selected_path)
-          @zoxide_integration.add_to_history(selected_path)
-          true
-        else
-          false
-        end
-      else
-        @terminal_ui&.refresh_display
-        false
-      end
+      @bookmark_controller.show_zoxide_menu
     end
 
     # コマンドモードを起動
