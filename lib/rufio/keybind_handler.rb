@@ -439,7 +439,7 @@ module Rufio
     # Tabキー: 次のブックマークへ循環移動
     def goto_next_bookmark
       bookmarks = @bookmark_manager.list
-      return unless bookmarks&.any?
+      return nil unless bookmarks&.any?
 
       current_path = @directory_listing.current_path
       current_idx = bookmarks.find_index { |bm| bm[:path] == current_path }
@@ -447,6 +447,7 @@ module Rufio
       next_idx = current_idx ? (current_idx + 1) % bookmarks.length : 0
       next_bookmark = bookmarks[next_idx]
       navigate_to_directory(next_bookmark[:path])
+      next_idx
     end
 
     private

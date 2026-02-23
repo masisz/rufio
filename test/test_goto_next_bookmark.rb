@@ -93,5 +93,47 @@ module Rufio
 
       assert_equal @dir_a, @directory_listing.current_path
     end
+
+    # === 戻り値（ハイライト用インデックス）のテスト ===
+
+    # ブックマーク外から移動した場合、0を返す（最初のブックマーク）
+    def test_goto_next_bookmark_returns_zero_from_unregistered_dir
+      @bookmark.add(@dir_a, 'dir_a')
+      @bookmark.add(@dir_b, 'dir_b')
+
+      result = @handler.goto_next_bookmark
+
+      assert_equal 0, result
+    end
+
+    # 最初のブックマークから移動した場合、1を返す
+    def test_goto_next_bookmark_returns_next_index
+      @bookmark.add(@dir_a, 'dir_a')
+      @bookmark.add(@dir_b, 'dir_b')
+      @bookmark.add(@dir_c, 'dir_c')
+
+      @directory_listing.navigate_to_path(@dir_a)
+      result = @handler.goto_next_bookmark
+
+      assert_equal 1, result
+    end
+
+    # 最後のブックマークから先頭に循環した場合、0を返す
+    def test_goto_next_bookmark_returns_zero_on_wrap
+      @bookmark.add(@dir_a, 'dir_a')
+      @bookmark.add(@dir_b, 'dir_b')
+
+      @directory_listing.navigate_to_path(@dir_b)
+      result = @handler.goto_next_bookmark
+
+      assert_equal 0, result
+    end
+
+    # ブックマークがない場合はnilを返す（既存テストに戻り値確認を追加）
+    def test_goto_next_bookmark_returns_nil_with_no_bookmarks
+      result = @handler.goto_next_bookmark
+
+      assert_nil result
+    end
   end
 end

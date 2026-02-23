@@ -21,8 +21,8 @@
                                          |
                                          |
                                          |
- Files | Logs | Jobs | Help
-rufio - /tmp/TEST_DIR
+                                         |
+ Files  L:Logs > J:Jobs > ?:Help > /var/folders/kl/fq_4fzdx3cb3h rufio v0.80.0
 
 === ACTUAL ===
 
@@ -47,5 +47,5 @@ rufio - /tmp/TEST_DIR
                                          |
                                          |
                                          |
- Files | Logs | Jobs | Help
-rufio - /tmp/TEST_DIR
+                                         |
+ Files  L:Logs > J:Jobs > ?:Help > /var/folders/kl/fq_4fzdx3cb3h rufio v0.80.0

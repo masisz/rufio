@@ -20,5 +20,5 @@
                      |
                      |
                      |
- Files | L:Logs | J:Jobs | ?:Help
-rufio - ...TEST_DIR
+                     |
+ Files  L:Logs > J:Jobs > ?:Help

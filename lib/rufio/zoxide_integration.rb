@@ -219,12 +219,18 @@ module Rufio
             # Max 2 digits
             input_buffer = input_buffer[-2..-1] if input_buffer.length > 2
 
-            # If number is within range, select immediately
             number = input_buffer.to_i
-            if number > 0 && number <= display_history.length &&
-               (number >= 10 || input_buffer.length == 1)
-              selected_path = display_history[number - 1][:path]
-              break
+            if number > 0 && number <= display_history.length
+              if input_buffer.length >= 2
+                # 2桁入力: 即時選択
+                selected_path = display_history[number - 1][:path]
+                break
+              elsif number * 10 > display_history.length
+                # 1桁入力: この数字を先頭とする2桁の有効な番号が存在しない → 即時選択
+                selected_path = display_history[number - 1][:path]
+                break
+              end
+              # else: number*10 以下のアイテムが存在しうるので次の入力を待つ
             end
           end
         end

@@ -146,7 +146,7 @@ class TestBufferParity < Minitest::Test
 
   def test_directory_list_structure
     entries = @directory_listing.list_entries
-    height = @height - 3  # ヘッダー2行 + フッター1行
+    height = @height - 2  # ヘッダー1行 + フッター1行
     width = (@width * 0.5).to_i
 
     # バッファ版
@@ -169,7 +169,7 @@ class TestBufferParity < Minitest::Test
     file_entry = entries.find { |e| e[:type] == "file" }
     return skip("No file entries to test preview") unless file_entry
 
-    height = @height - 3
+    height = @height - 2
     left_offset = (@width * 0.5).to_i
     right_width = @width - left_offset
 
@@ -235,8 +235,8 @@ class TestBufferParity < Minitest::Test
       screen = Rufio::Screen.new(@width, @height)
 
       # 空ディレクトリでもクラッシュしないことを確認
-      terminal_ui.send(:draw_header_to_buffer, screen, 0)
-      terminal_ui.send(:draw_footer_to_buffer, screen, @height - 1, nil)
+      terminal_ui.send(:draw_footer_to_buffer, screen, 0, nil)
+      terminal_ui.send(:draw_mode_tabs_to_buffer, screen, @height - 1)
 
       pass  # 例外なく完了すればOK
     ensure
@@ -344,15 +344,14 @@ class TestBufferParity < Minitest::Test
   def draw_full_screen_to_buffer
     entries = @directory_listing.list_entries
     selected_entry = entries[@keybind_handler.current_index]
-    content_height = @height - 3
+    content_height = @height - 2
     left_width = (@width * 0.5).to_i
     right_width = @width - left_width
 
-    @terminal_ui.send(:draw_header_to_buffer, @screen, 0)
-    @terminal_ui.send(:draw_mode_tabs_to_buffer, @screen, 1)
+    @terminal_ui.send(:draw_footer_to_buffer, @screen, 0, nil)
     @terminal_ui.send(:draw_directory_list_to_buffer, @screen, entries, left_width, content_height)
     @terminal_ui.send(:draw_file_preview_to_buffer, @screen, selected_entry, right_width, content_height, left_width)
-    @terminal_ui.send(:draw_footer_to_buffer, @screen, @height - 1, nil)
+    @terminal_ui.send(:draw_mode_tabs_to_buffer, @screen, @height - 1)
   end
 
   def capture_screen_text

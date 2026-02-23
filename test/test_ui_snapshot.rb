@@ -44,7 +44,7 @@ class TestUISnapshot < Minitest::Test
 
   def test_mode_tabs_display
     @harness.render_frame
-    tab_line = @harness.line(22)  # モードタブは下から2行目（y=h-2）
+    tab_line = @harness.line(23)  # モードタブ+パス+バージョン統合行（y=h-1）
 
     # タブに"Files"が含まれることを確認
     assert_match(/Files/, tab_line, "Tab line should contain 'Files'")

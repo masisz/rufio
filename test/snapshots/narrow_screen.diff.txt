@@ -21,8 +21,8 @@
                      |
                      |
                      |
- Files | Logs | Jobs | Help
-rufio - ...TEST_DIR
+                     |
+ Files  L:Logs > J:Jobs > ?:Help
 
 === ACTUAL ===
 
@@ -47,5 +47,5 @@ rufio - ...TEST_DIR
                      |
                      |
                      |
- Files | Logs | Jobs | Help
-rufio - ...TEST_DIR
+                     |
+ Files  L:Logs > J:Jobs > ?:Help

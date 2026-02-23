@@ -110,9 +110,9 @@ module Rufio
   # TerminalUIのテスト用プロキシ
   # 実際のターミナル操作なしでバッファ描画をテスト可能にする
   class TerminalUITestProxy
-    HEADER_HEIGHT = 2
+    HEADER_HEIGHT = 1
     FOOTER_HEIGHT = 1
-    HEADER_FOOTER_MARGIN = 3
+    HEADER_FOOTER_MARGIN = 2
     LEFT_PANEL_RATIO = 0.5
     CONTENT_START_LINE = 1
 
@@ -146,8 +146,7 @@ module Rufio
       draw_directory_list_to_buffer(screen, entries, left_width, content_height)
       draw_file_preview_to_buffer(screen, selected_entry, right_width, content_height, left_width)
 
-      draw_mode_tabs_to_buffer(screen, @screen_height - 2)
-      draw_header_to_buffer(screen, @screen_height - 1)
+      draw_mode_tabs_to_buffer(screen, @screen_height - 1)
 
       if notification_message
         notification_line = @screen_height - 1
@@ -211,8 +210,53 @@ module Rufio
           end
         end
 
+        # セパレータ: アクティブタブの後はPowerline塗りつぶし三角、それ以外は >
         if index < modes.length - 1
-          screen.put(current_x, y, "|", fg: "\e[90m")
+          if mode == current_mode
+            screen.put(current_x, y, "\uE0B0", fg: "\e[36m")
+          else
+            screen.put(current_x, y, ">", fg: "\e[90m")
+          end
+          current_x += 1
+        end
+      end
+
+      # パスとバージョン情報を行末に追加
+      current_path = @directory_listing.current_path
+      version_str = " rufio v#{Rufio::VERSION}"
+      version_w = version_str.length  # ASCII-only
+
+      remaining_w = @screen_width - current_x
+      path_display_w = remaining_w - 2 - version_w
+
+      if path_display_w >= 3
+        arrow_fg = modes.last == current_mode ? "\e[36m" : "\e[90m"
+        screen.put(current_x, y, ">", fg: arrow_fg)
+        current_x += 1
+
+        path_end = @screen_width - 1 - version_w
+        path_str = " #{current_path} "
+        path_str.each_char do |char|
+          break if current_x >= path_end
+          char_w = TextUtils.display_width(char)
+          break if current_x + char_w > path_end
+          screen.put(current_x, y, char, fg: "\e[90m")
+          current_x += char_w
+        end
+
+        while current_x < path_end
+          screen.put(current_x, y, " ")
+          current_x += 1
+        end
+
+        # バージョンセパレータ（左向き三角、シアン色）
+        screen.put(current_x, y, "\uE0B2", fg: "\e[36m")
+        current_x += 1
+
+        # バージョン描画（シアン背景＋黒太字）
+        version_str.each_char do |char|
+          break if current_x >= @screen_width
+          screen.put(current_x, y, char, fg: "\e[30m\e[1m", bg: "\e[46m")
           current_x += 1
         end
       end

@@ -6,9 +6,9 @@ require_relative 'text_utils'
 module Rufio
   class TerminalUI
     # Layout constants
-    HEADER_HEIGHT = 2              # Header占有行数（2段目のモードタブを含む）
+    HEADER_HEIGHT = 1              # Header占有行数（モードタブ+パス+バージョン 1行に統合）
     FOOTER_HEIGHT = 1              # Footer占有行数（ブックマーク一覧 + ステータス情報）
-    HEADER_FOOTER_MARGIN = 3       # Header(2行) + Footer(1行)分のマージン
+    HEADER_FOOTER_MARGIN = 2       # Header(1行) + Footer(1行)分のマージン
 
     # Panel layout ratios
     LEFT_PANEL_RATIO = 0.5         # 左パネルの幅比率
@@ -19,6 +19,7 @@ module Rufio
     DEFAULT_SCREEN_HEIGHT = 24     # デフォルト画面高さ
     HEADER_PADDING = 2             # ヘッダーのパディング
     FILTER_TEXT_RESERVED = 15      # フィルタテキスト表示の予約幅
+    TAB_SEPARATOR = ">"              # タブ間セパレータ
 
     # File display constants
     ICON_SIZE_PADDING = 12         # アイコン、選択マーク、サイズ情報分
@@ -28,6 +29,9 @@ module Rufio
     KILOBYTE = 1024
     MEGABYTE = KILOBYTE * 1024
     GIGABYTE = MEGABYTE * 1024
+
+    # Bookmark highlight duration (seconds)
+    BOOKMARK_HIGHLIGHT_DURATION = 0.5
 
     # Line offsets
     CONTENT_START_LINE = 1         # コンテンツ開始行（フッタ1行: Y=0）
@@ -75,6 +79,10 @@ module Rufio
       @cached_bookmarks = nil
       @cached_bookmark_time = nil
       @bookmark_cache_ttl = 1.0  # 1秒間キャッシュ
+
+      # Bookmark highlight (Tab ジャンプ時に 500ms ハイライト)
+      @highlighted_bookmark_index = nil  # 1-based display index (0=start_dir, 1..9=bookmarks)
+      @highlighted_bookmark_time = nil
 
       # Command execution lamp (footer indicator)
       @completion_lamp_message = nil
@@ -157,6 +165,14 @@ module Rufio
     end
 
     private
+
+    # ブックマークハイライトが期限切れかどうか
+    # @return [Boolean] true=期限切れ or ハイライト中でない, false=ハイライト中
+    def bookmark_highlight_expired?
+      return false unless @highlighted_bookmark_index && @highlighted_bookmark_time
+
+      (Time.now - @highlighted_bookmark_time) >= BOOKMARK_HIGHLIGHT_DURATION
+    end
 
     def setup_terminal
       # terminal setup
@@ -309,6 +325,13 @@ module Rufio
           needs_redraw = true
         end
 
+        # ブックマークハイライトのタイムアウトチェック（500ms 後に自動消去）
+        if bookmark_highlight_expired?
+          @highlighted_bookmark_index = nil
+          @highlighted_bookmark_time = nil
+          needs_redraw = true
+        end
+
         # DRAW & RENDER phase - 変更があった場合のみ描画
         if needs_redraw
           # Screenバッファに描画（clearは呼ばない。必要な部分だけ更新）
@@ -400,13 +423,12 @@ module Rufio
       content_height = @screen_height - HEADER_FOOTER_MARGIN
 
       if @in_job_mode
-        # ジョブモード: フッタ y=0（上部）、コンテンツ y=1〜h-3、モードタブ y=h-2、ヘッダ y=h-1（下部）
+        # ジョブモード: フッタ y=0（上部）、コンテンツ y=1〜h-2、統合行 y=h-1（下部）
         draw_job_footer_to_buffer(screen, 0)
         draw_job_list_to_buffer(screen, content_height)
-        draw_mode_tabs_to_buffer(screen, @screen_height - 2)
-        draw_header_to_buffer(screen, @screen_height - 1)
+        draw_mode_tabs_to_buffer(screen, @screen_height - 1)
       else
-        # 通常モード: フッタ y=0（上部）、コンテンツ y=1〜h-3、モードタブ y=h-2、ヘッダ y=h-1（下部）
+        # 通常モード: フッタ y=0（上部）、コンテンツ y=1〜h-2、統合行 y=h-1（下部）
         draw_footer_to_buffer(screen, 0, fps)
 
         entries = get_display_entries
@@ -421,8 +443,7 @@ module Rufio
         draw_directory_list_to_buffer(screen, entries, left_width, content_height)
         draw_file_preview_to_buffer(screen, selected_entry, right_width, content_height, left_width)
 
-        draw_mode_tabs_to_buffer(screen, @screen_height - 2)
-        draw_header_to_buffer(screen, @screen_height - 1)
+        draw_mode_tabs_to_buffer(screen, @screen_height - 1)
       end
 
       # 通知メッセージがある場合は表示
@@ -608,9 +629,57 @@ module Rufio
           end
         end
 
-        # 区切り線（最後のモード以外）
+        # セパレータ: アクティブタブの後はPowerline塗りつぶし三角、それ以外は >
         if index < modes.length - 1
-          screen.put(current_x, y, '│', fg: "\e[90m")
+          if mode == current_mode
+            screen.put(current_x, y, "\uE0B0", fg: "\e[36m")
+          else
+            screen.put(current_x, y, TAB_SEPARATOR, fg: "\e[90m")
+          end
+          current_x += 1
+        end
+      end
+
+      # パスとバージョン情報を行末に追加
+      current_path = @directory_listing.current_path
+      version_str = " rufio v#{VERSION}"
+      version_w = version_str.length  # ASCII-only
+
+      remaining_w = @screen_width - current_x
+      # 必要な最小幅:  (1) + " x " (3) +  (1) + version_w
+      path_display_w = remaining_w - 2 - version_w
+
+      if path_display_w >= 3
+        # 最後のタブ→パスの区切り（最後のモードがアクティブかで色が変わる）
+        arrow_fg = modes.last == current_mode ? "\e[36m" : "\e[90m"
+        screen.put(current_x, y, TAB_SEPARATOR, fg: arrow_fg)
+        current_x += 1
+
+        # パスを描画（path_end までの領域）
+        path_end = @screen_width - 1 - version_w
+        path_str = " #{current_path} "
+        path_str.each_char do |char|
+          break if current_x >= path_end
+          char_w = TextUtils.display_width(char)
+          break if current_x + char_w > path_end
+          screen.put(current_x, y, char, fg: "\e[90m")
+          current_x += char_w
+        end
+
+        # path_end まで空白で埋める
+        while current_x < path_end
+          screen.put(current_x, y, ' ')
+          current_x += 1
+        end
+
+        # バージョンセパレータ（左向き三角、シアン色でシアン背景に遷移）
+        screen.put(current_x, y, "\uE0B2", fg: "\e[36m")
+        current_x += 1
+
+        # バージョン描画（シアン背景＋黒太字）
+        version_str.each_char do |char|
+          break if current_x >= @screen_width
+          screen.put(current_x, y, char, fg: "\e[30m\e[1m", bg: "\e[46m")
           current_x += 1
         end
       end
@@ -626,12 +695,12 @@ module Rufio
     def sync_tab_mode_with_keybind_handler
       return unless @keybind_handler
 
-      current_mode = if @keybind_handler.help_mode?
+      current_mode = if @in_job_mode || @keybind_handler.in_job_mode?
+                       :jobs
+                     elsif @keybind_handler.help_mode?
                        :help
                      elsif @keybind_handler.log_viewer_mode?
                        :logs
-                     elsif @keybind_handler.in_job_mode?
-                       :jobs
                      else
                        :files
                      end
@@ -1241,6 +1310,20 @@ module Rufio
           footer_content = footer_content.ljust(@screen_width)[0...@screen_width]
         end
         screen.put_string(0, y, footer_content, fg: "\e[90m")
+
+        # Tab ジャンプ時：対象ブックマークを 500ms ハイライト（セカンドパス）
+        if @highlighted_bookmark_index && !bookmark_highlight_expired? && available_width > 3
+          highlight_idx = @highlighted_bookmark_index
+          if highlight_idx < bookmark_parts.length
+            separator_len = 3  # " │ "
+            x_pos = bookmark_parts[0...highlight_idx].sum { |p| p.length + separator_len }
+            part_text = bookmark_parts[highlight_idx]
+            if x_pos < available_width
+              visible_len = [part_text.length, available_width - x_pos].min
+              screen.put_string(x_pos, y, part_text[0...visible_len], fg: "\e[1;36m")
+            end
+          end
+        end
       end
     end
 
@@ -1343,10 +1426,19 @@ module Rufio
         end
       end
 
-      # Tabキーでモード切り替え
-      if input == "\t"
+      # TabキーはFilesモードの時のみブックマーク循環移動
+      if input == "\t" && @tab_mode_manager.current_mode == :files
         handle_tab_key
         return true
+      end
+
+      # Jobsモード中のモード切替キーをインターセプト（L:Logs, ?:Help, J:Files復帰）
+      if @in_job_mode
+        case input
+        when 'L' then apply_mode_change(:logs); return true
+        when '?' then apply_mode_change(:help); return true
+        when 'J' then apply_mode_change(:files); return true
+        end
       end
 
       # キーバインドハンドラーに処理を委譲
@@ -1434,7 +1526,15 @@ module Rufio
 
     # Tabキー: 次のブックマークへ循環移動
     def handle_tab_key
-      @keybind_handler.goto_next_bookmark
+      next_idx = @keybind_handler.goto_next_bookmark
+      if next_idx
+        # display_index: 0=start_dir, 1..9=bookmarks（next_idx は 0-based bookmarks 配列）
+        @highlighted_bookmark_index = next_idx + 1
+        @highlighted_bookmark_time = Time.now
+        # ブックマークキャッシュを即時クリア（移動先を反映させる）
+        @cached_bookmarks = nil
+        @cached_bookmark_time = nil
+      end
     end
 
     # Shift+Tabによる逆順モード切り替え
