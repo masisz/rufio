@@ -92,10 +92,13 @@ module Rufio
       @tab_mode_manager = TabModeManager.new
 
       # UIRenderer（描画ロジックを担当）
+      ui_opts = ConfigLoader.ui_options
       @ui_renderer = UIRenderer.new(
         screen_width: @screen_width,
         screen_height: @screen_height,
-        test_mode: @test_mode
+        test_mode: @test_mode,
+        left_panel_ratio: ui_opts[:panel_ratio],
+        preview_enabled: ui_opts[:preview_enabled]
       )
     end
 

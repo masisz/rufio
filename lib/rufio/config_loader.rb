@@ -79,6 +79,20 @@ module Rufio
         }.freeze
       end
 
+      # デフォルトUI設定
+      def default_ui_options
+        {
+          panel_ratio:     0.5,   # 左パネル幅比率（0.3〜0.7）
+          preview_enabled: true   # ファイルプレビューのON/OFF
+        }.freeze
+      end
+
+      # UI設定（デフォルト＋ユーザー設定のマージ）
+      def ui_options
+        user_opts = load_config[:ui_options] || {}
+        default_ui_options.merge(user_opts)
+      end
+
       def keybinds
         raw_user_keybinds = load_config[:keybinds] || {}
         # 新フォーマット（単一文字列値）のみ受け入れ、古いフォーマット（配列値）は無視
@@ -289,6 +303,10 @@ module Rufio
           config[:command_history_size] = Object.const_get(:COMMAND_HISTORY_SIZE)
         end
 
+        if Object.const_defined?(:UI_OPTIONS)
+          config[:ui_options] = safe_const_get(:UI_OPTIONS, {})
+        end
+
         config
       rescue StandardError => e
         warn "Failed to load config file: #{e.message}"
@@ -317,7 +335,8 @@ module Rufio
             selected: { hsl: [50, 90, 70] },
             preview: { hsl: [180, 60, 65] }
           },
-          keybinds: {}  # ユーザーの上書きのみ格納（デフォルトはdefault_keybindsを参照）
+          keybinds: {},    # ユーザーの上書きのみ格納（デフォルトはdefault_keybindsを参照）
+          ui_options: {}   # ユーザーの上書きのみ格納（デフォルトはdefault_ui_optionsを参照）
         }
       end
     end

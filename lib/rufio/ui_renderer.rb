@@ -27,10 +27,16 @@ module Rufio
     attr_accessor :completion_lamp_message, :completion_lamp_time
     attr_reader :tab_mode_manager, :highlight_updated
 
+    def preview_enabled?
+      @preview_enabled
+    end
+
     def initialize(screen_width:, screen_height:,
                    keybind_handler: nil, directory_listing: nil,
                    file_preview: nil, background_executor: nil,
-                   test_mode: false, left_panel_ratio: 0.5)
+                   test_mode: false,
+                   left_panel_ratio: 0.5,
+                   preview_enabled: true)
       @screen_width = screen_width
       @screen_height = screen_height
       @keybind_handler = keybind_handler
@@ -39,6 +45,7 @@ module Rufio
       @background_executor = background_executor
       @test_mode = test_mode
       @left_panel_ratio = left_panel_ratio
+      @preview_enabled = preview_enabled
 
       # Preview cache
       @preview_cache = {}
