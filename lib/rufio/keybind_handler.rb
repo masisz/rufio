@@ -3,6 +3,7 @@
 require 'shellwords'
 require_relative 'file_opener'
 require_relative 'filter_manager'
+require_relative 'navigation_controller'
 require_relative 'selection_manager'
 require_relative 'file_operations'
 require_relative 'bookmark_manager'
