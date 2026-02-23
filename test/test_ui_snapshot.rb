@@ -192,21 +192,23 @@ class TestUISnapshot < Minitest::Test
 
   # 動的な値を正規化（一時ディレクトリパスなど）
   def normalize_dynamic_values(text)
-    # 一時ディレクトリパスを固定値に置き換え
-    # macOS: /var/folders/xx/xxxx/T/rufio_xxx → /tmp/TEST_DIR
-    # Linux: /tmp/rufio_xxx_test20260216-1234-abc123 → /tmp/TEST_DIR
-    # ヘッダー短縮版: ...xxx/T/rufio_ui_TEST_DIR → /tmp/TEST_DIR
     result = text
-      .gsub(%r{/var/folders/[\w/]+/T/rufio_\w+}, "/tmp/TEST_DIR")
-      .gsub(%r{/tmp/rufio_\w+_test\d+-\d+-\w+}, "/tmp/TEST_DIR")
-      .gsub(%r{/tmp/rufio_\w+\d+-\d+-\w+}, "/tmp/TEST_DIR")
-      .gsub(%r{\.\.\._test\d+-\d+-\w+}, ".../TEST_DIR")
+      # macOS tmpdir パス（完全形・切り詰め形を両方処理）
+      # 完全形: /var/folders/xx/xxxx/T/rufio_ui_test12345-456-abc
+      # 切り詰め形（モードタブ内）: /var/folders/kl/fq_4fzdx3cb3h
+      .gsub(%r{/var/folders/[^\s"]+}, "/tmp/TEST_DIR")
+      # Linux tmpdir パス（完全形・切り詰め形を両方処理）
+      # 完全形: /tmp/rufio_ui_test20260223-1234-abc123
+      # 切り詰め形: /tmp/rufio_ui_te
+      .gsub(%r{/tmp/rufio_[^\s"]+}, "/tmp/TEST_DIR")
+      # Linux generic tmpdir: /tmp/d20260223-1234-xyz
+      .gsub(%r{/tmp/d\d+-\d+-[^\s"]+}, "/tmp/TEST_DIR")
+      # 残余の "..." 短縮パスパターン
+      .gsub(%r{\.\.\.[^"\n]*TEST_DIR}, "...TEST_DIR")
       .gsub(%r{test\d+-\d+-\w+}, "TEST_DIR")
-      # ヘッダー短縮版の残りパターン: ...xxx/T/rufio_ui_TEST_DIR → /tmp/TEST_DIR
-      .gsub(%r{\.\.\.[\w/]+/T/rufio_\w*TEST_DIR}, "/tmp/TEST_DIR")
-      # 短縮パスの統一: Linux/macOS でスラッシュ有無が異なるため .../TEST_DIR に統一
-      # 例: "...TEST_DIR", ".../TEST_DIR", "...i_TEST_DIR" → "...TEST_DIR"
-      .gsub(/\.\.\.[^"\n]*TEST_DIR/, "...TEST_DIR")
+      # バージョン番号を正規化（リリースごとに変わるため）
+      # 例: "rufio v0.80.0" → "rufio vX.X.X"
+      .gsub(/rufio v\d+\.\d+\.\d+/, "rufio vX.X.X")
       # ディレクトリサイズを正規化（ファイルシステム依存を回避）
       # 先頭スペース込みでマッチし、元の文字数を保ったまま SIZE に置き換える（長さ保存）
       # 例: "  4.0K" (6文字) → "  SIZE" (6文字), "   32B" (6文字) → "  SIZE" (6文字)
@@ -214,7 +216,6 @@ class TestUISnapshot < Minitest::Test
 
     # 各行の末尾スペースをトリム
     # パス正規化後に行長が変わるためプラットフォーム間の差異を吸収する
-    # 例: macOS (長パス→短縮後スペース少) vs Linux (短パス→正規化後スペース多)
     result.lines.map(&:rstrip).join("\n")
   end
 end

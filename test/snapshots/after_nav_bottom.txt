@@ -1,9 +1,10 @@
 
-  D subdir1                        SIZE  | README.md
-  D subdir2                        SIZE  |
-  T file1.txt                      SIZE  | # README
-  R file2.rb                       SIZE  |
-  T README.md                      SIZE  | This is a test file.
+  D ..                             SIZE  | README.md
+  D subdir1                        SIZE  |
+  D subdir2                        SIZE  | # README
+  T file1.txt                      SIZE  |
+  R file2.rb                       SIZE  | This is a test file.
+  T README.md                      SIZE  |
                                          |
                                          |
                                          |
@@ -20,5 +21,4 @@
                                          |
                                          |
                                          |
-                                         |
- Files  L:Logs > J:Jobs > ?:Help > /var/folders/kl/fq_4fzdx3cb3h rufio v0.80.0
+ Files  L:Logs > J:Jobs > ?:Help > /tmp/TEST_DIR rufio vX.X.X

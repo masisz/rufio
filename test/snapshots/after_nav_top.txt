@@ -1,5 +1,6 @@
 
-  D subdir1                        SIZE  | subdir1
+  D ..                             SIZE  | ..
+  D subdir1                        SIZE  |
   D subdir2                        SIZE  |
   T file1.txt                      SIZE  |
   R file2.rb                       SIZE  |
@@ -20,5 +21,4 @@
                                          |
                                          |
                                          |
-                                         |
- Files  L:Logs > J:Jobs > ?:Help > /var/folders/kl/fq_4fzdx3cb3h rufio v0.80.0
+ Files  L:Logs > J:Jobs > ?:Help > /tmp/TEST_DIR rufio vX.X.X
