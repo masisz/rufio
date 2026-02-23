@@ -43,38 +43,13 @@ class TestBufferParity < Minitest::Test
     FileUtils.rm_rf(@test_dir) if @test_dir && Dir.exist?(@test_dir)
   end
 
-  # === ヘッダー描画の整合性テスト ===
-
-  def test_header_parity
-    # バッファ版
-    @terminal_ui.send(:draw_header_to_buffer, @screen, 0)
-    buffer_header = strip_ansi(@screen.row(0))
-
-    # print版
-    capture_print_output do
-      @terminal_ui.send(:draw_header)
-    end
-    print_header = strip_ansi(extract_first_line(@print_output.string))
-
-    assert_equal normalize_whitespace(print_header),
-                 normalize_whitespace(buffer_header),
-                 "Header parity failed: print vs buffer output mismatch"
-  end
-
   # === フッター描画の整合性テスト ===
 
   def test_footer_parity
-    # バッファ版
-    @terminal_ui.send(:draw_footer_to_buffer, @screen, @height - 1, nil)
+    # バッファ版（UIRenderer経由）
+    @terminal_ui.ui_renderer.draw_footer_to_buffer(@screen, @height - 1, nil)
     buffer_footer = strip_ansi(@screen.row(@height - 1))
 
-    # print版
-    capture_print_output do
-      @terminal_ui.send(:draw_footer, nil)
-    end
-    print_footer = strip_ansi(@print_output.string)
-
-    # フッターが反転表示で描画されることを確認（?:helpは削除済み）
     refute_empty buffer_footer.strip, "Buffer footer should not be empty"
   end
 
@@ -88,21 +63,12 @@ class TestBufferParity < Minitest::Test
     width = (@width * 0.5).to_i
     is_selected = true
 
-    # バッファ版
-    @terminal_ui.send(:draw_entry_line_to_buffer, @screen, entry, width, is_selected, 0, 2)
+    # バッファ版（UIRenderer経由）
+    @terminal_ui.ui_renderer.draw_entry_line_to_buffer(@screen, entry, width, is_selected, 0, 2)
     buffer_line = strip_ansi(@screen.row(2))
 
-    # print版
-    capture_print_output do
-      @terminal_ui.send(:draw_entry_line, entry, width, is_selected)
-    end
-    print_line = strip_ansi(@print_output.string)
-
-    # エントリ名が両方に含まれることを確認
     assert_match(/#{Regexp.escape(entry[:name][0..10])}/, buffer_line,
                  "Buffer should contain entry name")
-    assert_match(/#{Regexp.escape(entry[:name][0..10])}/, print_line,
-                 "Print should contain entry name")
   end
 
   # === サイズフォーマットの整合性テスト ===
@@ -117,7 +83,7 @@ class TestBufferParity < Minitest::Test
     ]
 
     test_cases.each do |size, expected|
-      result = @terminal_ui.send(:format_size, size)
+      result = @terminal_ui.ui_renderer.send(:format_size, size)
       assert_equal expected, result, "format_size(#{size}) should return '#{expected}'"
     end
   end
@@ -133,7 +99,7 @@ class TestBufferParity < Minitest::Test
     ]
 
     test_entries.each do |entry|
-      icon, color = @terminal_ui.send(:get_entry_display_info, entry)
+      icon, color = @terminal_ui.ui_renderer.send(:get_entry_display_info, entry)
 
       refute_nil icon, "Icon should not be nil for #{entry[:name]}"
       refute_nil color, "Color should not be nil for #{entry[:name]}"
@@ -149,8 +115,8 @@ class TestBufferParity < Minitest::Test
     height = @height - 2  # ヘッダー1行 + フッター1行
     width = (@width * 0.5).to_i
 
-    # バッファ版
-    @terminal_ui.send(:draw_directory_list_to_buffer, @screen, entries, width, height)
+    # バッファ版（UIRenderer経由）
+    @terminal_ui.ui_renderer.draw_directory_list_to_buffer(@screen, entries, width, height)
 
     # 各行にコンテンツがあることを確認
     has_content = false
@@ -173,8 +139,8 @@ class TestBufferParity < Minitest::Test
     left_offset = (@width * 0.5).to_i
     right_width = @width - left_offset
 
-    # バッファ版
-    @terminal_ui.send(:draw_file_preview_to_buffer, @screen, file_entry, right_width, height, left_offset)
+    # バッファ版（UIRenderer経由）
+    @terminal_ui.ui_renderer.draw_file_preview_to_buffer(@screen, file_entry, right_width, height, left_offset)
 
     # 区切り線が描画されていることを確認
     separator_found = false
@@ -235,8 +201,8 @@ class TestBufferParity < Minitest::Test
       screen = Rufio::Screen.new(@width, @height)
 
       # 空ディレクトリでもクラッシュしないことを確認
-      terminal_ui.send(:draw_footer_to_buffer, screen, 0, nil)
-      terminal_ui.send(:draw_mode_tabs_to_buffer, screen, @height - 1)
+      terminal_ui.ui_renderer.draw_footer_to_buffer(screen, 0, nil)
+      terminal_ui.ui_renderer.draw_mode_tabs_to_buffer(screen, @height - 1)
 
       pass  # 例外なく完了すればOK
     ensure
@@ -257,7 +223,7 @@ class TestBufferParity < Minitest::Test
     if long_entry
       width = (@width * 0.5).to_i
       # 長いファイル名でもクラッシュしないことを確認
-      @terminal_ui.send(:draw_entry_line_to_buffer, @screen, long_entry, width, false, 0, 2)
+      @terminal_ui.ui_renderer.draw_entry_line_to_buffer(@screen, long_entry, width, false, 0, 2)
       line = strip_ansi(@screen.row(2))
 
       assert line.length <= @width, "Long filename should be truncated"
@@ -271,8 +237,8 @@ class TestBufferParity < Minitest::Test
     narrow_screen = Rufio::Screen.new(narrow_width, @height)
     narrow_ui = create_terminal_ui_with_size(narrow_width, @height)
 
-    # 狭い画面でもクラッシュしないことを確認
-    narrow_ui.send(:draw_header_to_buffer, narrow_screen, 0)
+    # 狭い画面でもクラッシュしないことを確認（UIRenderer経由でモードタブを描画）
+    narrow_ui.ui_renderer.draw_mode_tabs_to_buffer(narrow_screen, 0)
 
     header = strip_ansi(narrow_screen.row(0))
     assert header.length <= narrow_width, "Header should fit narrow screen"
@@ -367,16 +333,7 @@ class TestBufferParity < Minitest::Test
   end
 
   def draw_full_screen_to_buffer
-    entries = @directory_listing.list_entries
-    selected_entry = entries[@keybind_handler.current_index]
-    content_height = @height - 2
-    left_width = (@width * 0.5).to_i
-    right_width = @width - left_width
-
-    @terminal_ui.send(:draw_footer_to_buffer, @screen, 0, nil)
-    @terminal_ui.send(:draw_directory_list_to_buffer, @screen, entries, left_width, content_height)
-    @terminal_ui.send(:draw_file_preview_to_buffer, @screen, selected_entry, right_width, content_height, left_width)
-    @terminal_ui.send(:draw_mode_tabs_to_buffer, @screen, @height - 1)
+    @terminal_ui.draw_screen_to_buffer(@screen, nil, nil)
   end
 
   def capture_screen_text

@@ -104,6 +104,11 @@ module Rufio
       @highlighted_bookmark_time = nil
     end
 
+    def clear_bookmark_cache
+      @cached_bookmarks = nil
+      @cached_bookmark_time = nil
+    end
+
     # ブックマークハイライトが期限切れかどうか
     def bookmark_highlight_expired?
       return false unless @highlighted_bookmark_index && @highlighted_bookmark_time

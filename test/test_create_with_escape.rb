@@ -18,8 +18,17 @@ module Rufio
       @original_dir = Dir.pwd
       Dir.chdir(@test_dir)
 
-      @handler = KeybindHandler.new
       @directory_listing = DirectoryListing.new(@test_dir)
+      @file_operations = FileOperations.new
+      @dialog_renderer = DialogRenderer.new
+      @nav_controller = NavigationController.new(@directory_listing, FilterManager.new)
+      @selection_manager = SelectionManager.new
+      @file_op_controller = FileOperationController.new(
+        @directory_listing, @file_operations, @dialog_renderer, @nav_controller, @selection_manager
+      )
+
+      # read_line_with_escape のテスト用に keybind_handler も保持
+      @handler = KeybindHandler.new
       @handler.set_directory_listing(@directory_listing)
     end
 
@@ -30,27 +39,20 @@ module Rufio
 
     def test_read_line_with_escape_returns_nil_on_escape
       # Escapeキーが押されたときにnilを返すことをテスト
-      handler = KeybindHandler.new
-
-      # Escapeキーをシミュレート
       STDIN.stub :getch, "\e" do
-        result = handler.send(:read_line_with_escape)
+        result = @handler.send(:read_line_with_escape)
         assert_nil result, "Escapeキーでキャンセルした場合はnilを返すべき"
       end
     end
 
     def test_read_line_with_escape_returns_string_on_enter
       # Enterキーが押されたときに入力文字列を返すことをテスト
-      handler = KeybindHandler.new
-
-      # 文字入力とEnterキーをシミュレート
       inputs = ['t', 'e', 's', 't', "\r"]
       input_index = 0
 
       STDIN.stub :getch, -> { inputs[input_index].tap { input_index += 1 } } do
-        # 標準出力をキャプチャ
         _out, _err = capture_io do
-          result = handler.send(:read_line_with_escape)
+          result = @handler.send(:read_line_with_escape)
           assert_equal "test", result, "Enterキーで入力を確定した場合は文字列を返すべき"
         end
       end
@@ -58,15 +60,12 @@ module Rufio
 
     def test_read_line_with_escape_handles_backspace
       # Backspaceキーで文字を削除できることをテスト
-      handler = KeybindHandler.new
-
-      # 文字入力、Backspace、Enterをシミュレート
       inputs = ['t', 'e', 's', 't', "\u007F", "\r"]
       input_index = 0
 
       STDIN.stub :getch, -> { inputs[input_index].tap { input_index += 1 } } do
         _out, _err = capture_io do
-          result = handler.send(:read_line_with_escape)
+          result = @handler.send(:read_line_with_escape)
           assert_equal "tes", result, "Backspaceで最後の文字を削除できるべき"
         end
       end
@@ -74,59 +73,42 @@ module Rufio
 
     def test_create_file_cancelled_with_escape
       # ファイル作成がEscapeでキャンセルされることをテスト
-      handler = KeybindHandler.new
-      directory_listing = DirectoryListing.new(@test_dir)
-      handler.set_directory_listing(directory_listing)
-
-      # Escapeキーをシミュレート
       STDIN.stub :getch, "\e" do
         _out, _err = capture_io do
-          result = handler.send(:create_file)
+          result = @file_op_controller.create_file
           assert_equal false, result, "Escapeでキャンセルした場合はfalseを返すべき"
         end
       end
 
       # ファイルが作成されていないことを確認
-      entries = directory_listing.list_entries
-      # .. エントリを除外
+      entries = @directory_listing.list_entries
       file_entries = entries.reject { |e| e[:name] == '..' }
       assert_empty file_entries, "キャンセルした場合はファイルが作成されないべき"
     end
 
     def test_create_directory_cancelled_with_escape
       # ディレクトリ作成がEscapeでキャンセルされることをテスト
-      handler = KeybindHandler.new
-      directory_listing = DirectoryListing.new(@test_dir)
-      handler.set_directory_listing(directory_listing)
-
-      # Escapeキーをシミュレート
       STDIN.stub :getch, "\e" do
         _out, _err = capture_io do
-          result = handler.send(:create_directory)
+          result = @file_op_controller.create_directory
           assert_equal false, result, "Escapeでキャンセルした場合はfalseを返すべき"
         end
       end
 
       # ディレクトリが作成されていないことを確認
-      entries = directory_listing.list_entries
-      # .. エントリを除外
+      entries = @directory_listing.list_entries
       dir_entries = entries.reject { |e| e[:name] == '..' }
       assert_empty dir_entries, "キャンセルした場合はディレクトリが作成されないべき"
     end
 
     def test_create_file_with_valid_input
       # 正常にファイルが作成されることをテスト
-      handler = KeybindHandler.new
-      directory_listing = DirectoryListing.new(@test_dir)
-      handler.set_directory_listing(directory_listing)
-
-      # ファイル名入力とEnterをシミュレート
       inputs = ['t', 'e', 's', 't', '.', 't', 'x', 't', "\r", 'y']
       input_index = 0
 
       STDIN.stub :getch, -> { inputs[input_index].tap { input_index += 1 } } do
         _out, _err = capture_io do
-          result = handler.send(:create_file)
+          result = @file_op_controller.create_file
           assert result, "正常にファイルが作成されるべき"
         end
       end
@@ -138,17 +120,12 @@ module Rufio
 
     def test_create_directory_with_valid_input
       # 正常にディレクトリが作成されることをテスト
-      handler = KeybindHandler.new
-      directory_listing = DirectoryListing.new(@test_dir)
-      handler.set_directory_listing(directory_listing)
-
-      # ディレクトリ名入力とEnterをシミュレート
       inputs = ['t', 'e', 's', 't', '_', 'd', 'i', 'r', "\r", 'y']
       input_index = 0
 
       STDIN.stub :getch, -> { inputs[input_index].tap { input_index += 1 } } do
         _out, _err = capture_io do
-          result = handler.send(:create_directory)
+          result = @file_op_controller.create_directory
           assert result, "正常にディレクトリが作成されるべき"
         end
       end

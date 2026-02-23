@@ -75,18 +75,6 @@ module Rufio
       # 非同期ハイライト完了フラグ（Thread → メインループへの通知）
       @highlight_updated = false
 
-      # Footer cache (bookmark list)
-      @cached_bookmarks = nil
-      @cached_bookmark_time = nil
-      @bookmark_cache_ttl = 1.0  # 1秒間キャッシュ
-
-      # Bookmark highlight (Tab ジャンプ時に 500ms ハイライト)
-      @highlighted_bookmark_index = nil  # 1-based display index (0=start_dir, 1..9=bookmarks)
-      @highlighted_bookmark_time = nil
-
-      # Command execution lamp (footer indicator)
-      @completion_lamp_message = nil
-      @completion_lamp_time = nil
 
       # Tab mode manager
       @tab_mode_manager = TabModeManager.new
@@ -186,12 +174,6 @@ module Rufio
 
     # ブックマークハイライトが期限切れかどうか
     # @return [Boolean] true=期限切れ or ハイライト中でない, false=ハイライト中
-    def bookmark_highlight_expired?
-      return false unless @highlighted_bookmark_index && @highlighted_bookmark_time
-
-      (Time.now - @highlighted_bookmark_time) >= BOOKMARK_HIGHLIGHT_DURATION
-    end
-
     def setup_terminal
       # terminal setup
       system('tput smcup')  # alternate screen
@@ -248,7 +230,7 @@ module Rufio
       notification_message = nil
       notification_time = nil
       previous_notification = nil
-      previous_lamp_message = @completion_lamp_message
+      previous_lamp_message = @ui_renderer.completion_lamp_message
 
       # FPS計測用
       frame_times = []
@@ -296,9 +278,9 @@ module Rufio
             # 通知メッセージとして表示
             notification_message = completion_msg
             notification_time = start
-            # フッターのランプ表示用にも設定
-            @completion_lamp_message = completion_msg
-            @completion_lamp_time = start
+            # フッターのランプ表示用にも設定（UIRenderer が管理）
+            @ui_renderer.completion_lamp_message = completion_msg
+            @ui_renderer.completion_lamp_time = start
             @background_executor.instance_variable_set(:@completion_message, nil)  # メッセージをクリア
             needs_redraw = true
           end
@@ -316,14 +298,15 @@ module Rufio
 
         # 完了ランプの表示状態をチェック（0.5秒ごと）
         if (start - last_lamp_check) > 0.5
-          current_lamp = @completion_lamp_message
+          current_lamp = @ui_renderer.completion_lamp_message
           if current_lamp != previous_lamp_message
             previous_lamp_message = current_lamp
             needs_redraw = true
           end
           # 完了ランプのタイムアウトチェック
-          if @completion_lamp_message && @completion_lamp_time && (start - @completion_lamp_time) >= 3.0
-            @completion_lamp_message = nil
+          if @ui_renderer.completion_lamp_message && @ui_renderer.completion_lamp_time &&
+             (start - @ui_renderer.completion_lamp_time) >= 3.0
+            @ui_renderer.completion_lamp_message = nil
             needs_redraw = true
           end
           last_lamp_check = start
@@ -344,9 +327,8 @@ module Rufio
         end
 
         # ブックマークハイライトのタイムアウトチェック（500ms 後に自動消去）
-        if bookmark_highlight_expired?
-          @highlighted_bookmark_index = nil
-          @highlighted_bookmark_time = nil
+        if @ui_renderer.bookmark_highlight_expired?
+          @ui_renderer.clear_highlighted_bookmark
           needs_redraw = true
         end
 
@@ -386,648 +368,19 @@ module Rufio
         sleep sleep_time if sleep_time > 0
       end
     end
+    public
 
-    def draw_screen
-      # 処理時間測定開始
-      start_time = Time.now
-
-      # move cursor to top of screen (don't clear)
-      print "\e[H"
-
-      # ジョブモードの場合は専用の画面を描画
-      if @in_job_mode
-        draw_job_mode_screen
-        return
-      end
-
-      # header (1 line)
-      draw_header
-
-      # main content (left: directory list, right: preview)
-      entries = get_display_entries
-      selected_entry = entries[@keybind_handler.current_index]
-
-      # calculate height with header and footer margin
-      content_height = @screen_height - HEADER_FOOTER_MARGIN
-      left_width = (@screen_width * LEFT_PANEL_RATIO).to_i
-      right_width = @screen_width - left_width
-
-      # adjust so right panel doesn't overflow into left panel
-      right_width = @screen_width - left_width if left_width + right_width > @screen_width
-
-      draw_directory_list(entries, left_width, content_height)
-      draw_file_preview(selected_entry, right_width, content_height, left_width)
-
-      # footer (統合されたステータス情報を含む)
-      render_time = Time.now - start_time
-      draw_footer(render_time)
-
-      # コマンドモードがアクティブな場合はコマンド入力ウィンドウを表示
-      if @command_mode_active
-        # フローティングウィンドウで表示
-        @command_mode_ui.show_input_prompt(@command_input)
-      else
-        # move cursor to invisible position
-        print "\e[#{@screen_height};#{@screen_width}H"
-      end
-
-      # 通知を描画（右上にオーバーレイ）
-      draw_notifications
-    end
-
-    # Phase 3: Screenバッファに描画する新しいメソッド
+    # UIRenderer に全描画処理を委譲
     def draw_screen_to_buffer(screen, notification_message = nil, fps = nil)
-      # calculate height with header and footer margin
-      content_height = @screen_height - HEADER_FOOTER_MARGIN
-
-      if @in_job_mode
-        # ジョブモード: フッタ y=0（上部）、コンテンツ y=1〜h-2、統合行 y=h-1（下部）
-        draw_job_footer_to_buffer(screen, 0)
-        draw_job_list_to_buffer(screen, content_height)
-        draw_mode_tabs_to_buffer(screen, @screen_height - 1)
-      else
-        # 通常モード: フッタ y=0（上部）、コンテンツ y=1〜h-2、統合行 y=h-1（下部）
-        draw_footer_to_buffer(screen, 0, fps)
-
-        entries = get_display_entries
-        selected_entry = entries[@keybind_handler.current_index]
-
-        left_width = (@screen_width * LEFT_PANEL_RATIO).to_i
-        right_width = @screen_width - left_width
-
-        # adjust so right panel doesn't overflow into left panel
-        right_width = @screen_width - left_width if left_width + right_width > @screen_width
-
-        draw_directory_list_to_buffer(screen, entries, left_width, content_height)
-        draw_file_preview_to_buffer(screen, selected_entry, right_width, content_height, left_width)
-
-        draw_mode_tabs_to_buffer(screen, @screen_height - 1)
-      end
-
-      # 通知メッセージがある場合は表示
-      if notification_message
-        notification_line = @screen_height - 1
-        message_display = " #{notification_message} "
-        if message_display.length > @screen_width
-          message_display = message_display[0...(@screen_width - 3)] + "..."
-        end
-        screen.put_string(0, notification_line, message_display.ljust(@screen_width), fg: "\e[7m")
-      end
+      @ui_renderer.draw_screen_to_buffer(
+        screen, notification_message, fps,
+        in_job_mode: @in_job_mode,
+        job_manager: @job_manager,
+        job_mode_instance: @job_mode_instance
+      )
     end
 
-    # ジョブ一覧をバッファに描画
-    def draw_job_list_to_buffer(screen, height)
-      @ui_renderer.draw_job_list_to_buffer(screen, height, @job_manager, @job_mode_instance)
-    end
-
-    # ジョブ行をバッファに描画
-    def draw_job_line_to_buffer(screen, job, is_selected, y)
-      @ui_renderer.draw_job_line_to_buffer(screen, job, is_selected, y)
-    end
-
-    # ジョブモード用フッターをバッファに描画
-    def draw_job_footer_to_buffer(screen, y)
-      @ui_renderer.draw_job_footer_to_buffer(screen, y, @job_manager)
-    end
-
-    def draw_screen_with_notification(notification_message)
-      # 通常の画面を描画
-      draw_screen
-
-      # 通知メッセージを画面下部に表示
-      notification_line = @screen_height - 1
-      print "\e[#{notification_line};1H"  # カーソルを画面下部に移動
-
-      # 通知メッセージを反転表示で目立たせる
-      message_display = " #{notification_message} "
-      if message_display.length > @screen_width
-        message_display = message_display[0...(@screen_width - 3)] + "..."
-      end
-
-      print "\e[7m#{message_display.ljust(@screen_width)}\e[0m"
-    end
-
-    # Phase 3: Screenバッファにヘッダーを描画
-    def draw_header_to_buffer(screen, y)
-      current_path = @directory_listing.current_path
-      header = "💎 rufio v#{VERSION} - #{current_path}"
-
-      # Add help mode indicator if in help mode
-      if @keybind_handler.help_mode?
-        header += " [Help Mode - Press ESC to exit]"
-      end
-
-      # Add filter indicator if in filter mode
-      if @keybind_handler.filter_active?
-        filter_text = " [Filter: #{@keybind_handler.filter_query}]"
-        header += filter_text
-      end
-
-      # abbreviate if path is too long (use visual width to account for wide chars like emoji)
-      if TextUtils.display_width(header) > @screen_width - HEADER_PADDING
-        prefix = "💎 rufio v#{VERSION} - ..."
-        prefix_width = TextUtils.display_width(prefix)
-        if @keybind_handler.help_mode?
-          # prioritize showing help mode indicator
-          help_text = " [Help Mode - Press ESC to exit]"
-          available = [@screen_width - prefix_width - help_text.length, 0].max
-          header = "#{prefix}#{current_path[-available..-1]}#{help_text}"
-        elsif @keybind_handler.filter_active?
-          # prioritize showing filter when active
-          filter_text = " [Filter: #{@keybind_handler.filter_query}]"
-          available = [@screen_width - prefix_width - filter_text.length, 0].max
-          header = "#{prefix}#{current_path[-available..-1]}#{filter_text}"
-        else
-          available = [@screen_width - prefix_width, 0].max
-          header = "#{prefix}#{current_path[-available..-1]}"
-        end
-      end
-
-      # モードタブと同じ表示方法: グレー文字で1文字ずつ描画
-      # current_x は表示幅（カラム数）で管理（絵文字等の全角文字対応）
-      current_x = 0
-      header.each_char do |char|
-        char_width = TextUtils.display_width(char)
-        break if current_x + char_width > @screen_width
-        screen.put(current_x, y, char, fg: "\e[90m")
-        current_x += char_width
-      end
-      # 残りをスペースで埋める
-      while current_x < @screen_width
-        screen.put(current_x, y, ' ')
-        current_x += 1
-      end
-    end
-
-    # Phase 3: Screenバッファにモードタブを描画
-    def draw_mode_tabs_to_buffer(screen, y)
-      @ui_renderer.draw_mode_tabs_to_buffer(screen, y)
-    end
-
-    # キーバインドハンドラの状態とタブモードを同期
-    def sync_tab_mode_with_keybind_handler
-      return unless @keybind_handler
-
-      current_mode = if @in_job_mode || @keybind_handler.in_job_mode?
-                       :jobs
-                     elsif @keybind_handler.help_mode?
-                       :help
-                     elsif @keybind_handler.log_viewer_mode?
-                       :logs
-                     else
-                       :files
-                     end
-
-      @tab_mode_manager.switch_to(current_mode) if @tab_mode_manager.current_mode != current_mode
-    end
-
-    def draw_header
-      current_path = @directory_listing.current_path
-      header = "💎 rufio v#{VERSION} - #{current_path}"
-
-      # Add help mode indicator if in help mode
-      if @keybind_handler.help_mode?
-        header += " [Help Mode - Press ESC to exit]"
-      end
-
-      # Add filter indicator if in filter mode
-      if @keybind_handler.filter_active?
-        filter_text = " [Filter: #{@keybind_handler.filter_query}]"
-        header += filter_text
-      end
-
-      # abbreviate if path is too long (use visual width to account for wide chars like emoji)
-      if TextUtils.display_width(header) > @screen_width - HEADER_PADDING
-        prefix = "💎 rufio v#{VERSION} - ..."
-        prefix_width = TextUtils.display_width(prefix)
-        if @keybind_handler.help_mode?
-          # prioritize showing help mode indicator
-          help_text = " [Help Mode - Press ESC to exit]"
-          available = [@screen_width - prefix_width - help_text.length, 0].max
-          header = "#{prefix}#{current_path[-available..-1]}#{help_text}"
-        elsif @keybind_handler.filter_active?
-          # prioritize showing filter when active
-          filter_text = " [Filter: #{@keybind_handler.filter_query}]"
-          available = [@screen_width - prefix_width - filter_text.length, 0].max
-          header = "#{prefix}#{current_path[-available..-1]}#{filter_text}"
-        else
-          available = [@screen_width - prefix_width, 0].max
-          header = "#{prefix}#{current_path[-available..-1]}"
-        end
-      end
-
-      puts "\e[7m#{header.ljust(@screen_width)}\e[0m" # reverse display
-    end
-
-
-
-    # Phase 3: Screenバッファにディレクトリリストを描画
-    def draw_directory_list_to_buffer(screen, entries, width, height)
-      @ui_renderer.draw_directory_list_to_buffer(screen, entries, width, height)
-    end
-
-    def draw_directory_list(entries, width, height)
-      start_index = [@keybind_handler.current_index - height / 2, 0].max
-      [start_index + height - 1, entries.length - 1].min
-
-      (0...height).each do |i|
-        entry_index = start_index + i
-        line_num = i + CONTENT_START_LINE
-
-        print "\e[#{line_num};1H" # set cursor position
-
-        if entry_index < entries.length
-          entry = entries[entry_index]
-          is_selected = entry_index == @keybind_handler.current_index
-
-          draw_entry_line(entry, width, is_selected)
-        else
-          # 左ペイン専用の安全な幅で空行を出力
-          safe_width = [width - CURSOR_OFFSET, (@screen_width * LEFT_PANEL_RATIO).to_i - CURSOR_OFFSET].min
-          print ' ' * safe_width
-        end
-      end
-    end
-
-    # Phase 3: Screenバッファにエントリ行を描画
-    def draw_entry_line_to_buffer(screen, entry, width, is_selected, x, y)
-      @ui_renderer.draw_entry_line_to_buffer(screen, entry, width, is_selected, x, y)
-    end
-
-    def draw_entry_line(entry, width, is_selected)
-      # アイコンと色の設定
-      icon, color = get_entry_display_info(entry)
-
-      # 左ペイン専用の安全な幅を計算（右ペインにはみ出さないよう）
-      safe_width = [width - CURSOR_OFFSET, (@screen_width * LEFT_PANEL_RATIO).to_i - CURSOR_OFFSET].min
-
-      # 選択マークの追加
-      selection_mark = @keybind_handler.is_selected?(entry[:name]) ? "✓ " : "  "
-
-      # ファイル名（必要に応じて切り詰め）
-      name = entry[:name]
-      max_name_length = safe_width - ICON_SIZE_PADDING
-      name = name[0...max_name_length - 3] + '...' if max_name_length > 0 && name.length > max_name_length
-
-      # サイズ情報
-      size_info = format_size(entry[:size])
-
-      # 行の内容を構築（安全な幅内で）
-      content_without_size = "#{selection_mark}#{icon} #{name}"
-      available_for_content = safe_width - size_info.length
-
-      line_content = if available_for_content > 0
-                       content_without_size.ljust(available_for_content) + size_info
-                     else
-                       content_without_size
-                     end
-
-      # 確実に safe_width を超えないよう切り詰め
-      line_content = line_content[0...safe_width]
-
-      if is_selected
-        selected_color = ColorHelper.color_to_selected_ansi(ConfigLoader.colors[:selected])
-        print "#{selected_color}#{line_content}#{ColorHelper.reset}"
-      else
-        # 選択されたアイテムは異なる色で表示
-        if @keybind_handler.is_selected?(entry[:name])
-          print "\e[42m\e[30m#{line_content}\e[0m"  # 緑背景、黒文字
-        else
-          print "#{color}#{line_content}#{ColorHelper.reset}"
-        end
-      end
-    end
-
-    def get_entry_display_info(entry)
-      @ui_renderer.get_entry_display_info(entry)
-    end
-
-    def format_size(size)
-      @ui_renderer.format_size(size)
-    end
-
-    # Phase 3: Screenバッファにファイルプレビューを描画
-    def draw_file_preview_to_buffer(screen, selected_entry, width, height, left_offset)
-      @ui_renderer.draw_file_preview_to_buffer(screen, selected_entry, width, height, left_offset)
-    end
-
-    def draw_file_preview(selected_entry, width, height, left_offset)
-      # 事前計算（ループの外で一度だけ）
-      cursor_position = left_offset + CURSOR_OFFSET
-      max_chars_from_cursor = @screen_width - cursor_position
-      safe_width = [max_chars_from_cursor - 2, width - 2, 0].max
-
-      # プレビューコンテンツをキャッシュから取得（毎フレームのファイルI/Oを回避）
-      preview_content = nil
-      wrapped_lines = nil
-
-      if selected_entry && selected_entry[:type] == 'file'
-        # キャッシュチェック: 選択ファイルが変わった場合のみプレビューを更新
-        if @last_preview_path != selected_entry[:path]
-          preview_content = get_preview_content(selected_entry)
-          @preview_cache[selected_entry[:path]] = {
-            content: preview_content,
-            wrapped: {}  # 幅ごとにキャッシュ
-          }
-          @last_preview_path = selected_entry[:path]
-        else
-          # キャッシュから取得
-          cache_entry = @preview_cache[selected_entry[:path]]
-          preview_content = cache_entry[:content] if cache_entry
-        end
-
-        # 折り返し処理もキャッシュ
-        if preview_content && safe_width > 0
-          cache_entry = @preview_cache[selected_entry[:path]]
-          if cache_entry && cache_entry[:wrapped][safe_width]
-            wrapped_lines = cache_entry[:wrapped][safe_width]
-          else
-            wrapped_lines = TextUtils.wrap_preview_lines(preview_content, safe_width - 1)
-            cache_entry[:wrapped][safe_width] = wrapped_lines if cache_entry
-          end
-        end
-      end
-
-      (0...height).each do |i|
-        line_num = i + CONTENT_START_LINE
-
-        print "\e[#{line_num};#{cursor_position}H" # カーソル位置設定
-        print '│' # 区切り線
-
-        content_to_print = ''
-
-        if selected_entry && i == 0
-          # プレビューヘッダー
-          header = " #{selected_entry[:name]} "
-          # プレビューフォーカス中は表示を追加
-          if @keybind_handler&.preview_focused?
-            header += "[PREVIEW MODE]"
-          end
-          content_to_print = header
-        elsif wrapped_lines && i >= 2
-          # ファイルプレビュー（折り返し対応）
-          # スクロールオフセットを適用
-          scroll_offset = @keybind_handler&.preview_scroll_offset || 0
-          display_line_index = i - 2 + scroll_offset
-
-          if display_line_index < wrapped_lines.length
-            line = wrapped_lines[display_line_index] || ''
-            # スペースを先頭に追加
-            content_to_print = " #{line}"
-          else
-            content_to_print = ' '
-          end
-        else
-          content_to_print = ' '
-        end
-
-        # 絶対にsafe_widthを超えないよう強制的に切り詰める
-        if safe_width <= 0
-          # 表示スペースがない場合は何も出力しない
-          next
-        elsif TextUtils.display_width(content_to_print) > safe_width
-          # 表示幅ベースで切り詰める
-          content_to_print = TextUtils.truncate_to_width(content_to_print, safe_width)
-        end
-
-        # 出力（パディングなし、はみ出し防止のため）
-        print content_to_print
-
-        # 残りのスペースを埋める（ただし安全な範囲内のみ）
-        remaining_space = safe_width - TextUtils.display_width(content_to_print)
-        print ' ' * remaining_space if remaining_space > 0
-      end
-    end
-
-    def get_preview_content(entry)
-      return [] unless entry && entry[:type] == 'file'
-
-      preview = @file_preview.preview_file(entry[:path])
-      extract_preview_lines(preview)
-    rescue StandardError
-      ["(#{ConfigLoader.message('file.preview_error')})"]
-    end
-
-    # FilePreview の結果ハッシュからプレーンテキスト行を抽出する
-    def extract_preview_lines(preview)
-      case preview[:type]
-      when 'text', 'code'
-        preview[:lines]
-      when 'binary'
-        ["(#{ConfigLoader.message('file.binary_file')})", ConfigLoader.message('file.cannot_preview')]
-      when 'error'
-        ["#{ConfigLoader.message('file.error_prefix')}:", preview[:message]]
-      else
-        ["(#{ConfigLoader.message('file.cannot_preview')})"]
-      end
-    rescue StandardError
-      ["(#{ConfigLoader.message('file.preview_error')})"]
-    end
-
-    # ハイライト済みトークン列を1行分 Screen バッファに描画する
-    # 先頭に1スペースを追加し、残りをスペースで埋める
-    def draw_highlighted_line_to_buffer(screen, x, y, tokens, max_width)
-      current_x = x
-      max_x = x + max_width
-
-      # 先頭スペース
-      if current_x < max_x
-        screen.put(current_x, y, ' ')
-        current_x += 1
-      end
-
-      # トークンを描画
-      tokens&.each do |token|
-        break if current_x >= max_x
-        token[:text].each_char do |char|
-          char_w = TextUtils.char_width(char)
-          break if current_x + char_w > max_x
-          screen.put(current_x, y, char, fg: token[:fg])
-          current_x += char_w
-        end
-      end
-
-      # 残りをスペースで埋める
-      while current_x < max_x
-        screen.put(current_x, y, ' ')
-        current_x += 1
-      end
-    end
-
-
-    def get_display_entries
-      entries = if @keybind_handler.filter_active?
-                  # Get filtered entries from keybind_handler
-                  all_entries = @directory_listing.list_entries
-                  query = @keybind_handler.filter_query.downcase
-                  query.empty? ? all_entries : all_entries.select { |entry| entry[:name].downcase.include?(query) }
-                else
-                  @directory_listing.list_entries
-                end
-
-      # ヘルプモードとLogsモードでは..を非表示にする
-      if @keybind_handler.help_mode? || @keybind_handler.log_viewer_mode?
-        entries.reject { |entry| entry[:name] == '..' }
-      else
-        entries
-      end
-    end
-
-    # Phase 3: Screenバッファにフッターを描画
-    def draw_footer_to_buffer(screen, y, fps = nil)
-      if @keybind_handler.filter_active?
-        if @keybind_handler.instance_variable_get(:@filter_mode)
-          help_text = "Filter mode: Type to filter, ESC to clear, Enter to apply, Backspace to delete"
-        else
-          help_text = "Filtered view active - Space to edit filter, ESC to clear filter"
-        end
-        # フィルタモードでは通常のフッタを表示
-        footer_content = help_text.ljust(@screen_width)[0...@screen_width]
-        screen.put_string(0, y, footer_content, fg: "\e[7m")
-      else
-        # 通常モードではブックマーク一覧、ステータス情報、?:helpを1行に表示
-        # ブックマークをキャッシュ（毎フレームのファイルI/Oを回避）
-        current_time = Time.now
-        if @cached_bookmarks.nil? || @cached_bookmark_time.nil? || (current_time - @cached_bookmark_time) > @bookmark_cache_ttl
-          require_relative 'bookmark'
-          bookmark = Bookmark.new
-          @cached_bookmarks = bookmark.list
-          @cached_bookmark_time = current_time
-        end
-        bookmarks = @cached_bookmarks
-
-        # 起動ディレクトリを取得
-        start_dir = @directory_listing&.start_directory
-        start_dir_name = if start_dir
-                           File.basename(start_dir)
-                         else
-                           "start"
-                         end
-
-        # ブックマーク一覧を作成（0.起動dir を先頭に追加）
-        bookmark_parts = ["0.#{start_dir_name}"]
-        unless bookmarks.empty?
-          bookmark_parts.concat(bookmarks.take(9).map.with_index(1) { |bm, idx| "#{idx}.#{bm[:name]}" })
-        end
-        bookmark_text = bookmark_parts.join(" │ ")
-
-        # 右側の情報: ジョブ数 | コマンド実行ランプ | FPS（test modeの時のみ）| ?:help
-        right_parts = []
-
-        # ジョブ数を表示（ジョブがある場合のみ）
-        if @keybind_handler.has_jobs?
-          job_text = @keybind_handler.job_status_bar_text
-          right_parts << "[#{job_text}]" if job_text
-        end
-
-        # バックグラウンドコマンドの実行状態をランプで表示
-        if @background_executor
-          if @background_executor.running?
-            # 実行中ランプ（緑色の回転矢印）
-            command_name = @background_executor.current_command || "処理中"
-            right_parts << "\e[32m🔄\e[0m #{command_name}"
-          elsif @completion_lamp_message && @completion_lamp_time
-            # 完了ランプ（3秒間表示）
-            if (Time.now - @completion_lamp_time) < 3.0
-              right_parts << @completion_lamp_message
-            else
-              @completion_lamp_message = nil
-              @completion_lamp_time = nil
-            end
-          end
-        end
-
-        # FPS表示（test modeの時のみ）
-        if @test_mode && fps
-          right_parts << "#{fps.round(1)} FPS"
-        end
-
-        right_info = right_parts.join(" | ")
-
-        # ブックマーク一覧を利用可能な幅に収める
-        if right_info.empty?
-          available_width = @screen_width
-        else
-          available_width = @screen_width - right_info.length - 3
-        end
-        if bookmark_text.length > available_width && available_width > 3
-          bookmark_text = bookmark_text[0...available_width - 3] + "..."
-        elsif available_width <= 3
-          bookmark_text = ""
-        end
-
-        # フッタ全体を構築（左にブックマーク、右に情報がある場合のみ右寄せ）
-        if right_info.empty?
-          footer_content = bookmark_text.ljust(@screen_width)[0...@screen_width]
-        else
-          padding = @screen_width - bookmark_text.length - right_info.length
-          footer_content = "#{bookmark_text}#{' ' * padding}#{right_info}"
-          footer_content = footer_content.ljust(@screen_width)[0...@screen_width]
-        end
-        screen.put_string(0, y, footer_content, fg: "\e[90m")
-
-        # Tab ジャンプ時：対象ブックマークを 500ms ハイライト（セカンドパス）
-        if @highlighted_bookmark_index && !bookmark_highlight_expired? && available_width > 3
-          highlight_idx = @highlighted_bookmark_index
-          if highlight_idx < bookmark_parts.length
-            separator_len = 3  # " │ "
-            x_pos = bookmark_parts[0...highlight_idx].sum { |p| p.length + separator_len }
-            part_text = bookmark_parts[highlight_idx]
-            if x_pos < available_width
-              visible_len = [part_text.length, available_width - x_pos].min
-              screen.put_string(x_pos, y, part_text[0...visible_len], fg: "\e[1;36m")
-            end
-          end
-        end
-      end
-    end
-
-    def draw_footer(render_time = nil)
-      # フッタは最下行に表示
-      footer_line = @screen_height - FOOTER_HEIGHT + 1
-      print "\e[#{footer_line};1H"
-
-      if @keybind_handler.filter_active?
-        if @keybind_handler.instance_variable_get(:@filter_mode)
-          help_text = "Filter mode: Type to filter, ESC to clear, Enter to apply, Backspace to delete"
-        else
-          help_text = "Filtered view active - Space to edit filter, ESC to clear filter"
-        end
-        # フィルタモードでは通常のフッタを表示
-        footer_content = help_text.ljust(@screen_width)[0...@screen_width]
-        print "\e[7m#{footer_content}\e[0m"
-      else
-        # 通常モードではブックマーク一覧、ステータス情報、?:helpを1行に表示
-        # ブックマークをキャッシュ（毎フレームのファイルI/Oを回避）
-        current_time = Time.now
-        if @cached_bookmarks.nil? || @cached_bookmark_time.nil? || (current_time - @cached_bookmark_time) > @bookmark_cache_ttl
-          require_relative 'bookmark'
-          bookmark = Bookmark.new
-          @cached_bookmarks = bookmark.list
-          @cached_bookmark_time = current_time
-        end
-        bookmarks = @cached_bookmarks
-
-        # 起動ディレクトリを取得
-        start_dir = @directory_listing&.start_directory
-        start_dir_name = if start_dir
-                           File.basename(start_dir)
-                         else
-                           "start"
-                         end
-
-        # ブックマーク一覧を作成（0.起動dir を先頭に追加）
-        bookmark_parts = ["0.#{start_dir_name}"]
-        unless bookmarks.empty?
-          bookmark_parts.concat(bookmarks.take(9).map.with_index(1) { |bm, idx| "#{idx}.#{bm[:name]}" })
-        end
-        bookmark_text = bookmark_parts.join(" │ ")
-
-        # フッタ全体を構築（ブックマーク左寄せ）
-        footer_content = bookmark_text.ljust(@screen_width)[0...@screen_width]
-        print "\e[90m#{footer_content}\e[0m"
-      end
-    end
+    private
 
     # ノンブロッキング入力処理（ゲームループ用）
     # IO.selectでタイムアウト付きで入力をチェック
@@ -1112,83 +465,14 @@ module Rufio
       # 入力があったことを返す
       true
     end
-
-    def handle_input
-      begin
-        input = STDIN.getch
-      rescue Errno::ENOTTY, Errno::ENODEV
-        # ターミナルでない環境（IDE等）では標準入力を使用
-        print "\nOperation: "
-        input = STDIN.gets
-        return 'q' if input.nil?
-        input = input.chomp.downcase
-        return input[0] if input.length > 0
-
-        return 'q'
-      end
-
-      # コマンドモードがアクティブな場合は、エスケープシーケンス処理をスキップ
-      # ESCキーをそのまま handle_command_input に渡す
-      if @command_mode_active
-        handle_command_input(input)
-        return
-      end
-
-      # 特殊キーの処理（コマンドモード外のみ）
-      if input == "\e"
-        # エスケープシーケンスの処理
-        next_char = begin
-          STDIN.read_nonblock(1)
-        rescue StandardError
-          nil
-        end
-        if next_char == '['
-          arrow_key = begin
-            STDIN.read_nonblock(1)
-          rescue StandardError
-            nil
-          end
-          input = case arrow_key
-                  when 'A'  # 上矢印
-                    'k'
-                  when 'B'  # 下矢印
-                    'j'
-                  when 'C'  # 右矢印
-                    'l'
-                  when 'D'  # 左矢印
-                    'h'
-                  else
-                    "\e" # ESCキー（そのまま保持）
-                  end
-        else
-          input = "\e" # ESCキー（そのまま保持）
-        end
-      end
-
-      # キーバインドハンドラーに処理を委譲
-      result = @keybind_handler.handle_key(input)
-
-      # 外部ターミナルアプリ（vim等）から戻った後は画面全体を再描画
-      if result == :needs_refresh
-        refresh_display
-      end
-
-      # 終了処理（qキーのみ、確認ダイアログの結果を確認）
-      if input == 'q' && result == true
-        @running = false
-      end
-    end
-
     # Tabキー: 次のブックマークへ循環移動
     def handle_tab_key
       next_idx = @keybind_handler.goto_next_bookmark
       if next_idx
         # display_index: 0=start_dir, 1..9=bookmarks（next_idx は 0-based bookmarks 配列）
-        @highlighted_bookmark_index = next_idx + 1
-        @highlighted_bookmark_time = Time.now
+        @ui_renderer.set_highlighted_bookmark(next_idx + 1)
         # ブックマークキャッシュを即時クリア（移動先を反映させる）
-        @cached_bookmarks = nil
-        @cached_bookmark_time = nil
+        @ui_renderer.clear_bookmark_cache
       end
     end
 

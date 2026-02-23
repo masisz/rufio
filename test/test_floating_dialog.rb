@@ -6,7 +6,13 @@ require_relative 'test_helper'
 class TestFloatingDialog < Minitest::Test
   def setup
     @dialog_renderer = Rufio::DialogRenderer.new
-    @keybind_handler = Rufio::KeybindHandler.new
+    @directory_listing = Rufio::DirectoryListing.new(Dir.pwd)
+    @file_operations = Rufio::FileOperations.new
+    @nav_controller = Rufio::NavigationController.new(@directory_listing, Rufio::FilterManager.new)
+    @selection_manager = Rufio::SelectionManager.new
+    @file_op_controller = Rufio::FileOperationController.new(
+      @directory_listing, @file_operations, @dialog_renderer, @nav_controller, @selection_manager
+    )
   end
 
   def test_display_width_calculation
@@ -50,7 +56,7 @@ class TestFloatingDialog < Minitest::Test
         STDIN.stub :getch, 'y' do
           # メソッドが正常に呼び出せることを確認（例外が発生しないことを確認）
           begin
-            @keybind_handler.send(:show_deletion_result, 3, 3, [])
+            @file_op_controller.send(:show_deletion_result, 3, 3, [])
             result = true
           rescue StandardError
             result = false
@@ -70,7 +76,7 @@ class TestFloatingDialog < Minitest::Test
       @dialog_renderer.stub :clear_area, nil do
         STDIN.stub :getch, 'n' do
           begin
-            @keybind_handler.send(:show_deletion_result, 1, 3, error_messages)
+            @file_op_controller.send(:show_deletion_result, 1, 3, error_messages)
             result = true
           rescue StandardError
             result = false

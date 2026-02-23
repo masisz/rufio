@@ -29,13 +29,6 @@ module Rufio
       @ui.instance_variable_set(:@screen_width, SCREEN_WIDTH)
       @ui.instance_variable_set(:@test_mode, false)
       @ui.instance_variable_set(:@background_executor, nil)
-      @ui.instance_variable_set(:@completion_lamp_message, nil)
-      @ui.instance_variable_set(:@completion_lamp_time, nil)
-
-      # ブックマークキャッシュを直接注入（ファイルI/Oを回避）
-      bookmarks = @bookmark.list
-      @ui.instance_variable_set(:@cached_bookmarks, bookmarks)
-      @ui.instance_variable_set(:@cached_bookmark_time, Time.now)
 
       # keybind_handler スタブ
       keybind_handler = Object.new
@@ -49,6 +42,19 @@ module Rufio
       dir_listing.define_singleton_method(:start_directory) { temp_dir }
       @ui.instance_variable_set(:@directory_listing, dir_listing)
 
+      # UIRenderer に依存を注入
+      ur = @ui.ui_renderer
+      ur.keybind_handler = keybind_handler
+      ur.directory_listing = dir_listing
+      ur.instance_variable_set(:@screen_width, SCREEN_WIDTH)
+      ur.instance_variable_set(:@background_executor, nil)
+      ur.instance_variable_set(:@test_mode, false)
+
+      # ブックマークキャッシュを直接注入（ファイルI/Oを回避）
+      bookmarks = @bookmark.list
+      ur.instance_variable_set(:@cached_bookmarks, bookmarks)
+      ur.instance_variable_set(:@cached_bookmark_time, Time.now)
+
       @screen = Screen.new(SCREEN_WIDTH, 1)
     end
 
@@ -58,10 +64,9 @@ module Rufio
 
     # ハイライトなし → 全て gray (e[90m)
     def test_no_highlight_renders_all_gray
-      @ui.instance_variable_set(:@highlighted_bookmark_index, nil)
-      @ui.instance_variable_set(:@highlighted_bookmark_time, nil)
+      @ui.ui_renderer.clear_highlighted_bookmark
 
-      @ui.send(:draw_footer_to_buffer, @screen, 0)
+      @ui.ui_renderer.draw_footer_to_buffer(@screen, 0)
 
       # "1.dir_a" の先頭文字はグレー
       x = bookmark_x_pos(0)  # "0.tmpdir" の後
@@ -71,10 +76,9 @@ module Rufio
     # ハイライト中（500ms 以内）→ ハイライト対象はシアン色
     def test_highlight_within_duration_renders_cyan
       # display_index=1 は "1.dir_a"
-      @ui.instance_variable_set(:@highlighted_bookmark_index, 1)
-      @ui.instance_variable_set(:@highlighted_bookmark_time, Time.now)
+      @ui.ui_renderer.set_highlighted_bookmark(1)
 
-      @ui.send(:draw_footer_to_buffer, @screen, 0)
+      @ui.ui_renderer.draw_footer_to_buffer(@screen, 0)
 
       x = bookmark_x_pos(1)
       cell = @screen.get_cell(x, 0)
@@ -84,10 +88,10 @@ module Rufio
 
     # ハイライト期限切れ（500ms 超過）→ gray に戻る
     def test_highlight_expired_renders_gray
-      @ui.instance_variable_set(:@highlighted_bookmark_index, 1)
-      @ui.instance_variable_set(:@highlighted_bookmark_time, Time.now - 1.0)  # 1秒前
+      @ui.ui_renderer.set_highlighted_bookmark(1)
+      @ui.ui_renderer.instance_variable_set(:@highlighted_bookmark_time, Time.now - 1.0)  # 1秒前
 
-      @ui.send(:draw_footer_to_buffer, @screen, 0)
+      @ui.ui_renderer.draw_footer_to_buffer(@screen, 0)
 
       x = bookmark_x_pos(1)
       cell = @screen.get_cell(x, 0)
@@ -96,37 +100,34 @@ module Rufio
 
     # display_index=0 は "0.start_dir" → ハイライト可能
     def test_highlight_index_zero_renders_start_dir_cyan
-      @ui.instance_variable_set(:@highlighted_bookmark_index, 0)
-      @ui.instance_variable_set(:@highlighted_bookmark_time, Time.now)
+      @ui.ui_renderer.set_highlighted_bookmark(0)
 
-      @ui.send(:draw_footer_to_buffer, @screen, 0)
+      @ui.ui_renderer.draw_footer_to_buffer(@screen, 0)
 
       cell = @screen.get_cell(0, 0)  # "0.xxx" は x=0 から始まる
       assert_equal "\e[1;36m", cell[:fg], "index=0 のハイライトはシアン色であるべき"
     end
 
-    # ハイライト期限切れ → check_bookmark_highlight_expired? が true を返す
+    # ハイライト期限切れ → bookmark_highlight_expired? が true を返す
     def test_check_bookmark_highlight_expired_returns_true_when_expired
-      @ui.instance_variable_set(:@highlighted_bookmark_index, 1)
-      @ui.instance_variable_set(:@highlighted_bookmark_time, Time.now - 1.0)
+      @ui.ui_renderer.set_highlighted_bookmark(1)
+      @ui.ui_renderer.instance_variable_set(:@highlighted_bookmark_time, Time.now - 1.0)
 
-      assert @ui.send(:bookmark_highlight_expired?), "期限切れ時は true を返すべき"
+      assert @ui.ui_renderer.bookmark_highlight_expired?, "期限切れ時は true を返すべき"
     end
 
-    # ハイライト中 → check_bookmark_highlight_expired? が false を返す
+    # ハイライト中 → bookmark_highlight_expired? が false を返す
     def test_check_bookmark_highlight_expired_returns_false_when_active
-      @ui.instance_variable_set(:@highlighted_bookmark_index, 1)
-      @ui.instance_variable_set(:@highlighted_bookmark_time, Time.now)
+      @ui.ui_renderer.set_highlighted_bookmark(1)
 
-      refute @ui.send(:bookmark_highlight_expired?), "ハイライト中は false を返すべき"
+      refute @ui.ui_renderer.bookmark_highlight_expired?, "ハイライト中は false を返すべき"
     end
 
-    # ハイライトなし → check_bookmark_highlight_expired? が false を返す
+    # ハイライトなし → bookmark_highlight_expired? が false を返す
     def test_check_bookmark_highlight_expired_returns_false_when_no_highlight
-      @ui.instance_variable_set(:@highlighted_bookmark_index, nil)
-      @ui.instance_variable_set(:@highlighted_bookmark_time, nil)
+      @ui.ui_renderer.clear_highlighted_bookmark
 
-      refute @ui.send(:bookmark_highlight_expired?), "ハイライトなし時は false を返すべき"
+      refute @ui.ui_renderer.bookmark_highlight_expired?, "ハイライトなし時は false を返すべき"
     end
 
     private
