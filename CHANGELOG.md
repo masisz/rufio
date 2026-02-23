@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Bookmark Jump Highlight**: When cycling bookmarks with `Tab`, the target bookmark in the top bar is highlighted in cyan for 500ms, then automatically fades back to gray
+
+### Changed
+- **UI Layout**: Merged mode tabs and title bar into a single combined bottom row
+  - **Top bar (y=0)**: Bookmark list `0.start │ 1.name │ 2.name ...`, job status, FPS (test mode)
+  - **Bottom bar (y=h-1)**: Mode tabs + current path + version — all in one line
+  - Powerline-style separators: active tab gets a `\uE0B0` cyan exit arrow; version section uses `\uE0B2` cyan entry arrow with cyan background and black bold text
+- **`Tab` key**: Changed from mode cycling to **bookmark cycling** (Files mode only)
+  - In Files mode: jump to next registered bookmark in sequence (wraps to first)
+  - In other modes (Logs / Jobs / Help): no action
+  - Mode switching is done via `J` / `L` / `?` keys and `Shift+Tab`
+
+### Fixed
+- **zoxide 2-digit input**: Fixed a bug where pressing a single digit in the zoxide history dialog immediately navigated, making it impossible to enter 2-digit numbers (e.g., `12`)
+- **Jobs mode tab highlight**: Fixed active tab not highlighting when entering Jobs mode from Logs or Help mode
+- **Jobs mode navigation**: Fixed inability to switch away from Jobs mode using `L`, `?` keys
+
 ## [0.80.0] - 2026-02-21
 
 ### Added

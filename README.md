@@ -123,6 +123,7 @@ rufio /path/to  # Launch in specified directory
 | `B` | Bookmark menu |
 | `0` | Return to startup directory |
 | `1-9` | Jump to bookmark |
+| `Tab` | Cycle to next bookmark (Files mode only) |
 | `z` | zoxide history |
 
 ### Tool Runtime
@@ -133,7 +134,6 @@ rufio /path/to  # Launch in specified directory
 | `J` | Job mode |
 | `L` | View execution logs |
 | `?` | Help |
-| `Tab` | Switch mode (Files → Logs → Jobs → Help) |
 | `Shift+Tab` | Switch mode (reverse) |
 
 ## Command Mode
