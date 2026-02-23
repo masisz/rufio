@@ -89,8 +89,9 @@ class TestConfigLoader < Minitest::Test
   def test_keybinds_method
     keybinds = Rufio::ConfigLoader.keybinds
     assert_instance_of Hash, keybinds
-    assert_equal %w[q ESC], keybinds[:quit]
-    assert_equal %w[o SPACE], keybinds[:open_file]
+    # Phase 6: 新フォーマット（action => 単一キー文字列）
+    assert_equal 'q', keybinds[:quit]
+    assert_equal 'o', keybinds[:open_file]
   end
 
   def test_command_history_size_custom

@@ -57,6 +57,12 @@ module Rufio
       @dialog_renderer = DialogRenderer.new
       @bookmark_manager = BookmarkManager.new(Bookmark.new, @dialog_renderer)
       @zoxide_integration = ZoxideIntegration.new(@dialog_renderer)
+      @notification_manager = NotificationManager.new
+      @script_path_manager = ScriptPathManager.new(Config::SCRIPT_PATHS_YML)
+
+      # Job mode
+      @job_manager = JobManager.new(notification_manager: @notification_manager)
+      @job_mode = JobMode.new(job_manager: @job_manager)
 
       # NavigationController（移動・フィルタ・プレビュースクロールを担当）
       @nav_controller = NavigationController.new(nil, @filter_manager)
@@ -84,13 +90,8 @@ module Rufio
       @pre_log_viewer_directory = nil
       @log_dir = File.join(Dir.home, '.config', 'rufio', 'logs')
 
-      # Job mode
-      @notification_manager = NotificationManager.new
-      @job_manager = JobManager.new(notification_manager: @notification_manager)
-      @job_mode = JobMode.new(job_manager: @job_manager)
-
-      # Script path manager (新形式: script_paths.yml)
-      @script_path_manager = ScriptPathManager.new(Config::SCRIPT_PATHS_YML)
+      # キーマップを構築（ConfigLoader.keybinds から逆引きマップを作成）
+      build_key_map
     end
 
     def set_directory_listing(directory_listing)
@@ -154,88 +155,29 @@ module Rufio
 
       entries = get_active_entries
 
-      case key
-      when 'j'
-        @nav_controller.move_down(entries)
-      when 'k'
-        @nav_controller.move_up
-      when 'h'
-        navigate_parent_with_restriction
-      when 'l'  # l - navigate into directory
-        @nav_controller.navigate_enter(current_entry, @in_help_mode, @in_log_viewer_mode)
-      when "\r", "\n"  # Enter - focus preview pane or navigate
-        @nav_controller.handle_enter_key(current_entry, @in_help_mode, @in_log_viewer_mode)
-      when 'g'
-        @nav_controller.move_to_top
-      when 'G'
-        @nav_controller.move_to_bottom(entries)
-      when 'R'  # R - refresh
-        @nav_controller.refresh
-      when 'r'  # r - rename file/directory
-        @file_op_controller.rename_current_file(current_entry)
-      when 'd'  # d - delete file/directory with confirmation
-        @file_op_controller.delete_current_file_with_confirmation(current_entry, method(:get_active_entries))
-      when 'o'  # o
-        @nav_controller.open_current_file(current_entry)
-      when 'e'  # e - open directory in file explorer
-        @nav_controller.open_directory_in_explorer
-      when 'f'  # f - filter files
-        if @filter_manager.filter_active?
-          # フィルタが設定されている場合は再編集モードに入る
-          @filter_manager.restart_filter_mode(@directory_listing.list_entries)
-        else
-          # 新規フィルターモード開始
-          @nav_controller.start_filter_mode
-        end
-      when ' ' # Space - toggle selection
-        toggle_selection
-      when "\e" # ESC
-        if @filter_manager.filter_active?
-          # フィルタが設定されている場合はクリア
-          @nav_controller.clear_filter_mode
-          true
-        else
-          false
-        end
-      when 'q'  # q
-        exit_request
-      when '/'  # /
-        fzf_search
-      when 's'  # s - file name search with fzf
-        fzf_search
-      when 'F'  # F - file content search with rga
-        rga_search
-      when 'a'  # a
-        @file_op_controller.create_file
-      when 'A'  # A
-        @file_op_controller.create_directory
-      when 'm'  # m - move selected files to current directory
-        @file_op_controller.move_selected_to_current
-      when 'c'  # c - copy selected files to current directory
-        @file_op_controller.copy_selected_to_current
-      when 'x'  # x - delete selected files
-        @file_op_controller.delete_selected_files
-      when 'J'  # J - job mode
-        enter_job_mode
-      when 'b'  # b - add bookmark
-        add_bookmark
-      when 'B'  # B - bookmark menu (with script paths)
-        show_bookmark_menu
-      when 'z'  # z - zoxide history navigation
-        show_zoxide_menu
-      when '0'  # 0 - go to start directory
-        goto_start_directory
-      when '1', '2', '3', '4', '5', '6', '7', '8', '9'  # number keys - go to bookmark
-        goto_bookmark(key.to_i)
-      when '?'  # ? - enter help mode
-        enter_help_mode
-      when 'L'  # L - enter log viewer mode
-        enter_log_viewer_mode
-      when ':'  # : - command mode
-        activate_command_mode
-      else
-        false # #{ConfigLoader.message('keybind.invalid_key')}
+      # Enter キー（特殊処理: プレビューペインフォーカスまたはナビゲーション）
+      if key == "\r" || key == "\n"
+        return @nav_controller.handle_enter_key(current_entry, @in_help_mode, @in_log_viewer_mode)
       end
+
+      # ESC キー（特殊処理: フィルタクリア）
+      if key == "\e"
+        if @filter_manager.filter_active?
+          @nav_controller.clear_filter_mode
+          return true
+        else
+          return false
+        end
+      end
+
+      # 数字キー（1-9）: ブックマーク番号によるジャンプ（設定化の対象外）
+      return goto_bookmark(key.to_i) if key.match?(/^[1-9]$/)
+
+      # キーマップでアクションを検索してdispatch
+      action = @key_map[key]
+      return false unless action
+
+      dispatch(action, entries)
     end
 
     def select_index(index)
@@ -494,6 +436,59 @@ module Rufio
 
     def navigate_parent
       @nav_controller.navigate_parent
+    end
+
+    # キーマップを構築（ConfigLoader.keybinds の逆引きマップ: key_char => action_symbol）
+    def build_key_map
+      @key_map = ConfigLoader.keybinds.each_with_object({}) do |(action, key), map|
+        map[key.to_s] = action
+      end
+    end
+
+    def key_map
+      @key_map
+    end
+
+    # アクションシンボルに対応する処理を実行
+    def dispatch(action, entries)
+      case action
+      when :move_up         then @nav_controller.move_up
+      when :move_down       then @nav_controller.move_down(entries)
+      when :navigate_parent then navigate_parent_with_restriction
+      when :navigate_enter  then @nav_controller.navigate_enter(current_entry, @in_help_mode, @in_log_viewer_mode)
+      when :top             then @nav_controller.move_to_top
+      when :bottom          then @nav_controller.move_to_bottom(entries)
+      when :refresh         then @nav_controller.refresh
+      when :open_file       then @nav_controller.open_current_file(current_entry)
+      when :open_explorer   then @nav_controller.open_directory_in_explorer
+      when :rename          then @file_op_controller.rename_current_file(current_entry)
+      when :delete          then @file_op_controller.delete_current_file_with_confirmation(current_entry, method(:get_active_entries))
+      when :create_file     then @file_op_controller.create_file
+      when :create_dir      then @file_op_controller.create_directory
+      when :move_selected   then @file_op_controller.move_selected_to_current
+      when :copy_selected   then @file_op_controller.copy_selected_to_current
+      when :delete_selected then @file_op_controller.delete_selected_files
+      when :select          then toggle_selection
+      when :filter
+        if @filter_manager.filter_active?
+          @filter_manager.restart_filter_mode(@directory_listing.list_entries)
+        else
+          @nav_controller.start_filter_mode
+        end
+      when :fzf_search, :fzf_search_alt then fzf_search
+      when :rga_search      then rga_search
+      when :add_bookmark    then add_bookmark
+      when :bookmark_menu   then show_bookmark_menu
+      when :zoxide          then show_zoxide_menu
+      when :start_dir       then goto_start_directory
+      when :job_mode        then enter_job_mode
+      when :help            then enter_help_mode
+      when :log_viewer      then enter_log_viewer_mode
+      when :command_mode    then activate_command_mode
+      when :quit            then exit_request
+      else
+        false
+      end
     end
 
     def exit_request

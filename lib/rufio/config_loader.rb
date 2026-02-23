@@ -38,8 +38,52 @@ module Rufio
         load_config[:colors]
       end
 
+      # デフォルトキーバインド（全アクションの単一キー定義）
+      def default_keybinds
+        {
+          # ナビゲーション
+          move_up:         'k',
+          move_down:       'j',
+          navigate_parent: 'h',
+          navigate_enter:  'l',
+          top:             'g',
+          bottom:          'G',
+          refresh:         'R',
+          # ファイル操作
+          open_file:       'o',
+          rename:          'r',
+          delete:          'd',
+          create_file:     'a',
+          create_dir:      'A',
+          move_selected:   'm',
+          copy_selected:   'c',
+          delete_selected: 'x',
+          open_explorer:   'e',
+          # 選択・検索
+          select:          ' ',
+          filter:          'f',
+          fzf_search:      's',
+          fzf_search_alt:  '/',
+          rga_search:      'F',
+          # ブックマーク
+          add_bookmark:    'b',
+          bookmark_menu:   'B',
+          zoxide:          'z',
+          start_dir:       '0',
+          # モード・ツール
+          job_mode:        'J',
+          help:            '?',
+          log_viewer:      'L',
+          command_mode:    ':',
+          quit:            'q'
+        }.freeze
+      end
+
       def keybinds
-        load_config[:keybinds]
+        raw_user_keybinds = load_config[:keybinds] || {}
+        # 新フォーマット（単一文字列値）のみ受け入れ、古いフォーマット（配列値）は無視
+        user_keybinds = raw_user_keybinds.select { |_, v| v.is_a?(String) }
+        default_keybinds.merge(user_keybinds)
       end
 
       def language
@@ -228,7 +272,7 @@ module Rufio
         config = {
           applications: safe_const_get(:APPLICATIONS, default_config[:applications]),
           colors: safe_const_get(:COLORS, default_config[:colors]),
-          keybinds: safe_const_get(:KEYBINDS, default_config[:keybinds])
+          keybinds: safe_const_get(:KEYBINDS, {})
         }
 
         if Object.const_defined?(:LANGUAGE)
@@ -273,18 +317,7 @@ module Rufio
             selected: { hsl: [50, 90, 70] },
             preview: { hsl: [180, 60, 65] }
           },
-          keybinds: {
-            quit: %w[q ESC],
-            up: %w[k UP],
-            down: %w[j DOWN],
-            left: %w[h LEFT],
-            right: %w[l RIGHT ENTER],
-            top: %w[g],
-            bottom: %w[G],
-            refresh: %w[r],
-            search: %w[/],
-            open_file: %w[o SPACE]
-          }
+          keybinds: {}  # ユーザーの上書きのみ格納（デフォルトはdefault_keybindsを参照）
         }
       end
     end
