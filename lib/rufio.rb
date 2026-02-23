@@ -46,6 +46,7 @@ require_relative 'rufio/parallel_scanner'
 require_relative 'rufio/screen'
 require_relative 'rufio/renderer'
 require_relative 'rufio/tab_mode_manager'
+require_relative 'rufio/ui_renderer'
 
 # ジョブ管理システム
 require_relative 'rufio/task_status'

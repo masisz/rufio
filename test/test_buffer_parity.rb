@@ -298,13 +298,20 @@ class TestBufferParity < Minitest::Test
     terminal_ui.instance_variable_set(:@file_preview, @file_preview)
     terminal_ui.instance_variable_set(:@screen_width, @width)
     terminal_ui.instance_variable_set(:@screen_height, @height)
-    terminal_ui.instance_variable_set(:@tab_mode_manager, Rufio::TabModeManager.new)
     terminal_ui.instance_variable_set(:@dialog_renderer, Rufio::DialogRenderer.new)
-    terminal_ui.instance_variable_set(:@preview_cache, {})
-    terminal_ui.instance_variable_set(:@last_preview_path, nil)
     terminal_ui.instance_variable_set(:@in_job_mode, false)
     terminal_ui.instance_variable_set(:@cached_bookmarks, [])
     terminal_ui.instance_variable_set(:@cached_bookmark_time, Time.now)
+
+    # UIRenderer に依存を注入
+    ur = terminal_ui.ui_renderer
+    ur.keybind_handler = @keybind_handler
+    ur.directory_listing = @directory_listing
+    ur.file_preview = @file_preview
+    ur.instance_variable_set(:@screen_width, @width)
+    ur.instance_variable_set(:@screen_height, @height)
+    ur.instance_variable_set(:@cached_bookmarks, [])
+    ur.instance_variable_set(:@cached_bookmark_time, Time.now)
 
     terminal_ui
   end
@@ -316,12 +323,21 @@ class TestBufferParity < Minitest::Test
     terminal_ui.instance_variable_set(:@file_preview, @file_preview)
     terminal_ui.instance_variable_set(:@screen_width, @width)
     terminal_ui.instance_variable_set(:@screen_height, @height)
-    terminal_ui.instance_variable_set(:@tab_mode_manager, Rufio::TabModeManager.new)
     terminal_ui.instance_variable_set(:@dialog_renderer, Rufio::DialogRenderer.new)
-    terminal_ui.instance_variable_set(:@preview_cache, {})
     terminal_ui.instance_variable_set(:@in_job_mode, false)
     terminal_ui.instance_variable_set(:@cached_bookmarks, [])
     terminal_ui.instance_variable_set(:@cached_bookmark_time, Time.now)
+
+    # UIRenderer に依存を注入
+    ur = terminal_ui.ui_renderer
+    ur.keybind_handler = handler
+    ur.directory_listing = listing
+    ur.file_preview = @file_preview
+    ur.instance_variable_set(:@screen_width, @width)
+    ur.instance_variable_set(:@screen_height, @height)
+    ur.instance_variable_set(:@cached_bookmarks, [])
+    ur.instance_variable_set(:@cached_bookmark_time, Time.now)
+
     terminal_ui
   end
 
@@ -332,12 +348,21 @@ class TestBufferParity < Minitest::Test
     terminal_ui.instance_variable_set(:@file_preview, @file_preview)
     terminal_ui.instance_variable_set(:@screen_width, width)
     terminal_ui.instance_variable_set(:@screen_height, height)
-    terminal_ui.instance_variable_set(:@tab_mode_manager, Rufio::TabModeManager.new)
     terminal_ui.instance_variable_set(:@dialog_renderer, Rufio::DialogRenderer.new)
-    terminal_ui.instance_variable_set(:@preview_cache, {})
     terminal_ui.instance_variable_set(:@in_job_mode, false)
     terminal_ui.instance_variable_set(:@cached_bookmarks, [])
     terminal_ui.instance_variable_set(:@cached_bookmark_time, Time.now)
+
+    # UIRenderer に依存を注入
+    ur = terminal_ui.ui_renderer
+    ur.keybind_handler = @keybind_handler
+    ur.directory_listing = @directory_listing
+    ur.file_preview = @file_preview
+    ur.instance_variable_set(:@screen_width, width)
+    ur.instance_variable_set(:@screen_height, height)
+    ur.instance_variable_set(:@cached_bookmarks, [])
+    ur.instance_variable_set(:@cached_bookmark_time, Time.now)
+
     terminal_ui
   end
 

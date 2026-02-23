@@ -90,7 +90,16 @@ module Rufio
 
       # Tab mode manager
       @tab_mode_manager = TabModeManager.new
+
+      # UIRenderer（描画ロジックを担当）
+      @ui_renderer = UIRenderer.new(
+        screen_width: @screen_width,
+        screen_height: @screen_height,
+        test_mode: @test_mode
+      )
     end
+
+    attr_reader :ui_renderer
 
     def start(directory_listing, keybind_handler, file_preview, background_executor = nil)
       @directory_listing = directory_listing
@@ -99,6 +108,12 @@ module Rufio
       @background_executor = background_executor
       @keybind_handler.set_directory_listing(@directory_listing)
       @keybind_handler.set_terminal_ui(self)
+
+      # UIRenderer に依存を注入
+      @ui_renderer.keybind_handler = @keybind_handler
+      @ui_renderer.directory_listing = @directory_listing
+      @ui_renderer.file_preview = @file_preview
+      @ui_renderer.background_executor = @background_executor
 
       # command_mode_ui にも terminal_ui を設定
       @command_mode_ui.set_terminal_ui(self)
@@ -459,76 +474,17 @@ module Rufio
 
     # ジョブ一覧をバッファに描画
     def draw_job_list_to_buffer(screen, height)
-      return unless @job_manager
-
-      jobs = @job_manager.jobs
-      selected_index = @job_mode_instance&.selected_index || 0
-
-      (0...height).each do |i|
-        line_num = i + CONTENT_START_LINE
-
-        if i < jobs.length
-          job = jobs[i]
-          draw_job_line_to_buffer(screen, job, i == selected_index, line_num)
-        else
-          # 空行
-          screen.put_string(0, line_num, ' ' * @screen_width)
-        end
-      end
+      @ui_renderer.draw_job_list_to_buffer(screen, height, @job_manager, @job_mode_instance)
     end
 
     # ジョブ行をバッファに描画
     def draw_job_line_to_buffer(screen, job, is_selected, y)
-      icon = job.status_icon
-      name = job.name
-      path = "(#{job.path})"
-      duration = job.formatted_duration
-      duration_text = duration.empty? ? "" : "[#{duration}]"
-
-      status_text = case job.status
-                    when :running then "Running"
-                    when :completed then "Done"
-                    when :failed then "Failed"
-                    when :waiting then "Waiting"
-                    when :cancelled then "Cancelled"
-                    else ""
-                    end
-
-      # ステータスに応じた色
-      status_color = case job.status
-                     when :running then "\e[33m"    # Yellow
-                     when :completed then "\e[32m"  # Green
-                     when :failed then "\e[31m"     # Red
-                     else "\e[37m"                  # White
-                     end
-
-      # 行を構築
-      line_content = "#{icon} #{name} #{path}".ljust(40)
-      line_content += "#{duration_text.ljust(12)} #{status_text}"
-      line_content = line_content[0...@screen_width].ljust(@screen_width)
-
-      if is_selected
-        # 選択中: 反転表示
-        line_content.each_char.with_index do |char, x|
-          screen.put(x, y, char, fg: "\e[30m", bg: "\e[47m")
-        end
-      else
-        # 非選択: ステータス色
-        line_content.each_char.with_index do |char, x|
-          screen.put(x, y, char, fg: status_color)
-        end
-      end
+      @ui_renderer.draw_job_line_to_buffer(screen, job, is_selected, y)
     end
 
     # ジョブモード用フッターをバッファに描画
     def draw_job_footer_to_buffer(screen, y)
-      job_count = @job_manager&.job_count || 0
-      help_text = "[Space] View Log | [x] Cancel | [Tab] Switch Mode | Jobs: #{job_count}"
-      footer_content = help_text.center(@screen_width)[0...@screen_width]
-
-      footer_content.each_char.with_index do |char, x|
-        screen.put(x, y, char, fg: "\e[30m", bg: "\e[47m")
-      end
+      @ui_renderer.draw_job_footer_to_buffer(screen, y, @job_manager)
     end
 
     def draw_screen_with_notification(notification_message)
@@ -602,93 +558,7 @@ module Rufio
 
     # Phase 3: Screenバッファにモードタブを描画
     def draw_mode_tabs_to_buffer(screen, y)
-      # タブモードマネージャの状態を同期
-      sync_tab_mode_with_keybind_handler
-
-      current_x = 0
-      modes = @tab_mode_manager.available_modes
-      labels = @tab_mode_manager.mode_labels
-      keys = @tab_mode_manager.mode_keys
-      current_mode = @tab_mode_manager.current_mode
-
-      modes.each_with_index do |mode, index|
-        key = keys[mode]
-        label = key ? " #{key}:#{labels[mode]} " : " #{labels[mode]} "
-
-        if mode == current_mode
-          # 現在のモード: シアン背景 + 黒文字 + 太字
-          label.each_char do |char|
-            screen.put(current_x, y, char, fg: "\e[30m\e[1m", bg: "\e[46m")
-            current_x += 1
-          end
-        else
-          # 非選択モード: グレー文字
-          label.each_char do |char|
-            screen.put(current_x, y, char, fg: "\e[90m")
-            current_x += 1
-          end
-        end
-
-        # セパレータ: アクティブタブの後はPowerline塗りつぶし三角、それ以外は >
-        if index < modes.length - 1
-          if mode == current_mode
-            screen.put(current_x, y, "\uE0B0", fg: "\e[36m")
-          else
-            screen.put(current_x, y, TAB_SEPARATOR, fg: "\e[90m")
-          end
-          current_x += 1
-        end
-      end
-
-      # パスとバージョン情報を行末に追加
-      current_path = @directory_listing.current_path
-      version_str = " rufio v#{VERSION}"
-      version_w = version_str.length  # ASCII-only
-
-      remaining_w = @screen_width - current_x
-      # 必要な最小幅:  (1) + " x " (3) +  (1) + version_w
-      path_display_w = remaining_w - 2 - version_w
-
-      if path_display_w >= 3
-        # 最後のタブ→パスの区切り（最後のモードがアクティブかで色が変わる）
-        arrow_fg = modes.last == current_mode ? "\e[36m" : "\e[90m"
-        screen.put(current_x, y, TAB_SEPARATOR, fg: arrow_fg)
-        current_x += 1
-
-        # パスを描画（path_end までの領域）
-        path_end = @screen_width - 1 - version_w
-        path_str = " #{current_path} "
-        path_str.each_char do |char|
-          break if current_x >= path_end
-          char_w = TextUtils.display_width(char)
-          break if current_x + char_w > path_end
-          screen.put(current_x, y, char, fg: "\e[90m")
-          current_x += char_w
-        end
-
-        # path_end まで空白で埋める
-        while current_x < path_end
-          screen.put(current_x, y, ' ')
-          current_x += 1
-        end
-
-        # バージョンセパレータ（左向き三角、シアン色でシアン背景に遷移）
-        screen.put(current_x, y, "\uE0B2", fg: "\e[36m")
-        current_x += 1
-
-        # バージョン描画（シアン背景＋黒太字）
-        version_str.each_char do |char|
-          break if current_x >= @screen_width
-          screen.put(current_x, y, char, fg: "\e[30m\e[1m", bg: "\e[46m")
-          current_x += 1
-        end
-      end
-
-      # 残りをスペースで埋める
-      while current_x < @screen_width
-        screen.put(current_x, y, ' ')
-        current_x += 1
-      end
+      @ui_renderer.draw_mode_tabs_to_buffer(screen, y)
     end
 
     # キーバインドハンドラの状態とタブモードを同期
@@ -750,23 +620,7 @@ module Rufio
 
     # Phase 3: Screenバッファにディレクトリリストを描画
     def draw_directory_list_to_buffer(screen, entries, width, height)
-      start_index = [@keybind_handler.current_index - height / 2, 0].max
-
-      (0...height).each do |i|
-        entry_index = start_index + i
-        line_num = i + CONTENT_START_LINE
-
-        if entry_index < entries.length
-          entry = entries[entry_index]
-          is_selected = entry_index == @keybind_handler.current_index
-
-          draw_entry_line_to_buffer(screen, entry, width, is_selected, 0, line_num)
-        else
-          # 空行
-          safe_width = [width - CURSOR_OFFSET, (@screen_width * LEFT_PANEL_RATIO).to_i - CURSOR_OFFSET].min
-          screen.put_string(0, line_num, ' ' * safe_width)
-        end
-      end
+      @ui_renderer.draw_directory_list_to_buffer(screen, entries, width, height)
     end
 
     def draw_directory_list(entries, width, height)
@@ -794,46 +648,7 @@ module Rufio
 
     # Phase 3: Screenバッファにエントリ行を描画
     def draw_entry_line_to_buffer(screen, entry, width, is_selected, x, y)
-      # アイコンと色の設定
-      icon, color = get_entry_display_info(entry)
-
-      # 左ペイン専用の安全な幅を計算
-      safe_width = [width - CURSOR_OFFSET, (@screen_width * LEFT_PANEL_RATIO).to_i - CURSOR_OFFSET].min
-
-      # 選択マークの追加
-      selection_mark = @keybind_handler.is_selected?(entry[:name]) ? "✓ " : "  "
-
-      # ファイル名（必要に応じて切り詰め）
-      name = entry[:name]
-      max_name_length = safe_width - ICON_SIZE_PADDING
-      name = name[0...max_name_length - 3] + '...' if max_name_length > 0 && name.length > max_name_length
-
-      # サイズ情報
-      size_info = format_size(entry[:size])
-
-      # 行の内容を構築
-      content_without_size = "#{selection_mark}#{icon} #{name}"
-      available_for_content = safe_width - size_info.length
-
-      line_content = if available_for_content > 0
-                       content_without_size.ljust(available_for_content) + size_info
-                     else
-                       content_without_size
-                     end
-
-      # 確実に safe_width を超えないよう切り詰め
-      line_content = line_content[0...safe_width]
-
-      # 色を決定
-      if is_selected
-        fg_color = ColorHelper.color_to_selected_ansi(ConfigLoader.colors[:selected])
-        screen.put_string(x, y, line_content, fg: fg_color)
-      elsif @keybind_handler.is_selected?(entry[:name])
-        # 選択されたアイテムは緑背景、黒文字
-        screen.put_string(x, y, line_content, fg: "\e[42m\e[30m")
-      else
-        screen.put_string(x, y, line_content, fg: color)
-      end
+      @ui_renderer.draw_entry_line_to_buffer(screen, entry, width, is_selected, x, y)
     end
 
     def draw_entry_line(entry, width, is_selected)
@@ -881,179 +696,16 @@ module Rufio
     end
 
     def get_entry_display_info(entry)
-      colors = ConfigLoader.colors
-      
-      case entry[:type]
-      when 'directory'
-        color_code = ColorHelper.color_to_ansi(colors[:directory])
-        ['📁', color_code]
-      when 'executable'
-        color_code = ColorHelper.color_to_ansi(colors[:executable])
-        ['⚡', color_code]
-      else
-        case File.extname(entry[:name]).downcase
-        when '.rb'
-          ['💎', "\e[31m"]  # 赤
-        when '.js', '.ts'
-          ['📜', "\e[33m"]  # 黄
-        when '.txt', '.md'
-          color_code = ColorHelper.color_to_ansi(colors[:file])
-          ['📄', color_code]
-        else
-          color_code = ColorHelper.color_to_ansi(colors[:file])
-          ['📄', color_code]
-        end
-      end
+      @ui_renderer.get_entry_display_info(entry)
     end
 
     def format_size(size)
-      return '      ' if size == 0
-
-      if size < KILOBYTE
-        "#{size}B".rjust(6)
-      elsif size < MEGABYTE
-        "#{(size / KILOBYTE.to_f).round(1)}K".rjust(6)
-      elsif size < GIGABYTE
-        "#{(size / MEGABYTE.to_f).round(1)}M".rjust(6)
-      else
-        "#{(size / GIGABYTE.to_f).round(1)}G".rjust(6)
-      end
+      @ui_renderer.format_size(size)
     end
 
     # Phase 3: Screenバッファにファイルプレビューを描画
     def draw_file_preview_to_buffer(screen, selected_entry, width, height, left_offset)
-      # 事前計算
-      cursor_position = left_offset + CURSOR_OFFSET
-      max_chars_from_cursor = @screen_width - cursor_position
-      safe_width = [max_chars_from_cursor - 2, width - 2, 0].max
-
-      # プレビューコンテンツをキャッシュから取得（毎フレームのファイルI/Oを回避）
-      preview_content = nil
-      wrapped_lines = nil
-      highlighted_wrapped_lines = nil
-
-      if selected_entry && selected_entry[:type] == 'file'
-        # キャッシュチェック: 選択ファイルが変わった場合のみプレビューを更新
-        if @last_preview_path != selected_entry[:path]
-          full_preview = @file_preview.preview_file(selected_entry[:path])
-          preview_content = extract_preview_lines(full_preview)
-          @preview_cache[selected_entry[:path]] = {
-            content: preview_content,
-            preview_data: full_preview,
-            highlighted: nil,       # nil = 未取得
-            wrapped: {},
-            highlighted_wrapped: {}
-          }
-          @last_preview_path = selected_entry[:path]
-        else
-          # キャッシュから取得
-          cache_entry = @preview_cache[selected_entry[:path]]
-          preview_content = cache_entry[:content] if cache_entry
-        end
-
-        # bat が利用可能な場合はシンタックスハイライトを取得（非同期）
-        if @syntax_highlighter&.available? && preview_content
-          cache_entry = @preview_cache[selected_entry[:path]]
-          if cache_entry
-            preview_data = cache_entry[:preview_data]
-            if preview_data && preview_data[:type] == 'code' && preview_data[:encoding] == 'UTF-8'
-              # ハイライト行を未取得なら非同期で bat を呼び出す
-              # nil = 未リクエスト、false = リクエスト済み（結果待ち）、Array = 取得済み
-              if cache_entry[:highlighted].nil?
-                # 即座に false をセットしてペンディング状態にする（重複リクエスト防止）
-                cache_entry[:highlighted] = false
-                file_path = selected_entry[:path]
-                @syntax_highlighter.highlight_async(file_path) do |lines|
-                  # バックグラウンドスレッドからキャッシュを更新
-                  if (ce = @preview_cache[file_path])
-                    ce[:highlighted] = lines
-                    ce[:highlighted_wrapped] = {}  # 折り返しキャッシュをクリア
-                  end
-                  @highlight_updated = true  # メインループに再描画を通知
-                end
-                # このフレームはプレーンテキストで表示（次フレームでハイライト表示）
-              end
-
-              highlighted = cache_entry[:highlighted]
-              if highlighted.is_a?(Array) && !highlighted.empty? && safe_width > 0
-                if cache_entry[:highlighted_wrapped][safe_width]
-                  highlighted_wrapped_lines = cache_entry[:highlighted_wrapped][safe_width]
-                else
-                  # 各ハイライト行をトークン化して折り返す
-                  hl_wrapped = highlighted.flat_map do |hl_line|
-                    tokens = AnsiLineParser.parse(hl_line)
-                    tokens.empty? ? [[]] : AnsiLineParser.wrap(tokens, safe_width - 1)
-                  end
-                  cache_entry[:highlighted_wrapped][safe_width] = hl_wrapped
-                  highlighted_wrapped_lines = hl_wrapped
-                end
-              end
-            end
-          end
-        end
-
-        # プレーンテキストの折り返し（ハイライトなしのフォールバック）
-        if preview_content && safe_width > 0 && highlighted_wrapped_lines.nil?
-          cache_entry = @preview_cache[selected_entry[:path]]
-          if cache_entry && cache_entry[:wrapped][safe_width]
-            wrapped_lines = cache_entry[:wrapped][safe_width]
-          else
-            wrapped_lines = TextUtils.wrap_preview_lines(preview_content, safe_width - 1)
-            cache_entry[:wrapped][safe_width] = wrapped_lines if cache_entry
-          end
-        end
-      end
-
-      content_x = cursor_position + 1
-
-      (0...height).each do |i|
-        line_num = i + CONTENT_START_LINE
-
-        # 区切り線
-        screen.put(cursor_position, line_num, '│')
-
-        next if safe_width <= 0
-
-        if selected_entry && i == 0
-          # プレビューヘッダー
-          header = " #{selected_entry[:name]} "
-          header += "[PREVIEW MODE]" if @keybind_handler&.preview_focused?
-          header = TextUtils.truncate_to_width(header, safe_width) if TextUtils.display_width(header) > safe_width
-          remaining_space = safe_width - TextUtils.display_width(header)
-          header += ' ' * remaining_space if remaining_space > 0
-          screen.put_string(content_x, line_num, header)
-
-        elsif i >= 2 && highlighted_wrapped_lines
-          # シンタックスハイライト付きコンテンツ
-          scroll_offset = @keybind_handler&.preview_scroll_offset || 0
-          display_line_index = i - 2 + scroll_offset
-
-          if display_line_index < highlighted_wrapped_lines.length
-            draw_highlighted_line_to_buffer(screen, content_x, line_num,
-                                            highlighted_wrapped_lines[display_line_index], safe_width)
-          else
-            screen.put_string(content_x, line_num, ' ' * safe_width)
-          end
-
-        elsif i >= 2 && wrapped_lines
-          # プレーンテキストコンテンツ
-          scroll_offset = @keybind_handler&.preview_scroll_offset || 0
-          display_line_index = i - 2 + scroll_offset
-
-          content_to_print = if display_line_index < wrapped_lines.length
-                               " #{wrapped_lines[display_line_index] || ''}"
-                             else
-                               ' '
-                             end
-          content_to_print = TextUtils.truncate_to_width(content_to_print, safe_width) if TextUtils.display_width(content_to_print) > safe_width
-          remaining_space = safe_width - TextUtils.display_width(content_to_print)
-          content_to_print += ' ' * remaining_space if remaining_space > 0
-          screen.put_string(content_x, line_num, content_to_print)
-
-        else
-          screen.put_string(content_x, line_num, ' ' * safe_width)
-        end
-      end
+      @ui_renderer.draw_file_preview_to_buffer(screen, selected_entry, width, height, left_offset)
     end
 
     def draw_file_preview(selected_entry, width, height, left_offset)
