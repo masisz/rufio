@@ -4,6 +4,7 @@ require 'shellwords'
 require_relative 'file_opener'
 require_relative 'filter_manager'
 require_relative 'navigation_controller'
+require_relative 'file_operation_controller'
 require_relative 'selection_manager'
 require_relative 'file_operations'
 require_relative 'bookmark_manager'
@@ -13,7 +14,18 @@ require_relative 'logger'
 
 module Rufio
   class KeybindHandler
-    attr_reader :current_index
+    # NavigationController への委譲
+    def current_index
+      @nav_controller.current_index
+    end
+
+    def preview_focused?
+      @nav_controller.preview_focused?
+    end
+
+    def preview_scroll_offset
+      @nav_controller.preview_scroll_offset
+    end
 
     def filter_query
       @filter_manager.filter_query
@@ -32,18 +44,25 @@ module Rufio
     FILESYSTEM_SYNC_DELAY = 0.01  # 10ms wait for filesystem sync
 
     def initialize
-      @current_index = 0
       @directory_listing = nil
       @terminal_ui = nil
       @file_opener = FileOpener.new
 
-      # New manager classes
+      # Manager classes
       @filter_manager = FilterManager.new
       @selection_manager = SelectionManager.new
       @file_operations = FileOperations.new
       @dialog_renderer = DialogRenderer.new
       @bookmark_manager = BookmarkManager.new(Bookmark.new, @dialog_renderer)
       @zoxide_integration = ZoxideIntegration.new(@dialog_renderer)
+
+      # NavigationController（移動・フィルタ・プレビュースクロールを担当）
+      @nav_controller = NavigationController.new(nil, @filter_manager)
+
+      # FileOperationController（ファイル操作を担当）
+      @file_op_controller = FileOperationController.new(
+        nil, @file_operations, @dialog_renderer, @nav_controller, @selection_manager
+      )
 
       # Help mode
       @in_help_mode = false
@@ -53,10 +72,6 @@ module Rufio
       @in_log_viewer_mode = false
       @pre_log_viewer_directory = nil
       @log_dir = File.join(Dir.home, '.config', 'rufio', 'logs')
-
-      # Preview pane focus and scroll
-      @preview_focused = false
-      @preview_scroll_offset = 0
 
       # Job mode
       @notification_manager = NotificationManager.new
@@ -69,11 +84,14 @@ module Rufio
 
     def set_directory_listing(directory_listing)
       @directory_listing = directory_listing
-      @current_index = 0
+      @nav_controller.set_directory_listing(directory_listing)
+      @file_op_controller.set_directory_listing(directory_listing)
     end
 
     def set_terminal_ui(terminal_ui)
       @terminal_ui = terminal_ui
+      @nav_controller.set_terminal_ui(terminal_ui)
+      @file_op_controller.set_terminal_ui(terminal_ui)
       # terminal_ui が設定されたら、bookmark_manager と zoxide_integration にも渡す
       @bookmark_manager.set_terminal_ui(terminal_ui)
       @zoxide_integration.set_terminal_ui(terminal_ui)
@@ -103,8 +121,8 @@ module Rufio
       end
 
       # プレビューペインフォーカス中の特別処理
-      if @preview_focused
-        return handle_preview_focus_key(key)
+      if @nav_controller.preview_focused?
+        return @nav_controller.handle_preview_focus_key(key)
       end
 
       # ヘルプモード中のESCキー特別処理
@@ -118,47 +136,49 @@ module Rufio
       end
 
       # フィルターモード中は他のキーバインドを無効化
-      return handle_filter_input(key) if @filter_manager.filter_mode
+      return @nav_controller.handle_filter_input(key) if @filter_manager.filter_mode
+
+      entries = get_active_entries
 
       case key
       when 'j'
-        move_down
+        @nav_controller.move_down(entries)
       when 'k'
-        move_up
+        @nav_controller.move_up
       when 'h'
         navigate_parent_with_restriction
       when 'l'  # l - navigate into directory
-        navigate_enter
+        @nav_controller.navigate_enter(current_entry, @in_help_mode, @in_log_viewer_mode)
       when "\r", "\n"  # Enter - focus preview pane or navigate
-        handle_enter_key
+        @nav_controller.handle_enter_key(current_entry, @in_help_mode, @in_log_viewer_mode)
       when 'g'
-        move_to_top
+        @nav_controller.move_to_top
       when 'G'
-        move_to_bottom
+        @nav_controller.move_to_bottom(entries)
       when 'R'  # R - refresh
-        refresh
+        @nav_controller.refresh
       when 'r'  # r - rename file/directory
-        rename_current_file
+        @file_op_controller.rename_current_file(current_entry)
       when 'd'  # d - delete file/directory with confirmation
-        delete_current_file_with_confirmation
+        @file_op_controller.delete_current_file_with_confirmation(current_entry, method(:get_active_entries))
       when 'o'  # o
-        open_current_file
+        @nav_controller.open_current_file(current_entry)
       when 'e'  # e - open directory in file explorer
-        open_directory_in_explorer
+        @nav_controller.open_directory_in_explorer
       when 'f'  # f - filter files
         if @filter_manager.filter_active?
           # フィルタが設定されている場合は再編集モードに入る
           @filter_manager.restart_filter_mode(@directory_listing.list_entries)
         else
           # 新規フィルターモード開始
-          start_filter_mode
+          @nav_controller.start_filter_mode
         end
       when ' ' # Space - toggle selection
         toggle_selection
       when "\e" # ESC
         if @filter_manager.filter_active?
           # フィルタが設定されている場合はクリア
-          clear_filter_mode
+          @nav_controller.clear_filter_mode
           true
         else
           false
@@ -172,15 +192,15 @@ module Rufio
       when 'F'  # F - file content search with rga
         rga_search
       when 'a'  # a
-        create_file
+        @file_op_controller.create_file
       when 'A'  # A
-        create_directory
+        @file_op_controller.create_directory
       when 'm'  # m - move selected files to current directory
-        move_selected_to_current
+        @file_op_controller.move_selected_to_current
       when 'c'  # c - copy selected files to current directory
-        copy_selected_to_current
+        @file_op_controller.copy_selected_to_current
       when 'x'  # x - delete selected files
-        delete_selected_files
+        @file_op_controller.delete_selected_files
       when 'J'  # J - job mode
         enter_job_mode
       when 'b'  # b - add bookmark
@@ -206,12 +226,12 @@ module Rufio
 
     def select_index(index)
       entries = get_active_entries
-      @current_index = [[index, 0].max, entries.length - 1].min
+      @nav_controller.select_index([[index, 0].max, entries.length - 1].min)
     end
 
     def current_entry
       entries = get_active_entries
-      entries[@current_index]
+      entries[@nav_controller.current_index]
     end
 
     def filter_active?
@@ -364,77 +384,34 @@ module Rufio
       end
     end
 
-    # プレビューペイン関連メソッド
+    # プレビューペイン関連メソッド（NavigationController に委譲）
 
-    # プレビューペインがフォーカスされているか
-    def preview_focused?
-      @preview_focused
-    end
-
-    # プレビューペインにフォーカスを移す
     def focus_preview_pane
-      # ファイルが選択されている場合のみフォーカス可能
-      entry = current_entry
-      return false unless entry
-      return false unless entry[:type] == 'file'
-
-      @preview_focused = true
-      @preview_scroll_offset = 0  # フォーカス時にスクロール位置をリセット
-      true
+      @nav_controller.focus_preview_pane(current_entry)
     end
 
-    # プレビューペインのフォーカスを解除
     def unfocus_preview_pane
-      return false unless @preview_focused
-
-      @preview_focused = false
-      true
+      @nav_controller.unfocus_preview_pane
     end
 
-    # 現在のプレビュースクロールオフセット
-    def preview_scroll_offset
-      @preview_scroll_offset
-    end
-
-    # プレビューを1行下にスクロール
     def scroll_preview_down
-      return false unless @preview_focused
-
-      @preview_scroll_offset += 1
-      true
+      @nav_controller.scroll_preview_down
     end
 
-    # プレビューを1行上にスクロール
     def scroll_preview_up
-      return false unless @preview_focused
-
-      @preview_scroll_offset = [@preview_scroll_offset - 1, 0].max
-      true
+      @nav_controller.scroll_preview_up
     end
 
-    # プレビューを半画面下にスクロール（Ctrl+D）
     def scroll_preview_page_down
-      return false unless @preview_focused
-
-      # 半画面分スクロール（仮に20行とする）
-      page_size = 20
-      @preview_scroll_offset += page_size
-      true
+      @nav_controller.scroll_preview_page_down
     end
 
-    # プレビューを半画面上にスクロール（Ctrl+U）
     def scroll_preview_page_up
-      return false unless @preview_focused
-
-      # 半画面分スクロール（仮に20行とする）
-      page_size = 20
-      @preview_scroll_offset = [@preview_scroll_offset - page_size, 0].max
-      true
+      @nav_controller.scroll_preview_page_up
     end
 
-    # プレビュースクロール位置をリセット（ファイル変更時など）
     def reset_preview_scroll
-      @preview_scroll_offset = 0
+      @nav_controller.reset_preview_scroll
     end
 
     # Tabキー: 次のブックマークへ循環移動
@@ -501,128 +478,12 @@ module Rufio
       end
     end
 
-    # Enterキーの処理：ファイルならプレビューフォーカス、ディレクトリならナビゲート
-    def handle_enter_key
-      entry = current_entry
-      return false unless entry
-
-      if entry[:type] == 'file'
-        # ファイルの場合はプレビューペインにフォーカス
-        focus_preview_pane
-      else
-        # ディレクトリの場合は通常のナビゲーション
-        navigate_enter
-      end
-    end
-
-    # プレビューペインフォーカス中のキー処理
-    def handle_preview_focus_key(key)
-      case key
-      when 'j', "\e[B"  # j or Down arrow
-        scroll_preview_down
-      when 'k', "\e[A"  # k or Up arrow
-        scroll_preview_up
-      when "\x04"  # Ctrl+D
-        scroll_preview_page_down
-      when "\x15"  # Ctrl+U
-        scroll_preview_page_up
-      when "\e"  # ESC
-        unfocus_preview_pane
-      else
-        false  # Unknown key in preview mode
-      end
-    end
-
-    def move_down
-      entries = get_active_entries
-      @current_index = [@current_index + 1, entries.length - 1].min
-      reset_preview_scroll  # ファイル変更時にスクロール位置をリセット
-      true
-    end
-
-    def move_up
-      @current_index = [@current_index - 1, 0].max
-      reset_preview_scroll  # ファイル変更時にスクロール位置をリセット
-      true
-    end
-
-    def move_to_top
-      @current_index = 0
-      true
-    end
-
-    def move_to_bottom
-      entries = get_active_entries
-      @current_index = entries.length - 1
-      true
-    end
-
-    def navigate_enter
-      entry = current_entry
-      return false unless entry
-
-      if entry[:type] == 'directory'
-        # ヘルプモードとLogsモードではディレクトリ移動を禁止
-        return false if @in_help_mode || @in_log_viewer_mode
-
-        result = @directory_listing.navigate_to(entry[:name])
-        if result
-          @current_index = 0  # select first entry in new directory
-          clear_filter_mode   # ディレクトリ移動時にフィルタをリセット
-        end
-        result
-      else
-        # do nothing for files (file opening feature may be added in the future)
-        false
-      end
-    end
-
     def navigate_parent
-      result = @directory_listing.navigate_to_parent
-      if result
-        @current_index = 0  # select first entry in parent directory
-        clear_filter_mode   # ディレクトリ移動時にフィルタをリセット
-      end
-      result
-    end
-
-    def refresh
-      # ウィンドウサイズを更新して画面を再描画
-      @terminal_ui&.refresh_display
-
-      @directory_listing.refresh
-      if @filter_manager.filter_active?
-        # Re-apply filter with new directory contents
-        @filter_manager.update_entries(@directory_listing.list_entries)
-      else
-        # adjust index to stay within bounds after refresh
-        entries = @directory_listing.list_entries
-        @current_index = [@current_index, entries.length - 1].min if entries.any?
-      end
-      true
-    end
-
-    def open_current_file
-      entry = current_entry
-      return false unless entry
-
-      if entry[:type] == 'file'
-        @file_opener.open_file(entry[:path])
-        # ターミナルアプリ（vim等）を起動した後は画面リフレッシュが必要
-        :needs_refresh
-      else
-        false
-      end
-    end
-
-    def open_directory_in_explorer
-      current_path = @directory_listing&.current_path || Dir.pwd
-      @file_opener.open_directory_in_explorer(current_path)
-      true
+      @nav_controller.navigate_parent
     end
 
     def exit_request
-      show_exit_confirmation
+      @file_op_controller.show_exit_confirmation
     end
 
     def fzf_search
@@ -702,42 +563,23 @@ module Rufio
     end
 
     def start_filter_mode
-      @filter_manager.start_filter_mode(@directory_listing.list_entries)
-      @current_index = 0
-      true
+      @nav_controller.start_filter_mode
     end
 
     def handle_filter_input(key)
-      result = @filter_manager.handle_filter_input(key)
-
-      case result
-      when :exit_clear
-        clear_filter_mode
-      when :exit_keep
-        exit_filter_mode_keep_filter
-      when :backspace_exit
-        clear_filter_mode
-      when :continue
-        @current_index = [@current_index, [@filter_manager.filtered_entries.length - 1, 0].max].min
-      end
-
-      true
+      @nav_controller.handle_filter_input(key)
     end
 
     def exit_filter_mode_keep_filter
-      # フィルタを維持したまま通常モードに戻る
-      @filter_manager.exit_filter_mode_keep_filter
+      @nav_controller.exit_filter_mode_keep_filter
     end
 
     def clear_filter_mode
-      # フィルタをクリアして通常モードに戻る
-      @filter_manager.clear_filter
-      @current_index = 0
+      @nav_controller.clear_filter_mode
     end
 
     def exit_filter_mode
-      # 既存メソッド（後方互換用）
-      clear_filter_mode
+      @nav_controller.exit_filter_mode
     end
 
     def create_file
@@ -764,7 +606,7 @@ module Rufio
         # 作成したファイルを選択状態にする
         entries = @directory_listing.list_entries
         new_file_index = entries.find_index { |entry| entry[:name] == filename }
-        @current_index = new_file_index if new_file_index
+        @nav_controller.select_index(new_file_index) if new_file_index
       end
 
       @terminal_ui&.refresh_display
@@ -795,7 +637,7 @@ module Rufio
         # 作成したディレクトリを選択状態にする
         entries = @directory_listing.list_entries
         new_dir_index = entries.find_index { |entry| entry[:name] == dirname }
-        @current_index = new_dir_index if new_dir_index
+        @nav_controller.select_index(new_dir_index) if new_dir_index
       end
 
       @terminal_ui&.refresh_display
@@ -830,7 +672,7 @@ module Rufio
         # リネームしたファイルを選択状態にする
         entries = @directory_listing.list_entries
         new_index = entries.find_index { |entry| entry[:name] == new_name }
-        @current_index = new_index if new_index
+        @nav_controller.select_index(new_index) if new_index
       end
 
       @terminal_ui&.refresh_display
@@ -914,8 +756,8 @@ module Rufio
 
         # カーソル位置を調整
         entries = @directory_listing.list_entries
-        @current_index = [@current_index, entries.length - 1].min if @current_index >= entries.length
-        @current_index = 0 if @current_index < 0
+        idx = @nav_controller.current_index
+        @nav_controller.select_index([[idx, 0].max, [entries.length - 1, 0].max].min)
       end
 
       @terminal_ui&.refresh_display
@@ -1681,8 +1523,8 @@ module Rufio
     def navigate_to_directory(path)
       result = @directory_listing.navigate_to_path(path)
       if result
-        @current_index = 0
-        clear_filter_mode
+        @nav_controller.select_index(0)
+        @nav_controller.clear_filter_mode
         true
       else
         false
@@ -1781,7 +1623,7 @@ module Rufio
     def exit_job_mode
       @job_mode.deactivate
       @terminal_ui&.exit_job_mode if @terminal_ui
-      refresh
+      @nav_controller.refresh
       true
     end
 
