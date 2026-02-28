@@ -372,16 +372,22 @@ module Rufio
 
     # Tabキー: 次のブックマークへ循環移動
     def goto_next_bookmark
-      bookmarks = @bookmark_manager.list
-      return nil unless bookmarks&.any?
+      @bookmark_controller.goto_next_bookmark
+    end
 
-      current_path = @directory_listing.current_path
-      current_idx = bookmarks.find_index { |bm| bm[:path] == current_path }
+    # Shift+Tabキー: 前のブックマークへ循環移動
+    def goto_prev_bookmark
+      @bookmark_controller.goto_prev_bookmark
+    end
 
-      next_idx = current_idx ? (current_idx + 1) % bookmarks.length : 0
-      next_bookmark = bookmarks[next_idx]
-      navigate_to_directory(next_bookmark[:path])
-      next_idx
+    # UIRenderer 用：Tab移動と同じブックマークリストを返す
+    def bookmark_list
+      @bookmark_manager.list
+    end
+
+    # 数字キー（1-9）: 指定番号のブックマークへジャンプ
+    def goto_bookmark(number)
+      @bookmark_controller.goto_bookmark(number)
     end
 
     private
@@ -537,11 +543,6 @@ module Rufio
     def goto_start_directory
       @bookmark_controller.goto_start_directory
     end
-
-    def goto_bookmark(number)
-      @bookmark_controller.goto_bookmark(number)
-    end
-
 
     def add_bookmark
       @bookmark_controller.add_bookmark

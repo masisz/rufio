@@ -104,11 +104,6 @@ module Rufio
       @highlighted_bookmark_time = nil
     end
 
-    def clear_bookmark_cache
-      @cached_bookmarks = nil
-      @cached_bookmark_time = nil
-    end
-
     # ブックマークハイライトが期限切れかどうか
     def bookmark_highlight_expired?
       return false unless @highlighted_bookmark_index && @highlighted_bookmark_time
@@ -481,12 +476,10 @@ module Rufio
         footer_content = help_text.ljust(@screen_width)[0...@screen_width]
         screen.put_string(0, y, footer_content, fg: "\e[7m")
       else
-        # ブックマークをキャッシュ（毎フレームのファイルI/Oを回避）
+        # ブックマークをキャッシュ（Tab移動と同じソース：keybind_handler経由で取得）
         current_time = Time.now
         if @cached_bookmarks.nil? || @cached_bookmark_time.nil? || (current_time - @cached_bookmark_time) > @bookmark_cache_ttl
-          require_relative 'bookmark'
-          bookmark = Bookmark.new
-          @cached_bookmarks = bookmark.list
+          @cached_bookmarks = @keybind_handler.bookmark_list
           @cached_bookmark_time = current_time
         end
         bookmarks = @cached_bookmarks

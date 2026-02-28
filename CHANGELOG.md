@@ -5,10 +5,12 @@ All notable changes to rufio will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.82.0] - 2026-02-28
 
 ### Added
-- **Bookmark Jump Highlight**: When cycling bookmarks with `Tab`, the target bookmark in the top bar is highlighted in cyan for 500ms, then automatically fades back to gray
+- **Bookmark Jump Highlight**: When cycling bookmarks with `Tab` or `Shift+Tab`, or jumping directly with number keys `1`–`9`, the target bookmark in the top bar is highlighted in cyan for 500ms, then automatically fades back to gray
+- **`Shift+Tab` backward bookmark cycling**: In Files mode, `Shift+Tab` now cycles backwards through bookmarks (previously it switched tab modes)
+- **Number key bookmark highlight**: Pressing `1`–`9` to jump to a bookmark now triggers the same 500ms cyan highlight as `Tab`; subsequent `Tab` presses continue forward from the jumped position
 
 ### Changed
 - **UI Layout**: Merged mode tabs and title bar into a single combined bottom row
@@ -18,12 +20,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Tab` key**: Changed from mode cycling to **bookmark cycling** (Files mode only)
   - In Files mode: jump to next registered bookmark in sequence (wraps to first)
   - In other modes (Logs / Jobs / Help): no action
-  - Mode switching is done via `J` / `L` / `?` keys and `Shift+Tab`
+  - Mode switching is done via `J` / `L` / `?` keys
+- **Bookmark cycling state**: `BookmarkController` now tracks `@last_bookmark_idx` to maintain cycling position independently of the current directory — navigating into a subdirectory no longer resets Tab cycling to the first bookmark
+- **UIRenderer bookmark source**: Footer display now reads bookmarks via `@keybind_handler.bookmark_list` (same `BookmarkManager` instance as navigation) instead of creating a separate `Bookmark.new` instance pointing to the legacy `bookmarks.json`
 
 ### Fixed
+- **Tab cycling past 3rd bookmark**: Fixed a bug where Tab always returned to the first bookmark after navigating to a subdirectory (non-bookmark directory), because `find_index` returned `nil` for non-bookmark paths
+- **Mismatched bookmark files**: UIRenderer was reading from `~/.config/rufio/bookmarks.json` while navigation used `~/.config/rufio/bookmarks.yml`, causing the footer to display different bookmarks than Tab actually navigated to
+- **Navigation blocked by stale bookmarks**: `goto_next_bookmark` and `goto_prev_bookmark` now skip bookmarks whose paths no longer exist (`Dir.exist?`), preventing the cycling from getting stuck on deleted directories
+- **Test contamination of real bookmark file**: `test_bookmark_controller.rb` used `Bookmark.new` without arguments, writing test entries into the real `~/.config/rufio/bookmarks.json`; fixed to use a temp file
+- **Number key crash**: Pressing `1`–`9` caused a `NoMethodError` crash because `goto_bookmark` was defined after `private` in `KeybindHandler`, making it inaccessible from `TerminalUI`; moved to the public section
 - **zoxide 2-digit input**: Fixed a bug where pressing a single digit in the zoxide history dialog immediately navigated, making it impossible to enter 2-digit numbers (e.g., `12`)
 - **Jobs mode tab highlight**: Fixed active tab not highlighting when entering Jobs mode from Logs or Help mode
 - **Jobs mode navigation**: Fixed inability to switch away from Jobs mode using `L`, `?` keys
+
+### Removed
+- Deleted 3 legacy hand-written test scripts that were not part of the Minitest suite and duplicated coverage already in proper test files:
+  - `test/test_bookmark_simple.rb` — covered by `test_bookmark.rb`
+  - `test/test_filter_reset.rb` — covered by `test_filter_manager.rb`
+  - `test/test_rga_search.rb` — obsolete manual script with monkey-patching
 
 ## [0.80.0] - 2026-02-21
 

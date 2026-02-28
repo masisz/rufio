@@ -26,10 +26,12 @@ module Rufio
       @directory_listing = DirectoryListing.new(@temp_dir)
       @handler.set_directory_listing(@directory_listing)
 
-      # BookmarkManagerを一時設定ファイルで置き換え
+      # BookmarkManagerを一時設定ファイルで置き換え（handler と bookmark_controller 両方に注入）
       @bookmark = Bookmark.new(@bookmark_config)
       @bookmark_manager = BookmarkManager.new(@bookmark)
       @handler.instance_variable_set(:@bookmark_manager, @bookmark_manager)
+      @handler.instance_variable_get(:@bookmark_controller)
+              .instance_variable_set(:@bookmark_manager, @bookmark_manager)
     end
 
     def teardown

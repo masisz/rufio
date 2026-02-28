@@ -14,6 +14,7 @@ module Rufio
       @notification_manager = notification_manager
       @zoxide_integration = zoxide_integration
       @terminal_ui = nil
+      @last_bookmark_idx = nil
     end
 
     def set_terminal_ui(terminal_ui)
@@ -130,6 +131,8 @@ module Rufio
       return false unless bookmark
       return false unless @bookmark_manager.path_exists?(bookmark)
 
+      # Tab循環位置を更新（数字キー後の Tab が次の番号から続くように）
+      @last_bookmark_idx = number - 1
       navigate_to_directory(bookmark[:path])
     end
 
@@ -145,19 +148,62 @@ module Rufio
       navigate_to_directory(start_dir)
     end
 
-    # 次のブックマークに移動
+    # 次のブックマークに移動（Tabキー）
+    # 現在のディレクトリがブックマーク内なら current_path を基準に次へ、
+    # そうでない場合は @last_bookmark_idx から継続（ブックマーク外に出ても循環が止まらない）
+    # 存在しないパスのブックマークはスキップする
     # @return [Integer, nil] 新しいブックマークインデックス、またはnil
     def goto_next_bookmark
       bookmarks = @bookmark_manager.list
       return nil unless bookmarks&.any?
 
       current_path = @directory_listing.current_path
-      current_idx = bookmarks.find_index { |bm| bm[:path] == current_path }
+      current_position = bookmarks.find_index { |bm| bm[:path] == current_path }
+      start_idx = if current_position
+        (current_position + 1) % bookmarks.length
+      elsif @last_bookmark_idx
+        (@last_bookmark_idx + 1) % bookmarks.length
+      else
+        0
+      end
 
-      next_idx = current_idx ? (current_idx + 1) % bookmarks.length : 0
-      next_bookmark = bookmarks[next_idx]
-      navigate_to_directory(next_bookmark[:path])
-      next_idx
+      bookmarks.length.times do |i|
+        idx = (start_idx + i) % bookmarks.length
+        next unless Dir.exist?(bookmarks[idx][:path])
+
+        @last_bookmark_idx = idx
+        navigate_to_directory(bookmarks[idx][:path])
+        return @last_bookmark_idx
+      end
+      nil
+    end
+
+    # 前のブックマークに移動（Shift+Tabキー）
+    # 存在しないパスのブックマークはスキップする
+    # @return [Integer, nil] 新しいブックマークインデックス、またはnil
+    def goto_prev_bookmark
+      bookmarks = @bookmark_manager.list
+      return nil unless bookmarks&.any?
+
+      current_path = @directory_listing.current_path
+      current_position = bookmarks.find_index { |bm| bm[:path] == current_path }
+      start_idx = if current_position
+        (current_position - 1 + bookmarks.length) % bookmarks.length
+      elsif @last_bookmark_idx
+        (@last_bookmark_idx - 1 + bookmarks.length) % bookmarks.length
+      else
+        bookmarks.length - 1
+      end
+
+      bookmarks.length.times do |i|
+        idx = (start_idx - i + bookmarks.length) % bookmarks.length
+        next unless Dir.exist?(bookmarks[idx][:path])
+
+        @last_bookmark_idx = idx
+        navigate_to_directory(bookmarks[idx][:path])
+        return @last_bookmark_idx
+      end
+      nil
     end
 
     # ============================

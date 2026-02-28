@@ -16,7 +16,9 @@ class TestBookmarkController < Minitest::Test
     @filter_manager = Rufio::FilterManager.new
     @nav_controller = Rufio::NavigationController.new(@directory_listing, @filter_manager)
     @dialog_renderer = Rufio::DialogRenderer.new
-    @bookmark = Rufio::Bookmark.new
+    # 実ファイルを汚染しないよう一時ファイルを使用
+    @temp_bookmark_file = File.join(@test_dir, 'bookmarks.json')
+    @bookmark = Rufio::Bookmark.new(@temp_bookmark_file)
     @bookmark_manager = Rufio::BookmarkManager.new(@bookmark, @dialog_renderer)
     @zoxide = Rufio::ZoxideIntegration.new(@dialog_renderer)
     @script_path_manager = Rufio::ScriptPathManager.new(Rufio::Config::SCRIPT_PATHS_YML)

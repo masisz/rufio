@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    rufio (0.81.0)
+    rufio (0.82.0)
       io-console (~> 0.6)
       pastel (~> 0.8)
       tty-cursor (~> 0.7)

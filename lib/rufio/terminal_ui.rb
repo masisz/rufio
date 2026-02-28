@@ -440,6 +440,12 @@ module Rufio
         return true
       end
 
+      # 数字キー（1-9）: Filesモード かつ フィルターモード外でブックマークジャンプ＋ハイライト
+      if input&.match?(/^[1-9]$/) && @tab_mode_manager.current_mode == :files && !@keybind_handler.filter_active?
+        handle_bookmark_key(input.to_i)
+        return true
+      end
+
       # Jobsモード中のモード切替キーをインターセプト（L:Logs, ?:Help, J:Files復帰）
       if @in_job_mode
         case input
@@ -476,10 +482,28 @@ module Rufio
       end
     end
 
-    # Shift+Tabによる逆順モード切り替え
+    # 数字キー（1-9）: 指定番号のブックマークへジャンプ＋ハイライト
+    def handle_bookmark_key(number)
+      result = @keybind_handler.goto_bookmark(number)
+      if result
+        # display_index = number（1.bookmark1, 2.bookmark2, ...）
+        @ui_renderer.set_highlighted_bookmark(number)
+        @ui_renderer.clear_bookmark_cache
+      end
+    end
+
+    # Shift+Tab: Filesモードでは前のブックマークへ循環移動、それ以外はモード逆順切り替え
     def handle_shift_tab
-      @tab_mode_manager.previous_mode
-      apply_mode_change(@tab_mode_manager.current_mode)
+      if @tab_mode_manager.current_mode == :files
+        prev_idx = @keybind_handler.goto_prev_bookmark
+        if prev_idx
+          @ui_renderer.set_highlighted_bookmark(prev_idx + 1)
+          @ui_renderer.clear_bookmark_cache
+        end
+      else
+        @tab_mode_manager.previous_mode
+        apply_mode_change(@tab_mode_manager.current_mode)
+      end
     end
 
     # モード変更を適用
