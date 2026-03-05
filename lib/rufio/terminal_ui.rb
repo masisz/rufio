@@ -185,6 +185,23 @@ module Rufio
         STDIN.raw!
       end
 
+      # Windows: IO.select + read_nonblockはコンソールハンドルのESCキーを
+      # 検出できない場合がある。バックグラウンドスレッドでSTDINを読み取り
+      # Queueに格納することで信頼性のある入力検出を実現する。
+      if windows?
+        @windows_input_queue = Queue.new
+        @windows_input_thread = Thread.new do
+          loop do
+            begin
+              byte = STDIN.read(1)
+              @windows_input_queue << byte if byte
+            rescue
+              break
+            end
+          end
+        end
+      end
+
       # re-acquire terminal size (just in case)
       update_screen_size
     end
@@ -196,10 +213,35 @@ module Rufio
       @screen_width, @screen_height = console.winsize.reverse
     end
 
+    def windows?
+      RUBY_PLATFORM =~ /mswin|mingw|cygwin/ ? true : false
+    end
+
+    # Windows: エスケープシーケンスの後続バイトをQueueから短いタイムアウトで読み取る
+    # VT対応ターミナルでの矢印キー（\e[A 等）の後続バイト読み取りに使用
+    def windows_read_next_byte
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 0.005 # 5ms
+      loop do
+        begin
+          return @windows_input_queue.pop(true)
+        rescue ThreadError
+          return nil if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+          sleep 0.001
+        end
+      end
+    end
+
     def cleanup_terminal
       # rawモードを解除
       if STDIN.tty?
         STDIN.cooked!
+      end
+
+      # Windowsバックグラウンド入力スレッドを停止
+      if @windows_input_thread
+        @windows_input_thread.kill rescue nil
+        @windows_input_thread = nil
+        @windows_input_queue = nil
       end
 
       system('tput rmcup')  # normal screen
@@ -383,21 +425,31 @@ module Rufio
     private
 
     # ノンブロッキング入力処理（ゲームループ用）
-    # IO.selectでタイムアウト付きで入力をチェック
+    # Windows: Queueベース、Unix: IO.select + read_nonblock
     def handle_input_nonblocking
-      # 0msタイムアウトで即座にチェック（30FPS = 33.33ms/frame）
-      ready = IO.select([STDIN], nil, nil, 0)
-      return false unless ready
+      # 入力バイトを1つ読み取る
+      if @windows_input_queue
+        # Windows: バックグラウンドスレッドのQueueからノンブロッキングで読み取る
+        begin
+          input = @windows_input_queue.pop(true)
+        rescue ThreadError
+          return false
+        end
+      else
+        # Unix: 0msタイムアウトで即座にチェック（30FPS = 33.33ms/frame）
+        ready = IO.select([STDIN], nil, nil, 0)
+        return false unless ready
 
-      begin
-        # read_nonblockを使ってノンブロッキングで1文字読み取る
-        input = STDIN.read_nonblock(1)
-      rescue IO::WaitReadable, IO::EAGAINWaitReadable
-        # 入力が利用できない
-        return false
-      rescue Errno::ENOTTY, Errno::ENODEV
-        # ターミナルでない環境
-        return false
+        begin
+          # read_nonblockを使ってノンブロッキングで1文字読み取る
+          input = STDIN.read_nonblock(1)
+        rescue IO::WaitReadable, IO::EAGAINWaitReadable
+          # 入力が利用できない
+          return false
+        rescue Errno::ENOTTY, Errno::ENODEV
+          # ターミナルでない環境
+          return false
+        end
       end
 
       # コマンドモードがアクティブな場合は、エスケープシーケンス処理をスキップ
@@ -409,17 +461,17 @@ module Rufio
 
       # 特殊キーの処理（エスケープシーケンス）（コマンドモード外のみ）
       if input == "\e"
-        next_char = begin
-          STDIN.read_nonblock(1)
-        rescue StandardError
-          nil
+        next_char = if @windows_input_queue
+          windows_read_next_byte
+        else
+          STDIN.read_nonblock(1) rescue nil
         end
         if next_char == '['
           # 矢印キーなどのシーケンス
-          third_char = begin
-            STDIN.read_nonblock(1)
-          rescue StandardError
-            nil
+          third_char = if @windows_input_queue
+            windows_read_next_byte
+          else
+            STDIN.read_nonblock(1) rescue nil
           end
           input = case third_char
           when 'A' then 'k'  # Up arrow
