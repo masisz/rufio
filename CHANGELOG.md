@@ -5,6 +5,14 @@ All notable changes to rufio will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.82.1] - 2026-03-07
+
+### Fixed
+- **Windows ESC key in command mode**: Fixed ESC key being silently ignored when exiting command mode on Windows
+  - On Windows, `IO.select([STDIN], nil, nil, 0)` with timeout 0 does not reliably detect ESC key events because Windows console handles are not standard file descriptors like on Unix
+  - Fix: On Windows, start a background thread that reads bytes from STDIN using blocking `STDIN.read(1)` (which correctly handles ESC via the Windows Console API) and stores them in a Queue; the main loop reads from this Queue non-blockingly instead of using `IO.select` + `read_nonblock`
+  - Unix behavior is unchanged
+
 ## [0.82.0] - 2026-02-28
 
 ### Added
