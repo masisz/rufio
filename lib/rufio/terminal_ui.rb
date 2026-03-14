@@ -185,6 +185,10 @@ module Rufio
         STDIN.raw!
       end
 
+      # SGR拡張マウスレポートを有効化（ボタン + ホイール + 任意位置クリック）
+      print "\e[?1003h\e[?1006h"
+      STDOUT.flush
+
       # Windows: IO.select + read_nonblockはコンソールハンドルのESCキーを
       # 検出できない場合がある。バックグラウンドスレッドでSTDINを読み取り
       # Queueに格納することで信頼性のある入力検出を実現する。
@@ -231,6 +235,15 @@ module Rufio
       end
     end
 
+    # エスケープシーケンスの後続バイトを読み取る（Windows/Unix共通ヘルパー）
+    def read_next_input_byte
+      if @windows_input_queue
+        windows_read_next_byte
+      else
+        STDIN.read_nonblock(1) rescue nil
+      end
+    end
+
     def cleanup_terminal
       # rawモードを解除
       if STDIN.tty?
@@ -243,6 +256,10 @@ module Rufio
         @windows_input_thread = nil
         @windows_input_queue = nil
       end
+
+      # マウスレポートを無効化
+      print "\e[?1003l\e[?1006l"
+      STDOUT.flush
 
       system('tput rmcup')  # normal screen
       system('tput cnorm')  # cursor normal
@@ -461,17 +478,27 @@ module Rufio
 
       # 特殊キーの処理（エスケープシーケンス）（コマンドモード外のみ）
       if input == "\e"
-        next_char = if @windows_input_queue
-          windows_read_next_byte
-        else
-          STDIN.read_nonblock(1) rescue nil
-        end
+        next_char = read_next_input_byte
         if next_char == '['
-          # 矢印キーなどのシーケンス
-          third_char = if @windows_input_queue
-            windows_read_next_byte
-          else
-            STDIN.read_nonblock(1) rescue nil
+          # CSIシーケンス（矢印キー・マウスなど）
+          third_char = read_next_input_byte
+          if third_char == '<'
+            # SGR拡張マウスイベント: \e[<Btn;Col;RowM/m
+            mouse_seq = ""
+            loop do
+              ch = read_next_input_byte
+              break if ch.nil?
+              mouse_seq << ch
+              break if ch == 'M' || ch == 'm'
+            end
+            if (m = mouse_seq.match(/\A(\d+);(\d+);(\d+)([Mm])\z/))
+              btn  = m[1].to_i
+              col  = m[2].to_i
+              row  = m[3].to_i
+              press = m[4] == 'M'
+              handle_mouse_event(btn, col, row, press)
+            end
+            return true
           end
           input = case third_char
           when 'A' then 'k'  # Up arrow
@@ -556,6 +583,95 @@ module Rufio
         @tab_mode_manager.previous_mode
         apply_mode_change(@tab_mode_manager.current_mode)
       end
+    end
+
+    # ============================
+    # マウスイベント処理
+    # ============================
+
+    # SGRマウスイベントを処理する
+    # @param btn [Integer]  SGRボタン番号（0=左, 1=中, 2=右, 64=ホイールアップ, 65=ホイールダウン）
+    # @param col [Integer]  クリック列（1-indexed）
+    # @param row [Integer]  クリック行（1-indexed）
+    # @param press [Boolean] true=押下, false=解放
+    def handle_mouse_event(btn, col, row, press)
+      case btn
+      when 0  # 左クリック（押下のみ処理）
+        handle_mouse_left_click(col, row) if press
+      when 64  # ホイールアップ
+        handle_mouse_scroll(:up, col, row)
+      when 65  # ホイールダウン
+        handle_mouse_scroll(:down, col, row)
+      end
+    end
+
+    # マウス左クリックを処理する
+    def handle_mouse_left_click(col, row)
+      left_width = left_panel_col_width
+
+      if col <= left_width
+        # 左パネル（ファイルリスト）クリック
+        handle_mouse_file_click(row)
+      else
+        # 右パネル（プレビュー）クリック — プレビューフォーカスを切り替え
+        if @keybind_handler.preview_focused?
+          @keybind_handler.unfocus_preview_pane
+        else
+          @keybind_handler.focus_preview_pane
+        end
+      end
+    end
+
+    # ファイルリストのクリック行からエントリを選択する（ダブルクリック対応）
+    def handle_mouse_file_click(row)
+      # コンテンツ行はターミナル行2〜(screen_height-1)
+      content_height = @screen_height - 2
+      return unless row >= 2 && row <= @screen_height - 1
+
+      current_idx = @keybind_handler.current_index
+      start_index = [current_idx - content_height / 2, 0].max
+      target_index = start_index + (row - 2)
+
+      entries = @keybind_handler.send(:get_active_entries)
+      return unless target_index >= 0 && target_index < entries.length
+
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      if @last_mouse_click_index == target_index &&
+          @last_mouse_click_time && (now - @last_mouse_click_time) < 0.5
+        # ダブルクリック: Enterキーと同等の動作
+        @keybind_handler.handle_key("\r")
+        @last_mouse_click_index = nil
+        @last_mouse_click_time = nil
+      else
+        # シングルクリック: カーソル移動
+        @keybind_handler.select_index(target_index)
+        @last_mouse_click_index = target_index
+        @last_mouse_click_time = now
+      end
+    end
+
+    # マウスホイールスクロールを処理する
+    def handle_mouse_scroll(direction, col, _row)
+      left_width = left_panel_col_width
+
+      if col > left_width && @keybind_handler.preview_focused?
+        # プレビューペインのスクロール
+        case direction
+        when :up   then @keybind_handler.scroll_preview_up
+        when :down then @keybind_handler.scroll_preview_down
+        end
+      else
+        # ファイルリストのスクロール
+        case direction
+        when :up   then @keybind_handler.handle_key('k')
+        when :down then @keybind_handler.handle_key('j')
+        end
+      end
+    end
+
+    # 左パネルの列幅（1-indexed境界）を返す
+    def left_panel_col_width
+      (@screen_width * @ui_renderer.left_panel_ratio).to_i
     end
 
     # モード変更を適用

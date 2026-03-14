@@ -25,7 +25,7 @@ module Rufio
     attr_accessor :keybind_handler, :directory_listing, :file_preview
     attr_accessor :background_executor, :test_mode
     attr_accessor :completion_lamp_message, :completion_lamp_time
-    attr_reader :tab_mode_manager, :highlight_updated
+    attr_reader :tab_mode_manager, :highlight_updated, :left_panel_ratio
 
     def preview_enabled?
       @preview_enabled
