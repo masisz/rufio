@@ -484,7 +484,7 @@ module Rufio
           third_char = read_next_input_byte
           if third_char == '<'
             # SGR拡張マウスイベント: \e[<Btn;Col;RowM/m
-            mouse_seq = ""
+            mouse_seq = +""
             loop do
               ch = read_next_input_byte
               break if ch.nil?

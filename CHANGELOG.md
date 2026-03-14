@@ -5,6 +5,24 @@ All notable changes to rufio will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.83.0] - 2026-03-14
+
+### Added
+- **Mouse input support**: Enabled SGR extended mouse reporting (`\e[?1003h\e[?1006h`) with click and scroll handling
+  - **Left click (file list)**: Move cursor to the clicked row
+  - **Left double-click (file list)**: Re-click within 0.5s opens the file (equivalent to Enter)
+  - **Left click (right panel)**: Toggle preview focus on/off
+  - **Wheel scroll (file list)**: Scroll up/down (equivalent to j/k)
+  - **Wheel scroll (preview focused)**: Scroll the preview panel
+  - Mouse reporting is disabled on exit via `cleanup_terminal` (`\e[?1003l\e[?1006l`)
+- **Architecture documentation**: Added `docs/architecture_concurrency_ja_v0.82.1.md`
+  - Documents rufio's concurrency model (single-threaded UI + worker threads + child processes)
+  - Documents memory model characteristics (screen buffer, preview cache, job history)
+
+### Changed
+- **`read_next_input_byte` helper**: Extracted common ESC sequence reading logic to reduce duplication
+- **`UIRenderer#left_panel_ratio` exposed**: Added `attr_reader` for use in mouse click panel detection
+
 ## [0.82.1] - 2026-03-07
 
 ### Fixed
