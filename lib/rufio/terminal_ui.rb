@@ -189,23 +189,6 @@ module Rufio
       print "\e[?1003h\e[?1006h"
       STDOUT.flush
 
-      # Windows: IO.select + read_nonblockはコンソールハンドルのESCキーを
-      # 検出できない場合がある。バックグラウンドスレッドでSTDINを読み取り
-      # Queueに格納することで信頼性のある入力検出を実現する。
-      if windows?
-        @windows_input_queue = Queue.new
-        @windows_input_thread = Thread.new do
-          loop do
-            begin
-              byte = STDIN.read(1)
-              @windows_input_queue << byte if byte
-            rescue
-              break
-            end
-          end
-        end
-      end
-
       # re-acquire terminal size (just in case)
       update_screen_size
     end
@@ -217,44 +200,43 @@ module Rufio
       @screen_width, @screen_height = console.winsize.reverse
     end
 
+    # Cygwinは POSIX互換のIO.selectが使えるため除外
     def windows?
-      RUBY_PLATFORM =~ /mswin|mingw|cygwin/ ? true : false
+      RUBY_PLATFORM =~ /mswin|mingw/ ? true : false
     end
 
-    # Windows: エスケープシーケンスの後続バイトをQueueから短いタイムアウトで読み取る
-    # VT対応ターミナルでの矢印キー（\e[A 等）の後続バイト読み取りに使用
-    def windows_read_next_byte
-      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 0.005 # 5ms
-      loop do
-        begin
-          return @windows_input_queue.pop(true)
-        rescue ThreadError
-          return nil if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
-          sleep 0.001
-        end
-      end
+    # Windows: GetNumberOfConsoleInputEvents でコンソール入力バッファを確認する。
+    # IO.select はWindowsコンソールハンドルでESCキーを取りこぼすため使用しない。
+    # fiddle はRuby標準ライブラリなので追加gemは不要。
+    def windows_console_input_available?
+      require 'fiddle'
+      @win32_kernel32 ||= Fiddle.dlopen('kernel32')
+      @win32_get_std_handle ||= Fiddle::Function.new(
+        @win32_kernel32['GetStdHandle'],
+        [Fiddle::TYPE_INT], Fiddle::TYPE_VOIDP
+      )
+      @win32_get_num_events ||= Fiddle::Function.new(
+        @win32_kernel32['GetNumberOfConsoleInputEvents'],
+        [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT
+      )
+      handle = @win32_get_std_handle.call(0xFFFFFFF6) # STD_INPUT_HANDLE = (DWORD)(-10)
+      count_ptr = Fiddle::Pointer.malloc(4)
+      @win32_get_num_events.call(handle, count_ptr)
+      count_ptr[0, 4].unpack1('L') > 0
+    rescue Fiddle::DLError
+      # fiddle が使えない場合は常に入力ありとみなし read_nonblock に任せる
+      true
     end
 
     # エスケープシーケンスの後続バイトを読み取る（Windows/Unix共通ヘルパー）
     def read_next_input_byte
-      if @windows_input_queue
-        windows_read_next_byte
-      else
-        STDIN.read_nonblock(1) rescue nil
-      end
+      STDIN.read_nonblock(1) rescue nil
     end
 
     def cleanup_terminal
       # rawモードを解除
       if STDIN.tty?
         STDIN.cooked!
-      end
-
-      # Windowsバックグラウンド入力スレッドを停止
-      if @windows_input_thread
-        @windows_input_thread.kill rescue nil
-        @windows_input_thread = nil
-        @windows_input_queue = nil
       end
 
       # マウスレポートを無効化
@@ -442,31 +424,24 @@ module Rufio
     private
 
     # ノンブロッキング入力処理（ゲームループ用）
-    # Windows: Queueベース、Unix: IO.select + read_nonblock
+    # Windows: GetNumberOfConsoleInputEvents で入力確認後 read_nonblock
+    # Unix:    IO.select(timeout=0) で入力確認後 read_nonblock
     def handle_input_nonblocking
       # 入力バイトを1つ読み取る
-      if @windows_input_queue
-        # Windows: バックグラウンドスレッドのQueueからノンブロッキングで読み取る
-        begin
-          input = @windows_input_queue.pop(true)
-        rescue ThreadError
-          return false
-        end
+      if windows?
+        # Windows: IO.selectはESCキーを取りこぼすため Win32 API で入力確認
+        return false unless windows_console_input_available?
       else
         # Unix: 0msタイムアウトで即座にチェック（30FPS = 33.33ms/frame）
-        ready = IO.select([STDIN], nil, nil, 0)
-        return false unless ready
+        return false unless IO.select([STDIN], nil, nil, 0)
+      end
 
-        begin
-          # read_nonblockを使ってノンブロッキングで1文字読み取る
-          input = STDIN.read_nonblock(1)
-        rescue IO::WaitReadable, IO::EAGAINWaitReadable
-          # 入力が利用できない
-          return false
-        rescue Errno::ENOTTY, Errno::ENODEV
-          # ターミナルでない環境
-          return false
-        end
+      begin
+        input = STDIN.read_nonblock(1)
+      rescue IO::WaitReadable, IO::EAGAINWaitReadable
+        return false
+      rescue Errno::ENOTTY, Errno::ENODEV
+        return false
       end
 
       # コマンドモードがアクティブな場合は、エスケープシーケンス処理をスキップ
