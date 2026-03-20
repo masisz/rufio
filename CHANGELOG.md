@@ -5,6 +5,16 @@ All notable changes to rufio will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.83.1] - 2026-03-20
+
+### Changed
+- **Windows console input detection rewritten using Win32 API**: Replaced the background thread + Queue workaround (introduced in v0.82.1 to handle ESC key detection on Windows) with `GetNumberOfConsoleInputEvents` via the Win32 API (`fiddle` stdlib)
+  - The previous approach had a race condition where the background `STDIN.read(1)` thread competed with `STDIN.getch` calls in dialogs, potentially dropping dialog input (including multi-byte/Japanese characters)
+  - Background thread, Queue, and `windows_read_next_byte` helper are removed
+  - `read_next_input_byte` is now a single unified implementation for both Windows and Unix (`read_nonblock`)
+  - Cygwin is excluded from the Windows path since it provides POSIX-compatible `IO.select`
+  - Falls back to `read_nonblock` if `Fiddle::DLError` occurs (no extra gem required — `fiddle` is a Ruby stdlib)
+
 ## [0.83.0] - 2026-03-14
 
 ### Added
