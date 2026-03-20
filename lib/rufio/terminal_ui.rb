@@ -47,6 +47,7 @@ module Rufio
       end
       @running = false
       @test_mode = test_mode
+      @multibyte_reader = MultibyteInputReader.new(STDIN)
       @command_mode_active = false
       @command_input = ""
       @command_mode = CommandMode.new
@@ -437,9 +438,8 @@ module Rufio
       end
 
       begin
-        input = STDIN.read_nonblock(1)
-      rescue IO::WaitReadable, IO::EAGAINWaitReadable
-        return false
+        input = @multibyte_reader.read_char
+        return false if input.nil?
       rescue Errno::ENOTTY, Errno::ENODEV
         return false
       end
@@ -777,8 +777,8 @@ module Rufio
         # Backspace
         @command_input.chop! unless @command_input.empty?
       else
-        # 通常の文字を追加
-        @command_input += input if input.length == 1
+        # 通常の文字を追加（マルチバイト文字含む）
+        @command_input += input unless input.nil? || input.empty?
       end
     end
 
