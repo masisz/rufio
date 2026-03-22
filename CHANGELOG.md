@@ -5,6 +5,13 @@ All notable changes to rufio will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.90.0] - 2026-03-22
+
+### Added
+- **日本語入力（マルチバイト文字）対応**: コマンドモードおよびフィルターモードでマルチバイト文字（日本語等）の入力をサポート
+  - UTF-8マルチバイトシーケンスを正しく読み取り、コマンドバッファに追加
+  - `MultibyteInputReader` クラスを実装し、マルチバイト文字の読み取り・バリデーション・エラーハンドリングを担当
+
 ## [0.83.1] - 2026-03-20
 
 ### Changed
