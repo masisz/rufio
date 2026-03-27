@@ -220,7 +220,7 @@ module Rufio
         @win32_kernel32['GetNumberOfConsoleInputEvents'],
         [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT
       )
-      handle = @win32_get_std_handle.call(0xFFFFFFF6) # STD_INPUT_HANDLE = (DWORD)(-10)
+      handle = @win32_get_std_handle.call(-10) # STD_INPUT_HANDLE = (DWORD)(-10)
       count_ptr = Fiddle::Pointer.malloc(4)
       @win32_get_num_events.call(handle, count_ptr)
       count_ptr[0, 4].unpack1('L') > 0
