@@ -5,12 +5,19 @@ All notable changes to rufio will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.90.1] - 2026-03-28
+
+### Fixed
+- **Windows: `STD_INPUT_HANDLE` bignum error**: Passing `0xFFFFFFF6` (unsigned 32-bit) to `Fiddle::TYPE_INT` (signed 32-bit) raised `bignum too big to convert into 'long'`; changed to the equivalent signed value `-10`
+
 ## [0.90.0] - 2026-03-22
 
 ### Added
-- **日本語入力（マルチバイト文字）対応**: コマンドモードおよびフィルターモードでマルチバイト文字（日本語等）の入力をサポート
-  - UTF-8マルチバイトシーケンスを正しく読み取り、コマンドバッファに追加
-  - `MultibyteInputReader` クラスを実装し、マルチバイト文字の読み取り・バリデーション・エラーハンドリングを担当
+- **Multibyte character input support (Japanese and other languages)**: Command mode (`:`) and filter mode now accept multibyte characters such as Japanese
+  - `MultibyteInputReader` class introduced to read UTF-8 multibyte sequences as a single character, replacing the previous `read_nonblock(1)` single-byte approach that caused mojibake
+  - Supports 1–4 byte UTF-8 sequences: ASCII, 2-byte (Latin extensions), 3-byte (Hiragana, Katakana, Kanji, etc.), 4-byte (emoji, etc.)
+  - ESC key (`0x1B`) remains in the ASCII range and does not trigger extra byte reads, avoiding conflicts with ESC sequence handling
+  - Invalid or incomplete byte sequences are safely discarded (returns `nil`)
 
 ## [0.83.1] - 2026-03-20
 
