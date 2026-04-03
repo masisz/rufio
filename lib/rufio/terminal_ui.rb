@@ -206,32 +206,18 @@ module Rufio
       RUBY_PLATFORM =~ /mswin|mingw/ ? true : false
     end
 
-    # Windows: GetNumberOfConsoleInputEvents でコンソール入力バッファを確認する。
-    # IO.select はWindowsコンソールハンドルでESCキーを取りこぼすため使用しない。
-    # fiddle はRuby標準ライブラリなので追加gemは不要。
-    def windows_console_input_available?
-      require 'fiddle'
-      @win32_kernel32 ||= Fiddle.dlopen('kernel32')
-      @win32_get_std_handle ||= Fiddle::Function.new(
-        @win32_kernel32['GetStdHandle'],
-        [Fiddle::TYPE_INT], Fiddle::TYPE_VOIDP
-      )
-      @win32_get_num_events ||= Fiddle::Function.new(
-        @win32_kernel32['GetNumberOfConsoleInputEvents'],
-        [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT
-      )
-      handle = @win32_get_std_handle.call(-10) # STD_INPUT_HANDLE = (DWORD)(-10)
-      count_ptr = Fiddle::Pointer.malloc(4)
-      @win32_get_num_events.call(handle, count_ptr)
-      count_ptr[0, 4].unpack1('L') > 0
-    rescue Fiddle::DLError
-      # fiddle が使えない場合は常に入力ありとみなし read_nonblock に任せる
-      true
-    end
-
-    # エスケープシーケンスの後続バイトを読み取る（Windows/Unix共通ヘルパー）
+    # エスケープシーケンスの後続バイトを読み取る。
+    # Windows: IO.select(timeout=0) がESCを取りこぼす問題と同様の理由で
+    # read_nonblock がコンソールハンドルでブロックする可能性があるため、
+    # 5ms タイムアウトの IO.select で確認してから読み取る。
+    # ESCシーケンス（\e[A等）の後続バイトは瞬時に届くため 5ms 以内に確実に検出可能。
     def read_next_input_byte
-      STDIN.read_nonblock(1) rescue nil
+      if windows?
+        return nil unless IO.select([STDIN], nil, nil, 0.005)
+        STDIN.read_nonblock(1) rescue nil
+      else
+        STDIN.read_nonblock(1) rescue nil
+      end
     end
 
     def cleanup_terminal
@@ -425,13 +411,15 @@ module Rufio
     private
 
     # ノンブロッキング入力処理（ゲームループ用）
-    # Windows: GetNumberOfConsoleInputEvents で入力確認後 read_nonblock
+    # Windows: IO.select(timeout=1ms) で入力確認後 read_nonblock
+    #          timeout=0 だとESCキーを取りこぼす（コンソールの処理タイミング競合）ため
+    #          1ms の正のタイムアウトを使う。コンソールハンドルでも ConPTY パイプでも動作する。
     # Unix:    IO.select(timeout=0) で入力確認後 read_nonblock
     def handle_input_nonblocking
       # 入力バイトを1つ読み取る
       if windows?
-        # Windows: IO.selectはESCキーを取りこぼすため Win32 API で入力確認
-        return false unless windows_console_input_available?
+        # Windows: timeout=0 ではESCキーを取りこぼすため 1ms タイムアウトを使用
+        return false unless IO.select([STDIN], nil, nil, 0.001)
       else
         # Unix: 0msタイムアウトで即座にチェック（30FPS = 33.33ms/frame）
         return false unless IO.select([STDIN], nil, nil, 0)
