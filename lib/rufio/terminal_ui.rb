@@ -186,8 +186,16 @@ module Rufio
         STDIN.raw!
       end
 
-      # SGR拡張マウスレポートを有効化（ボタン + ホイール + 任意位置クリック）
-      print "\e[?1003h\e[?1006h"
+      # SGR拡張マウスレポートを有効化
+      # Unix:    \e[?1003h (any-event) + \e[?1006h (SGR座標) → クリック・スクロール・移動
+      # Windows: \e[?1003h は Windows Terminal / conhost 非対応。
+      #          \e[?1000h (button-events のみ) + \e[?1006h (SGR座標) で
+      #          Windows Terminal 限定でクリック・スクロールに対応。
+      if windows?
+        print "\e[?1000h\e[?1006h"
+      else
+        print "\e[?1003h\e[?1006h"
+      end
       STDOUT.flush
 
       # re-acquire terminal size (just in case)
@@ -206,14 +214,23 @@ module Rufio
       RUBY_PLATFORM =~ /mswin|mingw/ ? true : false
     end
 
-    # エスケープシーケンスの後続バイトを読み取る。
-    # Windows: IO.select(timeout=0) がESCを取りこぼす問題と同様の理由で
-    # read_nonblock がコンソールハンドルでブロックする可能性があるため、
-    # 5ms タイムアウトの IO.select で確認してから読み取る。
-    # ESCシーケンス（\e[A等）の後続バイトは瞬時に届くため 5ms 以内に確実に検出可能。
+    # エスケープシーケンスの後続バイトを読み取る（矢印キー等の短いシーケンス用）。
+    # Windows: IO.select(timeout=0) がESCを取りこぼすため 5ms タイムアウトを使用。
     def read_next_input_byte
       if windows?
         return nil unless IO.select([STDIN], nil, nil, 0.005)
+        STDIN.read_nonblock(1) rescue nil
+      else
+        STDIN.read_nonblock(1) rescue nil
+      end
+    end
+
+    # SGRマウスシーケンスの後続バイトを読み取る。
+    # \e[<Btn;Col;RowM/m は最大 15 バイト程度になるため、
+    # Windows Console のイベントキューにバイトが積まれるまで 20ms 待つ。
+    def read_next_mouse_byte
+      if windows?
+        return nil unless IO.select([STDIN], nil, nil, 0.020)
         STDIN.read_nonblock(1) rescue nil
       else
         STDIN.read_nonblock(1) rescue nil
@@ -226,8 +243,12 @@ module Rufio
         STDIN.cooked!
       end
 
-      # マウスレポートを無効化
-      print "\e[?1003l\e[?1006l"
+      # マウスレポートを無効化（setup_terminal と対称）
+      if windows?
+        print "\e[?1000l\e[?1006l"
+      else
+        print "\e[?1003l\e[?1006l"
+      end
       STDOUT.flush
 
       system('tput rmcup')  # normal screen
@@ -447,9 +468,11 @@ module Rufio
           third_char = read_next_input_byte
           if third_char == '<'
             # SGR拡張マウスイベント: \e[<Btn;Col;RowM/m
+            # Windows では各バイトが個別のコンソールイベントとして届くため
+            # read_next_mouse_byte（20ms タイムアウト）で読み取る
             mouse_seq = +""
             loop do
-              ch = read_next_input_byte
+              ch = read_next_mouse_byte
               break if ch.nil?
               mouse_seq << ch
               break if ch == 'M' || ch == 'm'

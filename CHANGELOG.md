@@ -5,6 +5,16 @@ All notable changes to rufio will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.90.2] - 2026-04-11
+
+### Added
+- **Windows mouse support (Windows Terminal)**: Mouse click and scroll now work on Windows Terminal using button-events mode (`\e[?1000h\e[?1006h`) instead of any-event mode (`\e[?1003h`) which is unsupported on Windows
+  - Left click, double-click, and wheel scroll are supported (same as Unix)
+  - `read_next_mouse_byte` introduced with a 20ms timeout to handle Windows Console's per-byte event queuing for long SGR sequences
+  - `cleanup_terminal` sends the matching `\e[?1000l\e[?1006l` on Windows
+- **CI: Windows GitHub Actions**: Added `test-windows` job (`windows-latest`, Ruby 3.2/3.3) running the full test suite plus `test_windows_console_input.rb`
+  - Covers ESC key, multibyte input, mouse SGR sequence parsing, and `IO.select` timeout behavior
+
 ## [0.90.1] - 2026-03-28
 
 ### Fixed
