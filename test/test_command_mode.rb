@@ -139,6 +139,8 @@ class TestCommandMode < Minitest::Test
   end
 
   def test_execute_shell_command_with_quotes
+    skip "Windowsではechoコマンドの引用符の扱いが異なるためスキップ" if Gem.win_platform?
+
     command_mode = Rufio::CommandMode.new
 
     # 引用符を含むコマンドが正しく実行される

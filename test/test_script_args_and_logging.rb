@@ -9,6 +9,13 @@ require 'rufio'
 
 # スクリプト引数パースとログ出力のテスト
 class TestScriptArgsAndLogging < Minitest::Test
+  # Windowsでは.shスクリプトが実行できないためスキップ
+  if Gem.win_platform?
+    def self.runnable_methods
+      []
+    end
+  end
+
   def setup
     @tmpdir = Dir.mktmpdir
     @log_dir = File.join(@tmpdir, 'logs')

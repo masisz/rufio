@@ -99,6 +99,8 @@ class TestCommandCompletion < Minitest::Test
   # === シェルコマンド補完の統合テスト ===
 
   def test_complete_shell_command
+    skip "Windowsにはlsコマンドが存在しないためスキップ" if Gem.win_platform?
+
     completion = Rufio::CommandCompletion.new(@command_mode)
 
     # ! で始まる入力はシェルコマンドとして補完

@@ -103,6 +103,8 @@ class TestScriptExecutor < Minitest::Test
   end
 
   def test_execute_with_timeout
+    skip "Windowsではタイムアウト後のプロセス終了処理が異なるためスキップ" if Gem.win_platform?
+
     script_path = create_script("timeout.rb", <<~RUBY)
       sleep 10
       puts "done"

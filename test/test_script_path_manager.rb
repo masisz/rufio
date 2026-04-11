@@ -403,6 +403,7 @@ class TestScriptEnvironmentVariables < Minitest::Test
 
   # 環境変数が正しく設定される
   def test_environment_variables_are_set
+    skip "Windowsでは.shスクリプトが実行できないためスキップ" if Gem.win_platform?
     runner = Rufio::ScriptRunner.new(
       script_paths: [@scripts_dir],
       job_manager: @job_manager

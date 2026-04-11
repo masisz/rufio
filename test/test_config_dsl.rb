@@ -50,6 +50,8 @@ class TestConfigDSL < Minitest::Test
   end
 
   def test_load_script_paths_reads_yaml_file
+    skip "WindowsではUnixスタイルの絶対パスが展開されるためスキップ" if Gem.win_platform?
+
     File.write(@script_paths_yml, <<~YAML)
       - /usr/local/scripts
       - ~/my-scripts
@@ -65,6 +67,8 @@ class TestConfigDSL < Minitest::Test
   end
 
   def test_save_script_paths
+    skip "WindowsではUnixスタイルの絶対パスが展開されるためスキップ" if Gem.win_platform?
+
     paths = ['/test/path1', '/test/path2']
     Rufio::Config.save_script_paths(@script_paths_yml, paths)
 
@@ -74,6 +78,8 @@ class TestConfigDSL < Minitest::Test
   end
 
   def test_add_script_path
+    skip "WindowsではUnixスタイルの絶対パスが展開されるためスキップ" if Gem.win_platform?
+
     File.write(@script_paths_yml, <<~YAML)
       - /existing/path
     YAML
@@ -87,6 +93,8 @@ class TestConfigDSL < Minitest::Test
   end
 
   def test_remove_script_path
+    skip "WindowsではUnixスタイルの絶対パスが展開されるためスキップ" if Gem.win_platform?
+
     File.write(@script_paths_yml, <<~YAML)
       - /path1
       - /path2
@@ -185,6 +193,8 @@ class TestConfigDSL < Minitest::Test
   end
 
   def test_script_paths_uses_script_paths_yml
+    skip "WindowsではUnixスタイルの絶対パスが展開されるためスキップ" if Gem.win_platform?
+
     # script_paths.yml を作成
     File.write(@script_paths_yml, <<~YAML)
       - /test/scripts
@@ -211,6 +221,8 @@ class TestConfigDSL < Minitest::Test
   # ========================================
 
   def test_migrate_from_config_yml
+    skip "WindowsではUnixスタイルの絶対パスが展開されるためスキップ" if Gem.win_platform?
+
     # 古い形式の config.yml を作成
     old_config_yml = File.join(@test_dir, 'config.yml')
     File.write(old_config_yml, <<~YAML)

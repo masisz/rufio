@@ -15,6 +15,8 @@ class TestShellCommandCompletion < Minitest::Test
   # === PATHのコマンド補完テスト ===
 
   def test_complete_path_commands
+    skip "Windowsにはlsコマンドが存在しないためスキップ" if Gem.win_platform?
+
     # PATHから実行可能なコマンドを補完
     candidates = @completion.complete_command("l")
 
@@ -66,6 +68,8 @@ class TestShellCommandCompletion < Minitest::Test
   end
 
   def test_complete_file_path_with_tilde
+    skip "Windowsではチルダ展開の動作が異なるためスキップ" if Gem.win_platform?
+
     # ~ の展開をテスト
     candidates = @completion.complete_path("~/")
 

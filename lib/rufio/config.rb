@@ -86,7 +86,7 @@ module Rufio
         'health.windows_opener' => 'Windows file opener',
         'health.install_brew' => 'Install: brew install',
         'health.install_apt' => 'Install: apt install',
-        'health.install_guide' => 'Check installation guide for your platform',
+        'health.install_guide' => 'Install: Check the installation guide for your platform',
         'health.rga_releases' => 'Install: https://github.com/phiresky/ripgrep-all/releases',
         'health.ruby_upgrade_needed' => 'Please upgrade Ruby to version 2.7.0 or higher'
       },
@@ -156,7 +156,7 @@ module Rufio
         'health.windows_opener' => 'Windows file opener',
         'health.install_brew' => 'Install: brew install',
         'health.install_apt' => 'Install: apt install',
-        'health.install_guide' => 'Check installation guide for your platform',
+        'health.install_guide' => 'Install: Check the installation guide for your platform',
         'health.rga_releases' => 'Install: https://github.com/phiresky/ripgrep-all/releases',
         'health.ruby_upgrade_needed' => 'Please upgrade Ruby to version 2.7.0 or higher'
       }

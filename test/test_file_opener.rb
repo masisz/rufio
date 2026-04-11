@@ -1,15 +1,22 @@
 # frozen_string_literal: true
 
 require_relative "test_helper"
+require 'tmpdir'
+require 'tempfile'
 
 class TestFileOpener < Minitest::Test
   def setup
     @file_opener = Rufio::FileOpener.new
+    @tmpdir = Dir.mktmpdir
+  end
+
+  def teardown
+    FileUtils.rm_rf(@tmpdir)
   end
 
   def test_find_application_for_ruby_file
     # テスト用一時ファイルを作成
-    file_path = "/tmp/test.rb"
+    file_path = File.join(@tmpdir, "test.rb")
     File.write(file_path, "puts 'hello'")
 
     test_applications = {
@@ -21,13 +28,10 @@ class TestFileOpener < Minitest::Test
       application = @file_opener.send(:find_application_for_file, file_path)
       assert_equal 'code', application
     end
-
-    # クリーンアップ
-    File.delete(file_path) if File.exist?(file_path)
   end
 
   def test_find_application_for_unknown_extension
-    file_path = "/tmp/test.unknown"
+    file_path = File.join(@tmpdir, "test.unknown")
     File.write(file_path, "test content")
 
     test_applications = {
@@ -39,8 +43,6 @@ class TestFileOpener < Minitest::Test
       application = @file_opener.send(:find_application_for_file, file_path)
       assert_equal 'open', application
     end
-
-    File.delete(file_path) if File.exist?(file_path)
   end
 
   def test_open_nonexistent_file
@@ -49,7 +51,7 @@ class TestFileOpener < Minitest::Test
   end
 
   def test_open_directory
-    result = @file_opener.open_file("/tmp")
+    result = @file_opener.open_file(@tmpdir)
     refute result, "ディレクトリに対してはfalseを返すべき"
   end
 

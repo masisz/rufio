@@ -192,6 +192,8 @@ class TestScriptPathErrorHandling < Minitest::Test
 
   # 実行権限を修正
   def test_fix_permissions
+    skip "Windowsではchmodによるパーミッション変更が機能しないためスキップ" if Gem.win_platform?
+
     File.write(@config_file, <<~YAML)
       script_paths:
         - #{@scripts_dir}

@@ -46,17 +46,19 @@ class TestDirectoryListing < Minitest::Test
   end
 
   def test_identify_file_types
+    skip "Windowsではchmodによる実行権限の設定が機能しないためスキップ" if Gem.win_platform?
+
     listing = Rufio::DirectoryListing.new(@test_dir)
     entries = listing.list_entries
-    
+
     # ディレクトリの識別
     dir_entry = entries.find { |e| e[:name] == "subdir1" }
     assert_equal "directory", dir_entry[:type]
-    
+
     # 通常ファイルの識別
     file_entry = entries.find { |e| e[:name] == "file1.txt" }
     assert_equal "file", file_entry[:type]
-    
+
     # 実行ファイルの識別
     exec_entry = entries.find { |e| e[:name] == "executable" }
     assert_equal "executable", exec_entry[:type]
@@ -94,21 +96,23 @@ class TestDirectoryListing < Minitest::Test
 
   def test_navigate_to_parent
     listing = Rufio::DirectoryListing.new(@test_dir)
-    
+
     # まずサブディレクトリに移動
     listing.navigate_to("subdir1")
-    original_path = listing.current_path
-    
+
     # 親ディレクトリに移動
     result = listing.navigate_to_parent
     assert result
     assert_equal @test_dir, listing.current_path
-    
+
     # ルートディレクトリでの親移動（制限されるべき）
-    root_listing = Rufio::DirectoryListing.new("/")
-    result = root_listing.navigate_to_parent
-    refute result
-    assert_equal "/", root_listing.current_path
+    # Windowsではルートパスが "D:/" 形式になるためUnixのみ確認
+    unless Gem.win_platform?
+      root_listing = Rufio::DirectoryListing.new("/")
+      result = root_listing.navigate_to_parent
+      refute result
+      assert_equal "/", root_listing.current_path
+    end
   end
 
   def test_refresh
