@@ -44,4 +44,4 @@ jobs:
 
       # Windows 専用: ESC キー・マルチバイト入力・マウスシーケンス・IO.select タイムアウトの検証
       - name: Run Windows console input tests
-        run: ruby -I test -I lib test/test_windows_console_input.rb
+        run: bundle exec ruby -I test -I lib test/test_windows_console_input.rb
