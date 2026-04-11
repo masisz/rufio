@@ -88,12 +88,13 @@ module Rufio
         paths.each do |path|
           next unless Dir.exist?(path)
 
-          Dir.foreach(path) do |file|
-            next if file == '.' || file == '..'
-
-            filepath = File.join(path, file)
-            # 実行可能なファイルのみを追加
-            commands << file if File.executable?(filepath) && !File.directory?(filepath)
+          begin
+            Dir.glob(File.join(path, '*')) do |filepath|
+              file = File.basename(filepath)
+              commands << file if File.executable?(filepath) && !File.directory?(filepath)
+            end
+          rescue StandardError
+            next
           end
         end
 
