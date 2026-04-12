@@ -5,6 +5,20 @@ All notable changes to rufio will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.91.0] - 2026-04-12
+
+### Changed
+- **Limit status bar path display to 2 parent directories above current**: Fixes overly long path display when navigating deep directory trees
+  - e.g. `/home/user/projects/ruby/myapp` → `…/ruby/myapp`
+  - Paths with 3 or fewer segments are shown in full
+
+### Fixed
+- **Windows CI: 36 test failures resolved**
+  - `test_file_opener.rb`: Replaced hardcoded `/tmp/` paths with `Dir.mktmpdir`
+  - Added "Install:" prefix to `health.install_guide` message
+  - Added `skip` guards for Windows-incompatible tests (`.sh` execution, Unix paths, `chmod`, snapshots, etc.)
+- **Windows CI: `pastel` gem not found when running `test_windows_console_input.rb`**: Changed run command from `ruby` to `bundle exec ruby`
+
 ## [0.90.2] - 2026-04-11
 
 ### Added

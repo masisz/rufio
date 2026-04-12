@@ -621,7 +621,7 @@ module Rufio
         current_x += 1
 
         path_end = @screen_width - 1 - version_w
-        path_str = " #{current_path} "
+        path_str = " #{shorten_path(current_path)} "
         path_str.each_char do |char|
           break if current_x >= path_end
           char_w = TextUtils.display_width(char)
@@ -760,6 +760,17 @@ module Rufio
                      end
 
       @tab_mode_manager.switch_to(current_mode) if @tab_mode_manager.current_mode != current_mode
+    end
+
+    # パスを最大2階層上まで表示する短縮形式に変換する
+    # 例: /a/b/c/d/e → …/c/d/e
+    def shorten_path(path, max_parents = 2)
+      sep = '/'
+      parts = path.gsub('\\', sep).split(sep).reject(&:empty?)
+      # current + 2 parents = 3 segments まではフルパスを表示
+      return path if parts.length <= max_parents + 1
+
+      "…/#{parts.last(max_parents + 1).join(sep)}"
     end
   end
 end
