@@ -20,7 +20,9 @@ Gem::Specification.new do |spec|
   spec.metadata['changelog_uri'] = 'https://github.com/masisz/rufio/blob/main/CHANGELOG.md'
 
   spec.files = Dir.chdir(__dir__) do
-    `git ls-files -z`.split("\x0").reject do |f|
+    git_files = `git ls-files -z 2>/dev/null`.split("\x0")
+    files = git_files.empty? ? Dir.glob('**/*').reject { |f| File.directory?(f) } : git_files
+    files.reject do |f|
       (File.expand_path(f) == __FILE__) ||
         f.start_with?(*%w[test/ spec/ features/ .git .circleci appveyor Gemfile])
     end
