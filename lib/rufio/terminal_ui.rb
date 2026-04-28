@@ -190,14 +190,16 @@ module Rufio
 
       # Windows: ブロッキング読み取りスレッドを起動。
       # ConPTY パイプでは IO.select のシグナル遅延で ESC を取りこぼすため、
-      # 常にブロッキング getbyte でバイトをキャプチャしキューに積む。
+      # 常にブロッキングで読み取りキューに積む。
+      # getbyte は raw モード下で ESC (0x1B) を取りこぼす ConPTY バグがあるため
+      # getch を使用し、受信した各バイトをキューに積む。
       if windows?
         @input_queue = Queue.new
         @input_thread = Thread.new do
           loop do
-            byte = STDIN.getbyte
-            break if byte.nil?
-            @input_queue << byte
+            ch = STDIN.getch(min: 1)
+            break if ch.nil?
+            ch.bytes.each { |b| @input_queue << b }
           end
         rescue
           # スレッド終了
