@@ -48,24 +48,55 @@ class TestWindowsConsoleInput < Minitest::Test
   end
 
   # -----------------------------------------------------------------------
-  # IO.select timeout: Windows は 1ms、Unix は 0ms を使うことを確認
+  # ブロッキング入力スレッド（Windows ConPTY 対応）
   # -----------------------------------------------------------------------
 
-  def test_io_select_1ms_timeout_does_not_raise
-    # IO.select に 0.001 秒（1ms）を渡してもエラーにならないことを確認
-    # (Windows Console でも ConPTY パイプでも動作するタイムアウト値)
-    r, w = IO.pipe
-    w.write('x')
-    w.flush
-    result = IO.select([r], nil, nil, 0.001)
-    assert result, 'IO.select(timeout=1ms) は入力があれば truthy を返すべき'
-  ensure
-    r&.close
-    w&.close
+  def test_blocking_input_thread_captures_bytes_via_queue
+    # Queue にバイトを積むと windows_queue_pop_with_timeout で取り出せることを確認
+    queue = Queue.new
+    queue << 0x41  # 'A'
+    queue << 0x42  # 'B'
+
+    popped = []
+    2.times do
+      b = windows_queue_pop_with_timeout_helper(queue, 0.01)
+      popped << b
+    end
+    assert_equal [0x41, 0x42], popped
   end
 
+  def test_blocking_input_thread_timeout_returns_nil
+    # データがないときは nil を返す
+    queue = Queue.new
+    result = windows_queue_pop_with_timeout_helper(queue, 0.005)
+    assert_nil result
+  end
+
+  def test_windows_build_char_ascii
+    # ASCII バイト（ESC を含む）は 1 文字そのまま返す
+    assert_equal "\e", windows_build_char_helper(0x1B, Queue.new)
+    assert_equal 'A',  windows_build_char_helper(0x41, Queue.new)
+  end
+
+  def test_windows_build_char_japanese
+    # 「あ」= 0xE3 0x81 0x82 (3バイト) をキューから組み立てる
+    queue = Queue.new
+    queue << 0x81
+    queue << 0x82
+    result = windows_build_char_helper(0xE3, queue)
+    assert_equal 'あ', result
+    assert result.valid_encoding?
+  end
+
+  def test_windows_build_char_incomplete_multibyte_returns_nil
+    # 後続バイトがなければ nil を返す
+    queue = Queue.new  # 空
+    result = windows_build_char_helper(0xE3, queue)
+    assert_nil result
+  end
+
+  # IO.select タイムアウト（Unix パス用）
   def test_io_select_0ms_timeout_does_not_raise
-    # Unix 側の timeout=0 も同様にエラーにならないことを確認
     r, w = IO.pipe
     result = IO.select([r], nil, nil, 0)
     assert_nil result, 'IO.select(timeout=0ms) は入力がなければ nil を返すべき'
@@ -262,6 +293,42 @@ class TestWindowsConsoleInput < Minitest::Test
   # -----------------------------------------------------------------------
 
   private
+
+  # windows_queue_pop_with_timeout のロジックをテスト用に再現
+  def windows_queue_pop_with_timeout_helper(queue, timeout_sec)
+    deadline = Time.now + timeout_sec
+    loop do
+      begin
+        return queue.pop(true)
+      rescue ThreadError
+        return nil if Time.now >= deadline
+        sleep 0.001
+      end
+    end
+  end
+
+  # windows_build_char のロジックをテスト用に再現
+  def windows_build_char_helper(first_byte_int, queue)
+    remaining = case first_byte_int
+                when 0x00..0x7F then 0
+                when 0xC0..0xDF then 1
+                when 0xE0..0xEF then 2
+                when 0xF0..0xF7 then 3
+                else 0
+                end
+    if remaining == 0
+      first_byte_int.chr(Encoding::UTF_8)
+    else
+      buf = first_byte_int.chr(Encoding::BINARY)
+      remaining.times do
+        b = windows_queue_pop_with_timeout_helper(queue, 0.005)
+        return nil if b.nil?
+        buf << b.chr(Encoding::BINARY)
+      end
+      result = buf.force_encoding(Encoding::UTF_8)
+      result.valid_encoding? ? result : nil
+    end
+  end
 
   # RUBY_PLATFORM を一時的に差し替えて windows? ロジックを評価する
   def stub_platform(platform)

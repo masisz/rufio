@@ -48,6 +48,8 @@ module Rufio
       @running = false
       @test_mode = test_mode
       @multibyte_reader = MultibyteInputReader.new(STDIN)
+      @input_queue = nil
+      @input_thread = nil
       @command_mode_active = false
       @command_input = ""
       @command_mode = CommandMode.new
@@ -186,6 +188,22 @@ module Rufio
         STDIN.raw!
       end
 
+      # Windows: ブロッキング読み取りスレッドを起動。
+      # ConPTY パイプでは IO.select のシグナル遅延で ESC を取りこぼすため、
+      # 常にブロッキング getbyte でバイトをキャプチャしキューに積む。
+      if windows?
+        @input_queue = Queue.new
+        @input_thread = Thread.new do
+          loop do
+            byte = STDIN.getbyte
+            break if byte.nil?
+            @input_queue << byte
+          end
+        rescue
+          # スレッド終了
+        end
+      end
+
       # SGR拡張マウスレポートを有効化
       # Unix:    \e[?1003h (any-event) + \e[?1006h (SGR座標) → クリック・スクロール・移動
       # Windows: \e[?1003h は Windows Terminal / conhost 非対応。
@@ -215,29 +233,72 @@ module Rufio
     end
 
     # エスケープシーケンスの後続バイトを読み取る（矢印キー等の短いシーケンス用）。
-    # Windows: IO.select(timeout=0) がESCを取りこぼすため 5ms タイムアウトを使用。
+    # Windows: IO.select を使わずキューから取得（5ms タイムアウト）。
     def read_next_input_byte
       if windows?
-        return nil unless IO.select([STDIN], nil, nil, 0.005)
-        STDIN.read_nonblock(1) rescue nil
+        b = windows_queue_pop_with_timeout(0.005)
+        b.nil? ? nil : b.chr(Encoding::BINARY)
       else
         STDIN.read_nonblock(1) rescue nil
       end
     end
 
     # SGRマウスシーケンスの後続バイトを読み取る。
-    # \e[<Btn;Col;RowM/m は最大 15 バイト程度になるため、
-    # Windows Console のイベントキューにバイトが積まれるまで 20ms 待つ。
+    # Windows: キューから取得（20ms タイムアウト）。
     def read_next_mouse_byte
       if windows?
-        return nil unless IO.select([STDIN], nil, nil, 0.020)
-        STDIN.read_nonblock(1) rescue nil
+        b = windows_queue_pop_with_timeout(0.020)
+        b.nil? ? nil : b.chr(Encoding::BINARY)
       else
         STDIN.read_nonblock(1) rescue nil
       end
     end
 
+    # Windows 専用: キューから1文字（マルチバイト対応）を組み立てる。
+    # first_byte_int は getbyte が返す Integer。
+    def windows_build_char(first_byte_int)
+      remaining = case first_byte_int
+                  when 0x00..0x7F then 0
+                  when 0xC0..0xDF then 1
+                  when 0xE0..0xEF then 2
+                  when 0xF0..0xF7 then 3
+                  else 0
+                  end
+      if remaining == 0
+        first_byte_int.chr(Encoding::UTF_8)
+      else
+        buf = first_byte_int.chr(Encoding::BINARY)
+        remaining.times do
+          b = windows_queue_pop_with_timeout(0.005)
+          return nil if b.nil?
+          buf << b.chr(Encoding::BINARY)
+        end
+        result = buf.force_encoding(Encoding::UTF_8)
+        result.valid_encoding? ? result : nil
+      end
+    end
+
+    # Windows 専用: @input_queue からタイムアウト付きで Integer バイトを取り出す。
+    def windows_queue_pop_with_timeout(timeout_sec)
+      deadline = Time.now + timeout_sec
+      loop do
+        begin
+          return @input_queue.pop(true)
+        rescue ThreadError
+          return nil if Time.now >= deadline
+          sleep 0.001
+        end
+      end
+    end
+
     def cleanup_terminal
+      # Windows 入力スレッドを停止（raw! 解除前に kill）
+      if windows? && @input_thread
+        @input_thread.kill rescue nil
+        @input_thread.join(0.5) rescue nil
+        @input_thread = nil
+      end
+
       # rawモードを解除
       if STDIN.tty?
         STDIN.cooked!
@@ -432,25 +493,28 @@ module Rufio
     private
 
     # ノンブロッキング入力処理（ゲームループ用）
-    # Windows: IO.select(timeout=1ms) で入力確認後 read_nonblock
-    #          timeout=0 だとESCキーを取りこぼす（コンソールの処理タイミング競合）ため
-    #          1ms の正のタイムアウトを使う。コンソールハンドルでも ConPTY パイプでも動作する。
+    # Windows: ブロッキング入力スレッドのキューからノンブロッキングで取得
+    #          （IO.select の ConPTY シグナル遅延問題を回避）
     # Unix:    IO.select(timeout=0) で入力確認後 read_nonblock
     def handle_input_nonblocking
-      # 入力バイトを1つ読み取る
       if windows?
-        # Windows: timeout=0 ではESCキーを取りこぼすため 1ms タイムアウトを使用
-        return false unless IO.select([STDIN], nil, nil, 0.001)
+        # Windows: ブロッキング入力スレッドが積んだキューから取得
+        raw_byte = begin
+          @input_queue.pop(true)
+        rescue ThreadError
+          return false
+        end
+        input = windows_build_char(raw_byte)
+        return false unless input
       else
         # Unix: 0msタイムアウトで即座にチェック（30FPS = 33.33ms/frame）
         return false unless IO.select([STDIN], nil, nil, 0)
-      end
-
-      begin
-        input = @multibyte_reader.read_char
-        return false if input.nil?
-      rescue Errno::ENOTTY, Errno::ENODEV
-        return false
+        begin
+          input = @multibyte_reader.read_char
+          return false if input.nil?
+        rescue Errno::ENOTTY, Errno::ENODEV
+          return false
+        end
       end
 
       # コマンドモードがアクティブな場合は、エスケープシーケンス処理をスキップ
@@ -492,7 +556,11 @@ module Rufio
           when 'C' then 'l'  # Right arrow
           when 'D' then 'h'  # Left arrow
           when 'Z' then handle_shift_tab; return true  # Shift+Tab
-          else "\e"  # ESCキー（そのまま保持）
+          else
+            # 未知の CSI シーケンス（\e[27;1u 等）: 残りバイトを読み捨てて
+            # パイプを汚染しないようにする
+            drain_csi_sequence(third_char)
+            "\e"
           end
         else
           input = "\e"  # ESCキー（そのまま保持）
@@ -1133,6 +1201,16 @@ module Rufio
         title_color: "\e[1;36m",   # Bold cyan
         content_color: "\e[37m"    # White
       })
+    end
+
+    # 未知の CSI シーケンス（\e[X...）の残りバイトを終端アルファベットまで読み捨てる。
+    # Windows Terminal が \e[27;1u 等を送った場合のパイプ汚染を防ぐ。
+    def drain_csi_sequence(first_char)
+      return if first_char.nil? || first_char =~ /[A-Za-z]/
+      10.times do
+        ch = read_next_input_byte
+        break if ch.nil? || ch =~ /[A-Za-z]/
+      end
     end
 
   end
