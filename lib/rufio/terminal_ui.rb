@@ -75,8 +75,6 @@ module Rufio
 
       # シンタックスハイライター（bat が利用可能な場合のみ動作）
       @syntax_highlighter = SyntaxHighlighter.new
-      # 非同期ハイライト完了フラグ（Thread → メインループへの通知）
-      @highlight_updated = false
 
 
       # Tab mode manager
@@ -134,7 +132,6 @@ module Rufio
     def refresh_display
       # ウィンドウサイズを更新してから画面をクリアして再描画
       update_screen_size
-      print "\e[2J\e[H"  # clear screen, cursor to home
 
       # プレビューキャッシュをクリア（ディレクトリ変更やリフレッシュ時）
       @preview_cache.clear
@@ -432,9 +429,9 @@ module Rufio
           needs_redraw = true
         end
 
-        # 非同期シンタックスハイライト完了チェック（バックグラウンドスレッドからの通知）
-        if @highlight_updated
-          @highlight_updated = false
+        # 非同期シンタックスハイライト完了チェック（UIRenderer側のフラグを参照）
+        if @ui_renderer.highlight_updated?
+          @ui_renderer.reset_highlight_updated
           needs_redraw = true
         end
 
@@ -993,8 +990,7 @@ module Rufio
       @job_manager = job_manager
       @notification_manager = notification_manager
       @in_job_mode = true
-      # 画面を一度クリアしてレンダラーをリセット
-      print "\e[2J\e[H"
+      # レンダラーをリセット（print "\e[2J\e[H" は renderer.clear に含まれる）
       @renderer.clear if @renderer
       # 再描画フラグを立てる
       @job_mode_needs_redraw = true
@@ -1007,7 +1003,6 @@ module Rufio
       @job_manager = nil
       # バッファベースの全画面再描画を使用
       update_screen_size
-      print "\e[2J\e[H"
       if @screen && @renderer
         @renderer.clear
         @screen.clear
