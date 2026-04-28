@@ -175,10 +175,10 @@ module Rufio
     # ブックマークハイライトが期限切れかどうか
     # @return [Boolean] true=期限切れ or ハイライト中でない, false=ハイライト中
     def setup_terminal
-      # terminal setup
-      system('tput smcup')  # alternate screen
-      system('tput civis')  # cursor invisible
-      print "\e[2J\e[H"     # clear screen, cursor to home (first time only)
+      # terminal setup（ANSI エスケープで統一 — tput は Windows で動作しない）
+      print "\e[?1049h"  # alternate screen buffer
+      print "\e[?25l"    # cursor invisible
+      print "\e[2J\e[H"  # clear screen, cursor to home (first time only)
 
       # rawモードに設定（ゲームループのノンブロッキング入力用）
       if STDIN.tty?
@@ -311,8 +311,9 @@ module Rufio
       end
       STDOUT.flush
 
-      system('tput rmcup')  # normal screen
-      system('tput cnorm')  # cursor normal
+      print "\e[?25h"    # cursor visible
+      print "\e[?1049l"  # restore normal screen buffer
+      STDOUT.flush
       puts ConfigLoader.message('app.terminated')
     end
 
@@ -770,6 +771,8 @@ module Rufio
     def activate_command_mode
       @command_mode_active = true
       @command_input = ""
+      print "\e[?25h"  # カーソルを表示（テキスト入力中）
+      STDOUT.flush
       # 閲覧中ディレクトリをコマンドモードに通知（ローカルスクリプト・Rakefileの検出用）
       browsing_dir = @directory_listing&.current_path || Dir.pwd
       @command_mode.update_browsing_directory(browsing_dir)
@@ -779,6 +782,8 @@ module Rufio
     def deactivate_command_mode
       @command_mode_active = false
       @command_input = ""
+      print "\e[?25l"  # カーソルを非表示（通常のファイラー表示に戻る）
+      STDOUT.flush
       # オーバーレイをクリア
       @screen&.clear_overlay if @screen&.overlay_enabled?
     end
