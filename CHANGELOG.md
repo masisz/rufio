@@ -5,6 +5,18 @@ All notable changes to rufio will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-04-28
+
+### Added
+- **Job mode: View log with Space key**: Press Space on a selected job to display its full execution log. Footer switches to `[ESC] Close Log` while in log view; press ESC to return to the job list
+- **Job mode: Disable Tab key**: Tab (bookmark cycling) is now suppressed in job mode to prevent accidental navigation. Removed `[Tab] Switch Mode` from the job mode footer
+
+### Fixed
+- **Windows: ESC key not working**: `STDIN.raw` + `getbyte` silently drops the ESC byte (0x1B) under Windows ConPTY. The blocking input thread now uses `getch` instead, pushing each received byte onto the queue
+- **Windows: Preview flickering**: Redundant `print "\e[2J\e[H"` calls before `renderer.clear` caused the screen to blank momentarily on every redraw. Removed the duplicate clears in `refresh_display`, `set_job_mode`, and `exit_job_mode`. Also unified the async highlight-updated flag into `UIRenderer` (it was maintained separately in both `TerminalUI` and `UIRenderer`, causing missed redraws)
+- **Windows: Cursor visible as blinking vertical bar in bottom-right corner**: `tput civis` is a no-op on Windows, leaving the cursor visible. Replaced `tput civis/cnorm/smcup/rmcup` with ANSI sequences `\e[?25l`/`\e[?25h`/`\e[?1049h`/`\e[?1049l` which work on Windows Terminal. Cursor is shown only during command mode input and hidden otherwise
+- **Windows: `bundle install` fails with "cannot load git ls-files"**: `rufio.gemspec` now falls back to `Dir.glob` when `git` is not on PATH
+
 ## [0.91.0] - 2026-04-12
 
 ### Changed
