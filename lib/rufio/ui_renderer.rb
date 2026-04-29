@@ -128,7 +128,8 @@ module Rufio
 
       if in_job_mode
         # ジョブモード: フッタ y=0（上部）、コンテンツ y=1〜h-2、統合行 y=h-1（下部）
-        draw_job_footer_to_buffer(screen, 0, job_manager)
+        log_mode = job_mode_instance&.log_mode? || false
+        draw_job_footer_to_buffer(screen, 0, job_manager, log_mode: log_mode)
         draw_job_list_to_buffer(screen, content_height, job_manager, job_mode_instance)
         draw_mode_tabs_to_buffer(screen, @screen_height - 1)
       else
@@ -659,6 +660,12 @@ module Rufio
     def draw_job_list_to_buffer(screen, height, job_manager, job_mode_instance)
       return unless job_manager
 
+      # ログモード中は選択ジョブのログを表示
+      if job_mode_instance&.log_mode?
+        draw_job_log_to_buffer(screen, height, job_mode_instance.selected_job)
+        return
+      end
+
       jobs = job_manager.jobs
       selected_index = job_mode_instance&.selected_index || 0
 
@@ -671,6 +678,24 @@ module Rufio
         else
           screen.put_string(0, line_num, ' ' * @screen_width)
         end
+      end
+    end
+
+    def draw_job_log_to_buffer(screen, height, job)
+      unless job
+        screen.put_string(0, CONTENT_START_LINE, 'No job selected'.ljust(@screen_width), fg: "\e[90m")
+        return
+      end
+
+      log_lines = (job.logs || '').split("\n")
+      title = "=== Log: #{job.name} ==="
+      screen.put_string(0, CONTENT_START_LINE, title.ljust(@screen_width), fg: "\e[1;36m")
+
+      (0...height - 1).each do |i|
+        line_num = i + CONTENT_START_LINE + 1
+        line = log_lines[i] || ''
+        line = line[0...@screen_width].ljust(@screen_width)
+        screen.put_string(0, line_num, line, fg: "\e[37m")
       end
     end
 
@@ -712,9 +737,13 @@ module Rufio
       end
     end
 
-    def draw_job_footer_to_buffer(screen, y, job_manager)
+    def draw_job_footer_to_buffer(screen, y, job_manager, log_mode: false)
       job_count = job_manager&.job_count || 0
-      help_text = "[Space] View Log | [x] Cancel | [Tab] Switch Mode | Jobs: #{job_count}"
+      help_text = if log_mode
+                    "[ESC] Close Log | Jobs: #{job_count}"
+                  else
+                    "[Space] View Log | [x] Cancel | Jobs: #{job_count}"
+                  end
       footer_content = help_text.center(@screen_width)[0...@screen_width]
 
       footer_content.each_char.with_index do |char, x|

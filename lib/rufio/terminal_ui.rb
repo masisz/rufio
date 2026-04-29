@@ -567,8 +567,8 @@ module Rufio
         end
       end
 
-      # TabキーはFilesモードの時のみブックマーク循環移動
-      if input == "\t" && @tab_mode_manager.current_mode == :files
+      # TabキーはFilesモードの時のみブックマーク循環移動（ジョブモード中は無効）
+      if input == "\t" && @tab_mode_manager.current_mode == :files && !@in_job_mode
         handle_tab_key
         return true
       end

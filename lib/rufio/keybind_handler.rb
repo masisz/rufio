@@ -669,7 +669,6 @@ module Rufio
         exit_job_mode
         true
       when :show_log
-        # ログ表示は将来実装
         @terminal_ui&.trigger_job_mode_redraw if @terminal_ui
         true
       when true, false
