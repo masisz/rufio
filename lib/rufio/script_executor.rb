@@ -118,7 +118,8 @@ module Rufio
 
         begin
           Timeout.timeout(timeout_sec) do
-            stdin, stdout_io, stderr_io, wait_thread = Open3.popen3(env, *command, **options)
+            args = env.empty? ? [*command] : [env, *command]
+            stdin, stdout_io, stderr_io, wait_thread = Open3.popen3(*args, **options)
             pid = wait_thread.pid
             stdin.close
             stdout = stdout_io.read
@@ -162,7 +163,9 @@ module Rufio
 
       # タイムアウトなしで実行
       def execute_without_timeout(command, env, options)
-        stdout, stderr, status = Open3.capture3(env, *command, **options)
+        # 空の env ハッシュを渡すと Windows で SystemRoot 等が引き継がれないため省略する
+        args = env.empty? ? [*command] : [env, *command]
+        stdout, stderr, status = Open3.capture3(*args, **options)
 
         {
           success: status.success?,
@@ -183,7 +186,8 @@ module Rufio
 
         begin
           Timeout.timeout(timeout_sec) do
-            stdin, stdout_io, stderr_io, wait_thread = Open3.popen3(env, shell_command, **options)
+            args = env.empty? ? [shell_command] : [env, shell_command]
+            stdin, stdout_io, stderr_io, wait_thread = Open3.popen3(*args, **options)
             pid = wait_thread.pid
             stdin.close
             stdout = stdout_io.read
@@ -226,7 +230,8 @@ module Rufio
 
       # シェルコマンドをタイムアウトなしで実行
       def execute_shell_without_timeout(shell_command, env, options)
-        stdout, stderr, status = Open3.capture3(env, shell_command, **options)
+        args = env.empty? ? [shell_command] : [env, shell_command]
+        stdout, stderr, status = Open3.capture3(*args, **options)
 
         {
           success: status.success?,

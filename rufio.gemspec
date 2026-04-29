@@ -20,7 +20,7 @@ Gem::Specification.new do |spec|
   spec.metadata['changelog_uri'] = 'https://github.com/masisz/rufio/blob/main/CHANGELOG.md'
 
   spec.files = Dir.chdir(__dir__) do
-    git_files = `git ls-files -z 2>/dev/null`.split("\x0")
+    git_files = IO.popen(['git', 'ls-files', '-z'], err: File::NULL) { |f| f.read }.split("\x0") rescue []
     files = git_files.empty? ? Dir.glob('**/*').reject { |f| File.directory?(f) } : git_files
     files.reject do |f|
       (File.expand_path(f) == __FILE__) ||
