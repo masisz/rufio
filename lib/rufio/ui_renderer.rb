@@ -687,7 +687,7 @@ module Rufio
         return
       end
 
-      log_lines = (job.logs || '').split("\n")
+      log_lines = job.logs || []
       title = "=== Log: #{job.name} ==="
       screen.put_string(0, CONTENT_START_LINE, title.ljust(@screen_width), fg: "\e[1;36m")
 
