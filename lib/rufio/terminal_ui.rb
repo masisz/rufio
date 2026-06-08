@@ -192,10 +192,12 @@ module Rufio
       # getch を使用し、受信した各バイトをキューに積む。
       if windows?
         @input_queue = Queue.new
+        @stop_input_thread = false
         @input_thread = Thread.new do
           loop do
+            break if @stop_input_thread
             ch = STDIN.getch(min: 1)
-            break if ch.nil?
+            break if ch.nil? || @stop_input_thread
             ch.bytes.each { |b| @input_queue << b }
           end
         rescue
@@ -291,19 +293,7 @@ module Rufio
     end
 
     def cleanup_terminal
-      # Windows 入力スレッドを停止（raw! 解除前に kill）
-      if windows? && @input_thread
-        @input_thread.kill rescue nil
-        @input_thread.join(0.5) rescue nil
-        @input_thread = nil
-      end
-
-      # rawモードを解除
-      if STDIN.tty?
-        STDIN.cooked!
-      end
-
-      # マウスレポートを無効化（setup_terminal と対称）
+      # マウスレポートを先に無効化して新しいイベントの流入を止める
       if windows?
         print "\e[?1000l\e[?1006l"
       else
@@ -311,10 +301,44 @@ module Rufio
       end
       STDOUT.flush
 
+      # Windows 入力スレッドを停止
+      if windows? && @input_thread
+        @stop_input_thread = true
+        @input_thread.kill rescue nil
+        @input_thread.join(0.5) rescue nil
+        @input_thread = nil
+        # コンソール入力バッファをフラッシュして残留イベントによる不正出力を防ぐ
+        windows_flush_console_input_buffer
+      end
+
+      # rawモードを解除
+      if STDIN.tty?
+        STDIN.cooked!
+      end
+
       print "\e[?25h"    # cursor visible
       print "\e[?1049l"  # restore normal screen buffer
       STDOUT.flush
       puts ConfigLoader.message('app.terminated')
+    end
+
+    def windows_flush_console_input_buffer
+      require 'fiddle'
+      kernel32 = Fiddle.dlopen('kernel32')
+      get_std_handle = Fiddle::Function.new(
+        kernel32['GetStdHandle'],
+        [Fiddle::TYPE_LONG],
+        Fiddle::TYPE_VOIDP
+      )
+      flush = Fiddle::Function.new(
+        kernel32['FlushConsoleInputBuffer'],
+        [Fiddle::TYPE_VOIDP],
+        Fiddle::TYPE_INT
+      )
+      handle = get_std_handle.call(-10)  # STD_INPUT_HANDLE = -10
+      flush.call(handle)
+    rescue
+      # Windows API が使えない場合は無視して続行
     end
 
     # ゲームループパターンのmain_loop（CPU最適化版：フレームスキップ対応）
