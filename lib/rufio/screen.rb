@@ -24,12 +24,16 @@ module Rufio
   # - Minimal ANSI stripping (only once in put_string)
   #
   class Screen
+    # Pre-allocated mutable cell. Struct supports [] access like Hash,
+    # so callers using cell[:char] etc. need no changes.
+    Cell = Struct.new(:char, :fg, :bg, :width)
+
     attr_reader :width, :height
 
     def initialize(width, height)
       @width = width
       @height = height
-      @cells = Array.new(height) { Array.new(width) { default_cell } }
+      @cells = Array.new(height) { Array.new(width) { Cell.new(' ', nil, nil, 1) } }
       @overlay_cells = nil  # オーバーレイレイヤー（ダイアログ用）
       @dirty_rows = Set.new  # Phase1: Dirty row tracking
     end
@@ -47,12 +51,11 @@ module Rufio
 
       # Phase1: Width is calculated once here (not in rendering loop)
       char_width = width || TextUtils.display_width(char)
-      @cells[y][x] = {
-        char: char,
-        fg: fg,
-        bg: bg,
-        width: char_width
-      }
+      cell = @cells[y][x]
+      cell.char  = char
+      cell.fg    = fg
+      cell.bg    = bg
+      cell.width = char_width
 
       # Phase1: Mark row as dirty
       @dirty_rows.add(y)
@@ -62,12 +65,11 @@ module Rufio
         (char_width - 1).times do |offset|
           next_x = x + 1 + offset
           break if next_x >= @width
-          @cells[y][next_x] = {
-            char: '',
-            fg: nil,
-            bg: nil,
-            width: 0
-          }
+          marker = @cells[y][next_x]
+          marker.char  = ''
+          marker.fg    = nil
+          marker.bg    = nil
+          marker.width = 0
         end
       end
     end
@@ -156,7 +158,12 @@ module Rufio
     # Clear the entire screen
     def clear
       @cells.each do |row|
-        row.fill { default_cell }
+        row.each do |cell|
+          cell.char  = ' '
+          cell.fg    = nil
+          cell.bg    = nil
+          cell.width = 1
+        end
       end
       # Phase1: Clear dirty rows after full clear
       @dirty_rows.clear
@@ -266,7 +273,7 @@ module Rufio
     private
 
     def default_cell
-      { char: ' ', fg: nil, bg: nil, width: 1 }
+      Cell.new(' ', nil, nil, 1)
     end
 
     def out_of_bounds?(x, y)
