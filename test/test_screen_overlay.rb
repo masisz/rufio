@@ -120,5 +120,42 @@ module Rufio
       row = @screen.row(0)
       assert_includes row, '日'
     end
+
+    def test_overlay_color_overrides_base_color
+      @screen.put(0, 0, 'A', fg: "\e[31m")  # base: red
+      @screen.enable_overlay
+      @screen.put_overlay(0, 0, 'A', fg: "\e[32m")  # overlay: green
+
+      row = @screen.row(0)
+      assert_includes row, "\e[32m", "overlay color should appear"
+      refute_includes row, "\e[31m", "base color should be hidden by overlay"
+    end
+
+    def test_enable_disable_enable_cycle
+      @screen.enable_overlay
+      assert @screen.overlay_enabled?
+
+      @screen.put_overlay(0, 0, 'X')
+      @screen.disable_overlay
+      refute @screen.overlay_enabled?
+
+      # Re-enable: overlay should start empty again
+      @screen.enable_overlay
+      assert @screen.overlay_enabled?
+
+      row = @screen.row(0)
+      refute_includes row, 'X', "re-enabled overlay should be empty"
+    end
+
+    def test_put_overlay_out_of_bounds_does_nothing
+      @screen.enable_overlay
+      @screen.put_overlay(-1, 0, 'X')
+      @screen.put_overlay(0, -1, 'X')
+      @screen.put_overlay(20, 0, 'X')
+      @screen.put_overlay(0, 10, 'X')
+
+      row = @screen.row(0)
+      refute_includes row, 'X'
+    end
   end
 end

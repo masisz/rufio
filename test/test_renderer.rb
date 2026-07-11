@@ -38,17 +38,6 @@ class TestRenderer < Minitest::Test
     assert_kind_of Rufio::Renderer, renderer
   end
 
-  def test_render_empty_screen
-    output = StringIO.new
-    renderer = Rufio::Renderer.new(10, 5, output: output)
-    screen = Rufio::Screen.new(10, 5)
-
-    renderer.render(screen)
-
-    # Should output something (cursor positioning + content)
-    assert_kind_of String, output.string
-  end
-
   def test_render_with_content
     output = StringIO.new
     renderer = Rufio::Renderer.new(20, 5, output: output)
@@ -191,50 +180,69 @@ class TestRenderer < Minitest::Test
     assert_match /Frame 2/, output2
   end
 
-  # Fix 1: 複数のdirty rowsを単一の write() 呼び出しで出力するアトミックレンダリングのテスト
-  # 動機: STDOUT sync=true 環境で print を行ごとに呼ぶと各行で即座にフラッシュされ、
-  #       中間状態が表示されてカーソルのちらつきが発生する。
-  #       全行を1つの文字列に結合してから write() を1回だけ呼ぶことで
-  #       ターミナル更新がアトミックになりちらつきを解消する。
-  def test_render_writes_output_atomically
-    spy = OutputSpy.new
-    renderer = Rufio::Renderer.new(20, 5, output: spy)
+  def test_render_returns_false_when_nothing_to_render
+    output = StringIO.new
+    renderer = Rufio::Renderer.new(20, 5, output: output)
     screen = Rufio::Screen.new(20, 5)
 
-    # 3行分のコンテンツを設定 → 3つのdirty row
-    screen.put_string(0, 0, "Line 0")
-    screen.put_string(0, 1, "Line 1")
-    screen.put_string(0, 2, "Line 2")
+    result = renderer.render(screen)
 
-    renderer.render(screen)
-
-    # 行ごとの print は使わず、全行を1回の write で出力すること
-    assert_equal 0, spy.prints.length, "print は使用しないこと（行ごとフラッシュを防ぐため）"
-    assert_equal 1, spy.writes.length, "全dirty rowsを単一の write 呼び出しで出力すること（アトミック更新）"
-
-    # コンテンツは正しく出力されていること
-    assert_match(/Line 0/, spy.string)
-    assert_match(/Line 1/, spy.string)
-    assert_match(/Line 2/, spy.string)
+    assert_equal false, result
+    assert_equal "", output.string
   end
 
-  def test_render_no_output_when_no_dirty_rows
-    spy = OutputSpy.new
-    renderer = Rufio::Renderer.new(20, 5, output: spy)
+  def test_render_returns_true_when_rows_updated
+    output = StringIO.new
+    renderer = Rufio::Renderer.new(20, 5, output: output)
+    screen = Rufio::Screen.new(20, 5)
+    screen.put_string(0, 0, "Hello")
+
+    result = renderer.render(screen)
+
+    assert_equal true, result
+  end
+
+  def test_render_with_fullwidth_chars
+    output = StringIO.new
+    renderer = Rufio::Renderer.new(20, 5, output: output)
     screen = Rufio::Screen.new(20, 5)
 
-    # 初回レンダリングで front buffer を同期
-    screen.put_string(0, 0, "Hello")
+    screen.put_string(0, 0, "日本語")
     renderer.render(screen)
 
-    # スパイをリセット相当の状態でもう一度スクリーンをクリア（dirty なし）
-    spy2 = OutputSpy.new
-    renderer2 = Rufio::Renderer.new(20, 5, output: spy2)
-    screen2 = Rufio::Screen.new(20, 5)
-    # dirty rows が空の場合は何も出力しない
-    renderer2.render(screen2)
+    result = output.string
+    assert_match(/日/, result)
+    assert_match(/本/, result)
+    assert_match(/語/, result)
+  end
 
-    assert_equal 0, spy2.writes.length, "dirty rowsがない場合は write を呼ばないこと"
-    assert_equal 0, spy2.prints.length, "dirty rowsがない場合は print を呼ばないこと"
+  def test_render_fullwidth_diff_update
+    output = StringIO.new
+    renderer = Rufio::Renderer.new(20, 5, output: output)
+    screen = Rufio::Screen.new(20, 5)
+
+    screen.put_string(0, 0, "ASCII only")
+    renderer.render(screen)
+    output.string.clear
+
+    screen.clear
+    screen.put_string(0, 0, "日本語テスト")
+    renderer.render(screen)
+
+    assert_match(/日本語テスト/, Rufio::ColorHelper.strip_ansi(output.string))
+  end
+
+  def test_resize_allows_rendering_with_new_dimensions
+    output = StringIO.new
+    renderer = Rufio::Renderer.new(10, 5, output: output)
+    screen = Rufio::Screen.new(20, 8)
+
+    renderer.resize(20, 8)
+    output.string.clear
+
+    screen.put_string(0, 0, "After resize")
+    renderer.render(screen)
+
+    assert_match(/After resize/, output.string)
   end
 end

@@ -154,4 +154,46 @@ class TestScreen < Minitest::Test
     assert_match /AA/, row
     assert_match /BB/, row
   end
+
+  def test_get_cell_out_of_bounds_returns_default
+    screen = Rufio::Screen.new(10, 5)
+
+    [[-1, 0], [0, -1], [10, 0], [0, 5]].each do |x, y|
+      cell = screen.get_cell(x, y)
+      assert_equal ' ', cell[:char], "get_cell(#{x}, #{y}) should return default char"
+      assert_nil cell[:fg]
+      assert_nil cell[:bg]
+    end
+  end
+
+  def test_put_string_truncates_at_screen_edge
+    screen = Rufio::Screen.new(10, 5)
+    screen.put_string(7, 0, "ABCDE")  # 7+5=12 > 10
+
+    row = screen.row(0)
+    clean = Rufio::ColorHelper.strip_ansi(row)
+    assert_equal 10, Rufio::TextUtils.display_width(clean), "Row width must equal screen width"
+    assert_match /ABC/, row
+    refute_match /E/, row  # E should be clipped (position 11)
+  end
+
+  def test_put_fullwidth_then_write_to_marker_resets_it
+    screen = Rufio::Screen.new(10, 5)
+    screen.put(0, 0, '全', width: 2)
+
+    # The marker cell at x=1 should have width=0
+    assert_equal 0, screen.get_cell(1, 0)[:width]
+
+    # Overwrite marker position with a normal character
+    screen.put(1, 0, 'X')
+    cell = screen.get_cell(1, 0)
+    assert_equal 'X', cell[:char]
+    assert_equal 1, cell[:width]
+  end
+
+  def test_row_out_of_bounds_returns_spaces
+    screen = Rufio::Screen.new(10, 5)
+    assert_equal " " * 10, screen.row(-1)
+    assert_equal " " * 10, screen.row(5)
+  end
 end
