@@ -2,34 +2,26 @@
 
 **Runtime Unified Flow I/O Operator**
 
-A TUI file manager that executes and coordinates tools and scripts from files.
-Supports Ruby/Python/PowerShell and integrates your development workflow in one place.
+A terminal file manager that keeps your everyday script workflow close at hand.
+Find files, run Ruby, Python, or PowerShell scripts in the current directory, and check jobs and logs.
+Add your own actions in Ruby.
 
 [日本語](./README_ja.md) | **English**
 
-## Concept
+## What Makes rufio Different
 
-rufio is not just a file manager. It's a **tool runtime execution environment**.
+rufio brings finding files, running scripts, and checking results together in one interface.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                        rufio                            │
-│         Runtime Unified Flow I/O Operator               │
-├─────────────────────────────────────────────────────────┤
-│  Files ──→ Scripts ──→ Tools ──→ Output                 │
-│    ↑                                   │                │
-│    └───────────── Feedback ────────────┘                │
-└─────────────────────────────────────────────────────────┘
-```
-
-- **File Operations**: Traditional file manager functionality
-- **Script Execution**: Run Ruby/Python/PowerShell scripts in file context
-- **Tool Integration**: Seamless integration with external tools (git, fzf, rga, etc.)
-- **Unified I/O**: Manage all input/output in a single flow
+- **Run scripts where your files are**: Register your script directories, then press `:`, type `@` + part of a script name, press `Tab`, and hit `Enter`. Run Ruby, Python, or PowerShell scripts in the directory you are browsing
+- **Follow jobs and execution logs**: Keep browsing while scripts run in the background. Press `J` to check jobs and `L` to view execution logs
+- **Add your own actions in Ruby**: Define custom commands with a small Ruby DSL in `~/.config/rufio/commands.rb`. `~/.rufio/commands.rb` is also supported
+- **Use installed tools without extra configuration**: Search file names with fzf, search contents with rga, highlight previews with bat, and navigate directory history with zoxide
+- **Windows support**: Run PowerShell scripts with keyboard input handling adapted to Windows terminals
+- **Trace behavior in the source**: The implementation is primarily Ruby, so you can inspect and change the parts you need. Security design is documented in [SECURITY.md](./SECURITY.md)
 
 ## Features
 
-### As a Tool Runtime
+### For Script Workflows
 
 - **Multi-language Script Support**: Ruby, Python, PowerShell
 - **Script Path Management**: Register and manage multiple script directories
