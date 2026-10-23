@@ -237,7 +237,8 @@ module Rufio
     # Windows: IO.select を使わずキューから取得（5ms タイムアウト）。
     def read_next_input_byte
       if windows?
-        b = windows_queue_pop_with_timeout(0.005)
+        # ConPTY ではバイト到着が遅れることがあるため 5ms では ESC 単体と誤判定する
+        b = windows_queue_pop_with_timeout(0.025)
         b.nil? ? nil : b.chr(Encoding::BINARY)
       else
         STDIN.read_nonblock(1) rescue nil
@@ -280,7 +281,15 @@ module Rufio
     end
 
     # Windows 専用: @input_queue からタイムアウト付きで Integer バイトを取り出す。
+    # Ruby 3.2+ は Queue#pop(timeout:) で正確に待機する（sleep ポーリングは
+    # Windows のタイマー分解能 約15ms により遅延する）。それ以前はポーリング。
+    QUEUE_POP_TIMEOUT_SUPPORTED = Queue.instance_method(:pop).parameters.any? { |_, n| n == :timeout }
+
     def windows_queue_pop_with_timeout(timeout_sec)
+      if QUEUE_POP_TIMEOUT_SUPPORTED
+        return @input_queue.pop(timeout: timeout_sec)
+      end
+
       deadline = Time.now + timeout_sec
       loop do
         begin
@@ -344,10 +353,13 @@ module Rufio
     # ゲームループパターンのmain_loop（CPU最適化版：フレームスキップ対応）
     # UPDATE → DRAW → RENDER → SLEEP のサイクル
     # 変更がない場合は描画をスキップしてCPU使用率を削減
+    MAX_INPUTS_PER_FRAME = 32
+
     def main_loop
       # CPU最適化: 固定FPSをやめて、イベントドリブンに変更
       # 最小スリープ時間（入力チェック間隔）
-      min_sleep_interval = 0.0333  # 30FPS（約33.33ms/フレーム）
+      # Windows は入力をキュー経由で受けるため、入力遅延を抑えるよう短めにする
+      min_sleep_interval = windows? ? 0.008 : 0.0333  # Windows: 約8ms / Unix: 30FPS
       check_interval = 0.1  # バックグラウンドタスクのチェック間隔
 
       # Phase 3: Screen/Rendererを初期化
@@ -402,7 +414,14 @@ module Rufio
 
         # UPDATE phase - ノンブロッキング入力処理
         # 入力があった場合は再描画が必要
-        had_input = handle_input_nonblocking
+        # 1フレームで溜まった入力をまとめて処理し、再描画は1回だけにする
+        # （1フレーム1キーだとキーリピートに追いつけず操作がもたつく）
+        had_input = false
+        MAX_INPUTS_PER_FRAME.times do
+          break unless handle_input_nonblocking
+          had_input = true
+          break unless @running
+        end
         needs_redraw = true if had_input
 
         # バックグラウンドコマンドの完了チェック（0.1秒ごと）

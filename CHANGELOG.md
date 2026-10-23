@@ -5,6 +5,13 @@ All notable changes to rufio will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-10-23
+
+### Fixed
+- **Windows: Sluggish key handling**: The main loop processed only one input byte per frame and then slept ~33ms, so key repeat could not keep up. Now up to 32 queued inputs are processed per frame with a single redraw, and the Windows frame interval is ~8ms
+- **Windows: Input queue wait**: Uses `Queue#pop(timeout:)` on Ruby 3.2+ instead of 1ms `sleep` polling (inaccurate under the ~15ms Windows timer resolution)
+- **Windows: Arrow keys misread as ESC**: The wait for escape sequence follow-up bytes was extended from 5ms to 25ms to tolerate ConPTY byte delays
+
 ## [1.0.0] - 2026-04-28
 
 ### Added
