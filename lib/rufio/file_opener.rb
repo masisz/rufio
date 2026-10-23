@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'shellwords'
+
 module Rufio
   class FileOpener
     def initialize
@@ -43,26 +45,26 @@ module Rufio
     end
 
     def execute_command(application, file_path)
-      quoted_path = quote_shell_argument(file_path)
+      path = safe_path(file_path)
 
       case RbConfig::CONFIG['host_os']
       when /mswin|mingw|cygwin/
-        # Windows
-        system("start \"\" \"#{file_path}\"")
+        # Windows: cmd.exe を経由せず（%VAR% や & の展開を避ける）既定アプリで開く
+        run_command(['rundll32', 'url.dll,FileProtocolHandler', path])
       when /darwin/
         # macOS
         if application == 'open'
-          system("open #{quoted_path}")
+          run_command(['open', path])
         else
           # VSCodeなど特定のアプリケーション
-          system("#{application} #{quoted_path}")
+          run_command([*application_argv(application), path])
         end
       else
         # Linux/Unix
         if application == 'open'
-          system("xdg-open #{quoted_path}")
+          run_command(['xdg-open', path])
         else
-          system("#{application} #{quoted_path}")
+          run_command([*application_argv(application), path])
         end
       end
     rescue StandardError => e
@@ -71,37 +73,39 @@ module Rufio
     end
 
     def execute_command_with_line(application, file_path, line_number)
-      quoted_path = quote_shell_argument(file_path)
+      path = safe_path(file_path)
+      line = line_number.to_i
+      app = application_argv(application)
 
       case RbConfig::CONFIG['host_os']
       when /mswin|mingw|cygwin/
         # Windows
         if application.include?('code')
-          system("#{application} --goto #{quoted_path}:#{line_number}")
+          run_command([*app, '--goto', "#{path}:#{line}"])
         else
-          system("start \"\" \"#{file_path}\"")
+          run_command(['rundll32', 'url.dll,FileProtocolHandler', path])
         end
       when /darwin/
         # macOS
         if application == 'open'
-          system("open #{quoted_path}")
+          run_command(['open', path])
         elsif application.include?('code')
-          system("#{application} --goto #{quoted_path}:#{line_number}")
+          run_command([*app, '--goto', "#{path}:#{line}"])
         elsif application.include?('vim') || application.include?('nvim')
-          system("#{application} +#{line_number} #{quoted_path}")
+          run_command([*app, "+#{line}", path])
         else
-          system("#{application} #{quoted_path}")
+          run_command([*app, path])
         end
       else
         # Linux/Unix
         if application == 'open'
-          system("xdg-open #{quoted_path}")
+          run_command(['xdg-open', path])
         elsif application.include?('code')
-          system("#{application} --goto #{quoted_path}:#{line_number}")
+          run_command([*app, '--goto', "#{path}:#{line}"])
         elsif application.include?('vim') || application.include?('nvim')
-          system("#{application} +#{line_number} #{quoted_path}")
+          run_command([*app, "+#{line}", path])
         else
-          system("#{application} #{quoted_path}")
+          run_command([*app, path])
         end
       end
     rescue StandardError => e
@@ -109,27 +113,39 @@ module Rufio
       false
     end
 
-    def quote_shell_argument(argument)
-      if argument.include?(' ') || argument.include?("'") || argument.include?('"')
-        '"' + argument.gsub('"', '\"') + '"'
+    # シェルを介さず配列形式で実行する（ファイル名経由のコマンドインジェクション防止）
+    def run_command(argv)
+      system(*argv)
+    end
+
+    # 設定のアプリケーション指定（例: "code -r"）を引数配列に分解する
+    def application_argv(application)
+      if RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+        # Windows のパスはバックスラッシュを含むため POSIX 分割は使わない
+        File.exist?(application) ? [application] : application.split
       else
-        argument
+        Shellwords.split(application)
       end
     end
 
+    # '-' で始まるパスがオプションとして解釈されないようにする
+    def safe_path(path)
+      path.start_with?('-') ? File.join('.', path) : path
+    end
+
     def execute_explorer_command(directory_path)
-      quoted_path = quote_shell_argument(directory_path)
+      path = safe_path(directory_path)
 
       case RbConfig::CONFIG['host_os']
       when /mswin|mingw|cygwin/
         # Windows
-        system("explorer #{quoted_path}")
+        run_command(['explorer', path])
       when /darwin/
         # macOS
-        system("open #{quoted_path}")
+        run_command(['open', path])
       else
         # Linux/Unix
-        system("xdg-open #{quoted_path}")
+        run_command(['xdg-open', path])
       end
     rescue StandardError => e
       warn "Failed to open directory: #{e.message}"

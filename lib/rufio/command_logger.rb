@@ -30,7 +30,8 @@ module Rufio
       # ディレクトリが存在しない場合は作成（バックグラウンドスレッドでの実行時の競合を防ぐ）
       FileUtils.mkdir_p(@log_dir) unless Dir.exist?(@log_dir)
 
-      File.write(filepath, content)
+      # コマンド出力に機密情報が含まれ得るため、所有者のみ読み書き可能にする
+      File.write(filepath, content, perm: 0o600)
     end
 
     # ログファイル一覧を取得（新しい順）

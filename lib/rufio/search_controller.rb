@@ -57,7 +57,8 @@ module Rufio
       search_results = nil
       Dir.chdir(current_path) do
         escaped_query = Shellwords.escape(search_query)
-        search_results = `rga --line-number --with-filename #{escaped_query} . 2>/dev/null`
+        # "--" で検索語がオプション（--pre=コマンド 等）として解釈されるのを防ぐ
+        search_results = `rga --line-number --with-filename -- #{escaped_query} . 2>/dev/null`
       end
 
       if search_results.empty?

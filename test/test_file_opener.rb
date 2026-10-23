@@ -55,17 +55,33 @@ class TestFileOpener < Minitest::Test
     refute result, "ディレクトリに対してはfalseを返すべき"
   end
 
-  def test_quote_shell_argument
-    # スペースを含む引数
-    quoted = @file_opener.send(:quote_shell_argument, "file with spaces.txt")
-    assert_equal '"file with spaces.txt"', quoted
-    
-    # 通常の引数
-    normal = @file_opener.send(:quote_shell_argument, "normalfile.txt")
-    assert_equal 'normalfile.txt', normal
-    
-    # ダブルクォートを含む引数
-    with_quotes = @file_opener.send(:quote_shell_argument, 'file"with"quotes.txt')
-    assert_equal '"file\"with\"quotes.txt"', with_quotes
+  def test_safe_path_prefixes_dash
+    assert_equal './-rf', @file_opener.send(:safe_path, '-rf')
+    assert_equal '/tmp/-rf', @file_opener.send(:safe_path, '/tmp/-rf')
+  end
+
+  def test_application_argv_splits_arguments
+    skip 'POSIX only' if RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+    assert_equal ['code', '-r'], @file_opener.send(:application_argv, 'code -r')
+  end
+
+  # ファイル名にシェルのメタ文字が含まれていてもコマンドが実行されないこと
+  def test_open_file_does_not_execute_shell_metacharacters
+    skip 'POSIX only' if RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+
+    file_path = File.join(@tmpdir, 'a;touch pwned_marker $(id) `id`')
+    File.write(file_path, 'x')
+
+    captured = []
+    @file_opener.define_singleton_method(:run_command) { |argv| captured << argv; true }
+
+    Rufio::ConfigLoader.stub(:applications, { :default => 'open' }) do
+      @file_opener.open_file(file_path)
+    end
+
+    # パスが加工されず単一の引数として渡される（シェルで解釈されない）
+    assert_equal 1, captured.size
+    assert_equal file_path, captured.first.last
+    assert_equal 2, captured.first.size
   end
 end

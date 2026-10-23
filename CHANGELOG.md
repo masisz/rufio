@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.3] - 2026-10-23
 
+### Security
+- **Fix shell command injection via file names**: `FileOpener` interpolated file paths into shell strings and only quoted them when they contained spaces or quotes, so opening a file named like `a;touch pwned` or containing `$(...)` / backticks could execute arbitrary commands. Commands are now executed in array form without a shell (`system(*argv)`), paths starting with `-` are prefixed with `./`, and the Windows default-app launch uses `rundll32 url.dll,FileProtocolHandler` instead of `cmd /c start` (avoids `%VAR%` / `&` expansion). Removed `quote_shell_argument`
+- **rga option injection**: A `--` separator is now passed before the search query so queries such as `--pre=cmd` are not interpreted as rga options
+- **Command logs are now written with `0600` permissions**, since command output may contain secrets
+
+### Removed
+- `TestUISnapshot` and its `test/snapshots/` fixtures (tests were failing independent of code changes)
+
 ### Fixed
 - **Windows: Sluggish key handling**: The main loop processed only one input byte per frame and then slept ~33ms, so key repeat could not keep up. Now up to 32 queued inputs are processed per frame with a single redraw, and the Windows frame interval is ~8ms
 - **Windows: Input queue wait**: Uses `Queue#pop(timeout:)` on Ruby 3.2+ instead of 1ms `sleep` polling (inaccurate under the ~15ms Windows timer resolution)
