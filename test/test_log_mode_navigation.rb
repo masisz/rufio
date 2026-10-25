@@ -30,7 +30,7 @@ class TestLogModeNavigation < Minitest::Test
 
   def test_help_from_logs_returns_to_original_directory
     @handler.handle_key('L')
-    @handler.handle_key('?')
+    @handler.enter_help_mode
 
     assert @handler.help_mode?
     refute @handler.log_viewer_mode?
@@ -40,7 +40,7 @@ class TestLogModeNavigation < Minitest::Test
   end
 
   def test_logs_from_help_returns_to_original_directory
-    @handler.handle_key('?')
+    @handler.enter_help_mode
     @handler.handle_key('L')
 
     assert @handler.log_viewer_mode?

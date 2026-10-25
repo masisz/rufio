@@ -130,6 +130,10 @@ module Rufio
     def handle_key(key)
       return false unless @directory_listing
 
+      if @key_map[key] == :help && !@filter_manager.filter_mode
+        return show_help_dialog
+      end
+
       # ジョブモード中の特別処理
       if @job_mode.active?
         return handle_job_mode_key(key)
@@ -217,6 +221,9 @@ module Rufio
     # ヘルプモードに入る
     def enter_help_mode
       return false unless @directory_listing
+      return true if @in_help_mode
+
+      exit_log_viewer_mode if @in_log_viewer_mode
 
       # 現在のディレクトリを保存
       @pre_help_directory = @directory_listing.current_path
@@ -264,6 +271,9 @@ module Rufio
     # ログビューワモードに入る
     def enter_log_viewer_mode
       return false unless @directory_listing
+      return true if @in_log_viewer_mode
+
+      exit_help_mode if @in_help_mode
 
       # 現在のディレクトリを保存
       @pre_log_viewer_directory = @directory_listing.current_path
@@ -488,7 +498,7 @@ module Rufio
       when :zoxide          then show_zoxide_menu
       when :start_dir       then goto_start_directory
       when :job_mode        then enter_job_mode
-      when :help            then enter_help_mode
+      when :help            then show_help_dialog
       when :log_viewer      then enter_log_viewer_mode
       when :command_mode    then activate_command_mode
       when :quit            then exit_request

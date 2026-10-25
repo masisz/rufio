@@ -401,6 +401,10 @@ module Rufio
           header += ' ' * remaining_space if remaining_space > 0
           screen.put_string(content_x, line_num, header)
 
+        elsif i == 1 && @keybind_handler&.preview_focused?
+          hint = TextUtils.truncate_to_width(' ESC: Back to files', safe_width)
+          screen.put_string(content_x, line_num, hint + ' ' * (safe_width - TextUtils.display_width(hint)))
+
         elsif i >= 2 && highlighted_wrapped_lines
           # シンタックスハイライト付きコンテンツ
           scroll_offset = @keybind_handler&.preview_scroll_offset || 0
@@ -583,7 +587,7 @@ module Rufio
 
       modes.each_with_index do |mode, index|
         key = keys[mode]
-        label = key ? " #{key}:#{labels[mode]} " : " #{labels[mode]} "
+        label = key ? " [#{key}] #{labels[mode]} " : " #{labels[mode]} "
 
         if mode == current_mode
           label.each_char do |char|

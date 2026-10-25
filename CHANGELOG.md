@@ -5,6 +5,17 @@ All notable changes to rufio will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-10-25
+
+### Changed
+- Replace directory-based Help with a floating menu containing Controls, Modes, and Scripts sections. Switch sections with 1/2/3 or Tab, scroll with j/k, and close with ESC while preserving the current mode, directory, and preview focus
+- Show mode shortcuts as `[L] Logs`, `[J] Jobs`, and `[?] Help` in the bottom bar
+
+### Fixed
+- Show `ESC: Back to files` below the file name in Preview mode
+- Preserve the original return directory when entering Logs repeatedly and prevent overlapping Help and Logs states
+- Keep mouse interactions inside the floating Help window from affecting the underlying file list
+
 ## [1.0.3] - 2026-10-23
 
 ### Security

@@ -24,12 +24,12 @@ class TestHelpMenu < Minitest::Test
   def test_small_window_wraps_and_scrolls_without_hiding_navigation
     screen = Rufio::Screen.new(40, 12)
     @menu.draw(screen)
-    assert_includes screen.row(10), 'ESC: Close'
+    assert_includes Rufio::ColorHelper.strip_ansi(screen.row(10)), 'ESC: Close'
     before = (0...12).map { |y| screen.row(y) }
     100.times { @menu.handle_key('j') }
     @menu.draw(screen)
     refute_equal before, (0...12).map { |y| screen.row(y) }
-    assert_includes screen.row(10), 'ESC: Close'
+    assert_includes Rufio::ColorHelper.strip_ansi(screen.row(10)), 'ESC: Close'
     @menu.handle_key('2')
     assert_equal 0, @menu.scroll_offset
   end
@@ -39,7 +39,7 @@ class TestHelpMenu < Minitest::Test
     content = @menu.content.join("\n")
     assert_includes content, '~/.config/rufio/scripts'
     assert_includes content, 'script_paths.yml'
-    assert_includes content, 'rufio.rb'
+    assert_includes content, 'rufio.yml'
     assert_includes content, ':hello'
   end
 
@@ -61,5 +61,32 @@ class TestHelpMenu < Minitest::Test
       handler.handle_key("\e")
       assert_equal root, listing.current_path
     end
+  end
+
+  def test_help_is_available_from_preview_and_preserves_focus
+    Dir.mktmpdir do |root|
+      File.write(File.join(root, 'example.txt'), 'preview')
+      listing = Rufio::DirectoryListing.new(root)
+      handler = Rufio::KeybindHandler.new
+      handler.set_directory_listing(listing)
+      ui = Rufio::TerminalUI.new
+      handler.set_terminal_ui(ui)
+      handler.select_index(handler.get_active_entries.index { |entry| entry[:name] == 'example.txt' })
+      handler.handle_key("\r")
+      handler.handle_key('?')
+      assert ui.help_dialog_active?
+      assert handler.preview_focused?
+      ui.handle_help_input("\e")
+      assert handler.preview_focused?
+    end
+  end
+
+  def test_help_does_not_pass_mouse_clicks_to_files
+    ui = Rufio::TerminalUI.new
+    ui.show_help_dialog
+    ui.stub(:handle_mouse_left_click, ->(*) { flunk 'Help click reached file list' }) do
+      ui.send(:handle_mouse_event, 0, 1, 2, true)
+    end
+    assert ui.help_dialog_active?
   end
 end

@@ -2,6 +2,7 @@
 
 require 'io/console'
 require_relative 'text_utils'
+require_relative 'help_menu'
 
 module Rufio
   class TerminalUI
@@ -51,6 +52,7 @@ module Rufio
       @input_queue = nil
       @input_thread = nil
       @command_mode_active = false
+      @help_menu = HelpMenu.new
       @command_input = ""
       @command_mode = CommandMode.new
       @dialog_renderer = DialogRenderer.new
@@ -494,8 +496,10 @@ module Rufio
             draw_screen_to_buffer(@screen, nil, current_fps)
           end
 
-          # コマンドモードがアクティブな場合はオーバーレイにダイアログを描画
-          if @command_mode_active
+          # ヘルプまたはコマンドモードのダイアログをオーバーレイに描画
+          if help_dialog_active?
+            @help_menu.draw(@screen)
+          elsif @command_mode_active
             # 前回のオーバーレイ残留を防ぐためクリアしてから描画
             @screen.clear_overlay if @screen.overlay_enabled?
             draw_command_mode_to_overlay
@@ -598,7 +602,13 @@ module Rufio
           when 'B' then 'j'  # Down arrow
           when 'C' then 'l'  # Right arrow
           when 'D' then 'h'  # Left arrow
-          when 'Z' then handle_shift_tab; return true  # Shift+Tab
+          when 'Z'
+            if help_dialog_active?
+              handle_help_input("\e[Z")
+            else
+              handle_shift_tab
+            end
+            return true  # Shift+Tab
           else
             # 未知の CSI シーケンス（\e[27;1u 等）: 残りバイトを読み捨てて
             # パイプを汚染しないようにする
@@ -609,6 +619,8 @@ module Rufio
           input = "\e"  # ESCキー（そのまま保持）
         end
       end
+
+      return handle_help_input(input) if help_dialog_active?
 
       # TabキーはFilesモードの時のみブックマーク循環移動（ジョブモード中は無効）
       if input == "\t" && @tab_mode_manager.current_mode == :files && !@in_job_mode
@@ -692,6 +704,12 @@ module Rufio
     # @param row [Integer]  クリック行（1-indexed）
     # @param press [Boolean] true=押下, false=解放
     def handle_mouse_event(btn, col, row, press)
+      if help_dialog_active?
+        handle_help_input('k') if btn == 64
+        handle_help_input('j') if btn == 65
+        return
+      end
+
       case btn
       when 0  # 左クリック（押下のみ処理）
         handle_mouse_left_click(col, row) if press
@@ -784,12 +802,7 @@ module Rufio
           @keybind_handler.send(:exit_job_mode)
         end
       when :help
-        # ヘルプモードに入る
-        unless @keybind_handler.help_mode?
-          @keybind_handler.send(:exit_log_viewer_mode) if @keybind_handler.log_viewer_mode?
-          @keybind_handler.send(:exit_job_mode) if @keybind_handler.in_job_mode?
-          @keybind_handler.send(:enter_help_mode)
-        end
+        show_help_dialog
       when :logs
         # ログビューワモードに入る
         unless @keybind_handler.log_viewer_mode?
@@ -1191,61 +1204,19 @@ module Rufio
     # Screen と Renderer のアクセサ（他のクラスから利用可能に）
     attr_reader :screen, :renderer
 
-    # ヘルプダイアログを表示
+    # ヘルプは非同期オーバーレイとして表示し、元のモードを保持する。
     def show_help_dialog
-      content_lines = [
-        '',
-        "rufio v#{VERSION}",
-        '',
-        'Key Bindings:',
-        '',
-        'j/k      - Move up/down',
-        'h/l      - Navigate back/enter',
-        'g/G      - Go to top/bottom',
-        'o        - Open file',
-        'f        - Filter files',
-        's        - Search with fzf',
-        'F        - Content search (rga)',
-        'a/A      - Create file/directory',
-        'm/c/x    - Move/Copy/Delete',
-        'b        - Add bookmark',
-        'z        - Zoxide navigation',
-        '0        - Go to start directory',
-        '1-9      - Go to bookmark',
-        'J        - Job mode',
-        ':        - Command mode',
-        'q        - Quit',
-        ''
-      ]
+      @help_menu.open
+      true
+    end
 
-      # お知らせ情報を追加
-      require_relative 'info_notice'
-      info_notice = InfoNotice.new
-      all_notices = Dir.glob(File.join(info_notice.info_dir, '*.txt'))
+    def help_dialog_active?
+      @help_menu.active?
+    end
 
-      if !all_notices.empty?
-        content_lines << 'Recent Updates:'
-        content_lines << ''
-        all_notices.take(3).each do |file|
-          title = info_notice.extract_title(file)
-          content_lines << "  • #{title}"
-        end
-        content_lines << ''
-      end
-
-      content_lines << 'Press any key to continue...'
-
-      width = 60
-      height = [content_lines.length + 4, @screen_height - 4].min
-
-      # オーバーレイダイアログを表示
-      show_overlay_dialog('rufio - Help', content_lines, {
-        width: width,
-        height: height,
-        border_color: "\e[36m",    # Cyan
-        title_color: "\e[1;36m",   # Bold cyan
-        content_color: "\e[37m"    # White
-      })
+    def handle_help_input(input)
+      @help_menu.handle_key(input)
+      true
     end
 
     # 未知の CSI シーケンス（\e[X...）の残りバイトを終端アルファベットまで読み捨てる。
