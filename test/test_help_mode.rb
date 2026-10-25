@@ -24,7 +24,7 @@ module Rufio
       @directory_listing = DirectoryListing.new(@test_dir)
       @terminal_ui = TerminalUI.new
 
-      @handler.instance_variable_set(:@directory_listing, @directory_listing)
+      @handler.set_directory_listing(@directory_listing)
       @handler.instance_variable_set(:@terminal_ui, @terminal_ui)
       @terminal_ui.instance_variable_set(:@directory_listing, @directory_listing)
     end
@@ -88,16 +88,18 @@ module Rufio
     end
 
     def test_navigate_parent_allowed_within_info_subdirectory
-      # ヘルプモードに入る
-      @handler.enter_help_mode
+      Dir.mktmpdir('rufio-help-test-', @info_dir) do |subdirectory|
+        assert @handler.enter_help_mode
+        assert @handler.send(:navigate_to_directory, subdirectory)
+        assert_equal subdirectory, @directory_listing.current_path
 
-      # info ディレクトリ内にサブディレクトリがあれば、そこに移動
-      # （実際のテストでは info 内のサブディレクトリを作成する必要があるかもしれない）
-      # ここでは info ディレクトリにいる状態から、さらに深い階層に移動できることを確認
+        assert @handler.navigate_parent_with_restriction
+        assert_equal @info_dir, @directory_listing.current_path
+        assert @handler.help_mode?
 
-      # このテストはinfo内にサブディレクトリがある場合のみ意味を持つ
-      # 現状ではinfo/配下にファイルしかないため、このテストはスキップ
-      skip "Requires subdirectory in info/ to test"
+        refute @handler.navigate_parent_with_restriction
+        assert_equal @info_dir, @directory_listing.current_path
+      end
     end
 
     def test_normal_navigation_not_restricted_outside_help_mode
