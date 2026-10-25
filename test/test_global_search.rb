@@ -69,6 +69,28 @@ class TestGlobalSearch < Minitest::Test
     refute @search.scanning?
   end
 
+  def test_typing_does_not_trigger_navigation_and_arrow_selection_keeps_query
+    scan([{ name: 'A', path: @a }, { name: 'B', path: @b }])
+    @search.handle_key('r')
+    @search.handle_key('e')
+    assert_equal 2, @search.results.length
+    @search.handle_key(:down)
+    assert_equal 1, @search.selected_index
+    assert_equal 're', @search.query
+    @search.handle_key("\u007f")
+    assert_equal 'r', @search.query
+    assert_equal 0, @search.selected_index
+  end
+
+  def test_cancel_during_scan_and_reopen
+    400.times { |index| File.write(File.join(@b, "item#{index}"), '') }
+    @search.open([{ name: 'B', path: @b }])
+    Timeout.timeout(3) { @search.close }
+    refute @search.active?
+    scan([{ name: 'A', path: @a }])
+    assert_equal 2, @search.results.length
+  end
+
   def test_G_opens_global_search_without_moving_directory
     Dir.mktmpdir do |root|
       handler = Rufio::KeybindHandler.new

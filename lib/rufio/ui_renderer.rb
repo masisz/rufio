@@ -782,7 +782,9 @@ module Rufio
     def sync_tab_mode_with_keybind_handler
       return unless @keybind_handler
 
-      current_mode = if @keybind_handler.in_job_mode?
+      current_mode = if @keybind_handler.global_search_mode?
+                       :global
+                     elsif @keybind_handler.in_job_mode?
                        :jobs
                      elsif @keybind_handler.help_mode?
                        :help

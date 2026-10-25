@@ -84,7 +84,7 @@ rufio /path/to  # Launch in specified directory
 |-----|----------|
 | `j/k` | Move up/down |
 | `h/l` | Parent/child directory |
-| `g/G` | Top/bottom |
+| `g/}` | Top/bottom |
 | `Enter` | Enter directory/open file |
 | `q` | Quit |
 
@@ -123,10 +123,20 @@ rufio /path/to  # Launch in specified directory
 | Key | Function |
 |-----|----------|
 | `:` | Command mode |
+| `G` | Search file names across all bookmarked directories |
 | `J` | Job mode |
 | `L` | View execution logs |
 | `?` | Help |
 | `Shift+Tab` | Switch mode (reverse) |
+
+### Global Search (G mode)
+
+Press `G` to search file names recursively across all bookmarked directories.
+Type to filter paths (case insensitive), use Up/Down or Ctrl+N/P to select a
+result, and press Enter to jump to that file in Files mode. `Ctrl+U` clears
+the query; `Esc` cancels and returns to your previous view. Scanning runs in
+the background and skips inaccessible directories and directory symlinks.
+Add bookmarks with `b` before searching. G mode needs no external search tools.
 
 ## Command Mode
 

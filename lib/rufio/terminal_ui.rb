@@ -3,6 +3,7 @@
 require 'io/console'
 require_relative 'text_utils'
 require_relative 'help_menu'
+require_relative 'global_search'
 
 module Rufio
   class TerminalUI
@@ -53,6 +54,7 @@ module Rufio
       @input_thread = nil
       @command_mode_active = false
       @help_menu = HelpMenu.new
+      @global_search = GlobalSearch.new
       @command_input = ""
       @command_mode = CommandMode.new
       @dialog_renderer = DialogRenderer.new
@@ -304,6 +306,7 @@ module Rufio
     end
 
     def cleanup_terminal
+      @global_search.close
       # マウスレポートを先に無効化して新しいイベントの流入を止める
       if windows?
         print "\e[?1000l\e[?1006l"
@@ -475,6 +478,8 @@ module Rufio
           needs_redraw = true
         end
 
+        needs_redraw = true if @global_search.poll
+
         # 非同期シンタックスハイライト完了チェック（UIRenderer側のフラグを参照）
         if @ui_renderer.highlight_updated?
           @ui_renderer.reset_highlight_updated
@@ -529,6 +534,12 @@ module Rufio
 
     # UIRenderer に全描画処理を委譲
     def draw_screen_to_buffer(screen, notification_message = nil, fps = nil)
+      if global_search_active?
+        @global_search.draw(screen)
+        @ui_renderer.draw_mode_tabs_to_buffer(screen, @screen_height - 1)
+        return
+      end
+
       @ui_renderer.draw_screen_to_buffer(
         screen, notification_message, fps,
         in_job_mode: @in_job_mode,
@@ -598,14 +609,14 @@ module Rufio
             return true
           end
           input = case third_char
-          when 'A' then 'k'  # Up arrow
-          when 'B' then 'j'  # Down arrow
-          when 'C' then 'l'  # Right arrow
-          when 'D' then 'h'  # Left arrow
+          when 'A' then global_search_active? && !help_dialog_active? ? :up : 'k'  # Up arrow
+          when 'B' then global_search_active? && !help_dialog_active? ? :down : 'j'  # Down arrow
+          when 'C' then global_search_active? && !help_dialog_active? ? :right : 'l'  # Right arrow
+          when 'D' then global_search_active? && !help_dialog_active? ? :left : 'h'  # Left arrow
           when 'Z'
             if help_dialog_active?
               handle_help_input("\e[Z")
-            else
+            elsif !global_search_active?
               handle_shift_tab
             end
             return true  # Shift+Tab
@@ -621,6 +632,7 @@ module Rufio
       end
 
       return handle_help_input(input) if help_dialog_active?
+      return handle_global_search_input(input) if global_search_active?
 
       # TabキーはFilesモードの時のみブックマーク循環移動（ジョブモード中は無効）
       if input == "\t" && @tab_mode_manager.current_mode == :files && !@in_job_mode
@@ -710,6 +722,12 @@ module Rufio
         return
       end
 
+      if global_search_active?
+        handle_global_search_input(:up) if btn == 64
+        handle_global_search_input(:down) if btn == 65
+        return
+      end
+
       case btn
       when 0  # 左クリック（押下のみ処理）
         handle_mouse_left_click(col, row) if press
@@ -792,6 +810,8 @@ module Rufio
     # モード変更を適用
     def apply_mode_change(mode)
       case mode
+      when :global
+        @keybind_handler.start_global_search
       when :files
         # ヘルプモードまたはログビューワモードから戻る
         if @keybind_handler.help_mode?
@@ -1203,6 +1223,44 @@ module Rufio
 
     # Screen と Renderer のアクセサ（他のクラスから利用可能に）
     attr_reader :screen, :renderer
+
+    def start_global_search(bookmarks)
+      @global_search.open(bookmarks)
+    end
+
+    def global_search_active?
+      @global_search.active?
+    end
+
+    def handle_global_search_input(input)
+      if input == ConfigLoader.keybinds[:help]
+        show_help_dialog
+        return true
+      end
+      result = @global_search.handle_key(input)
+      if result.is_a?(Hash) && File.file?(result[:path])
+        @keybind_handler.exit_log_viewer_mode if @keybind_handler.log_viewer_mode?
+        @keybind_handler.exit_help_mode if @keybind_handler.help_mode?
+        @keybind_handler.exit_job_mode if @keybind_handler.in_job_mode?
+        if @keybind_handler.send(:navigate_to_directory, File.dirname(result[:path]))
+          index = @keybind_handler.get_active_entries.index { |entry| entry[:path] == result[:path] }
+          @keybind_handler.select_index(index) if index
+          @keybind_handler.unfocus_preview_pane
+          @global_search.close
+        end
+      end
+      unless global_search_active?
+        mode = if @keybind_handler.in_job_mode?
+                 :jobs
+               elsif @keybind_handler.log_viewer_mode?
+                 :logs
+               else
+                 :files
+               end
+        @tab_mode_manager.switch_to(mode)
+      end
+      true
+    end
 
     # ヘルプは非同期オーバーレイとして表示し、元のモードを保持する。
     def show_help_dialog

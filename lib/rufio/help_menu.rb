@@ -68,6 +68,7 @@ module Rufio
           "#{key(:filter)}: Filter | Enter: Apply | ESC: Clear",
           "#{key(:fzf_search)}: Filename search (fzf)",
           "#{key(:rga_search)}: Content search (rga)",
+          "#{key(:global_search)}: Search file names across all bookmarks",
           "#{key(:add_bookmark)}/#{key(:bookmark_menu)}: Add / manage bookmarks",
           'Tab / Shift+Tab: Next / previous bookmark',
           "1-9: Jump to bookmark | #{key(:start_dir)}: Start directory",
@@ -77,6 +78,10 @@ module Rufio
       when 'Modes'
         [
           'Files', 'Browse directories, select files and view previews.',
+          '', "[#{key(:global_search)}] Global search",
+          'Search file names recursively across every bookmarked directory.',
+          'Type to filter | Up/Down: Select | Enter: Go to file',
+          'ESC: Return to the previous mode | Ctrl+U: Clear query',
           '', "[#{key(:log_viewer)}] Logs",
           'Browse command logs. Enter opens a preview.',
           'ESC: Leave preview; ESC again: Return to Files.',

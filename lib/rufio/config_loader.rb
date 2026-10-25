@@ -47,7 +47,7 @@ module Rufio
           navigate_parent: 'h',
           navigate_enter:  'l',
           top:             'g',
-          bottom:          'G',
+          bottom:          '}',
           refresh:         'R',
           # ファイル操作
           open_file:       'o',
@@ -72,6 +72,7 @@ module Rufio
           start_dir:       '0',
           # モード・ツール
           job_mode:        'J',
+          global_search:   'G',
           help:            '?',
           log_viewer:      'L',
           command_mode:    ':',

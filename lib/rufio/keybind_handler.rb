@@ -25,6 +25,14 @@ module Rufio
       @nav_controller.preview_focused?
     end
 
+    def global_search_mode?
+      @terminal_ui&.global_search_active? || false
+    end
+
+    def start_global_search
+      @terminal_ui&.start_global_search(@bookmark_manager.list)
+    end
+
     def preview_scroll_offset
       @nav_controller.preview_scroll_offset
     end
@@ -132,6 +140,10 @@ module Rufio
 
       if @key_map[key] == :help && !@filter_manager.filter_mode
         return show_help_dialog
+      end
+
+      if @key_map[key] == :global_search && !@filter_manager.filter_mode
+        return start_global_search
       end
 
       # ジョブモード中の特別処理

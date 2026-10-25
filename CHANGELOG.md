@@ -5,6 +5,14 @@ All notable changes to rufio will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- G mode: Search file names recursively across all bookmarked directories, with background scanning, incremental filtering, and Enter to locate a result in Files mode
+
+### Changed
+- Move the bottom-of-list shortcut from `G` to `}` to make room for global search
+
 ## [1.0.4] - 2026-10-25
 
 ### Changed
