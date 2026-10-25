@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- G mode content search: Use Tab to switch between file names and literal text search, with matching lines and line numbers, Japanese text support, and background cancellation when editing the query
 - C mode: Open `~/.config/rufio/` with the same navigation, preview, and file operations as Files mode; create the directory if needed
 - G mode: Search file names recursively across all bookmarked directories, with background scanning, incremental filtering, and Enter to locate a result in Files mode
 

@@ -123,7 +123,7 @@ rufio /path/to  # Launch in specified directory
 | Key | Function |
 |-----|----------|
 | `:` | Command mode |
-| `G` | Search file names across all bookmarked directories |
+| `G` | Search file names or contents across all bookmarked directories |
 | `C` | Open ~/.config/rufio/ in Config mode (same controls as Files) |
 | `J` | Job mode |
 | `L` | View execution logs |
@@ -132,8 +132,11 @@ rufio /path/to  # Launch in specified directory
 
 ### Global Search (G mode)
 
-Press `G` to search file names recursively across all bookmarked directories.
-Type to filter paths (case insensitive), use Up/Down or Ctrl+N/P to select a
+Press `G` to search recursively across all bookmarked directories. `Tab`
+switches between **File names** and **Content**. Type a literal string to
+search (case insensitive); content results include the file, line number,
+and matching text. Text is read as UTF-8; files containing NUL bytes in the
+first 8 KB are skipped as binary. Use Up/Down or Ctrl+N/P to select a
 result, and press Enter to jump to that file in Files mode. `Ctrl+U` clears
 the query; `Esc` cancels and returns to your previous view. Scanning runs in
 the background and skips inaccessible directories and directory symlinks.
