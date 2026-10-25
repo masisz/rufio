@@ -738,37 +738,7 @@ module Rufio
 
     # モード変更を適用
     def apply_mode_change(mode)
-      case mode
-      when :config
-        @keybind_handler.enter_config_mode
-      when :global
-        @keybind_handler.start_global_search
-      when :files
-        # ヘルプモードまたはログビューワモードから戻る
-        if @keybind_handler.help_mode?
-          @keybind_handler.send(:exit_help_mode)
-        elsif @keybind_handler.log_viewer_mode?
-          @keybind_handler.send(:exit_log_viewer_mode)
-        elsif @keybind_handler.in_job_mode?
-          @keybind_handler.send(:exit_job_mode)
-        end
-      when :help
-        show_help_dialog
-      when :logs
-        # ログビューワモードに入る
-        unless @keybind_handler.log_viewer_mode?
-          @keybind_handler.send(:exit_help_mode) if @keybind_handler.help_mode?
-          @keybind_handler.send(:exit_job_mode) if @keybind_handler.in_job_mode?
-          @keybind_handler.send(:enter_log_viewer_mode)
-        end
-      when :jobs
-        # ジョブモードに入る
-        unless @keybind_handler.in_job_mode?
-          @keybind_handler.send(:exit_help_mode) if @keybind_handler.help_mode?
-          @keybind_handler.send(:exit_log_viewer_mode) if @keybind_handler.log_viewer_mode?
-          @keybind_handler.enter_job_mode
-        end
-      end
+      @keybind_handler.switch_mode(mode)
     end
 
     # コマンドモード関連のメソッドは public にする
@@ -1153,7 +1123,7 @@ module Rufio
     end
 
     # Screen と Renderer のアクセサ（他のクラスから利用可能に）
-    attr_reader :screen, :renderer
+    attr_reader :screen, :renderer, :screen_height
 
     def start_global_search(bookmarks)
       @global_search.open(bookmarks)
@@ -1170,10 +1140,8 @@ module Rufio
       end
       result = @global_search.handle_key(input)
       if result.is_a?(Hash) && File.file?(result[:path])
-        @keybind_handler.exit_log_viewer_mode if @keybind_handler.log_viewer_mode?
-        @keybind_handler.exit_help_mode if @keybind_handler.help_mode?
-        @keybind_handler.exit_job_mode if @keybind_handler.in_job_mode?
-        if @keybind_handler.send(:navigate_to_directory, File.dirname(result[:path]))
+        @keybind_handler.switch_mode(:files)
+        if @keybind_handler.navigate_to_directory(File.dirname(result[:path]))
           index = @keybind_handler.get_active_entries.index { |entry| entry[:path] == result[:path] }
           @keybind_handler.select_index(index) if index
           @keybind_handler.unfocus_preview_pane

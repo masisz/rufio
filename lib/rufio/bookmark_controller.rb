@@ -362,16 +362,7 @@ module Rufio
     # ============================
 
     def navigate_to_directory(path)
-      return false unless @directory_listing
-
-      result = @directory_listing.navigate_to_path(path)
-      if result
-        @nav_controller.select_index(0)
-        @nav_controller.clear_filter_mode
-        true
-      else
-        false
-      end
+      @nav_controller.navigate_to_directory(path)
     end
 
     private

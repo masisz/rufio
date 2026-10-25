@@ -53,14 +53,29 @@ module Rufio
       return false unless @directory_listing
 
       FileUtils.mkdir_p(config_directory)
-      exit_log_viewer_mode if @in_log_viewer_mode
-      exit_help_mode if @in_help_mode
-      exit_job_mode if @job_mode.active?
+      leave_other_modes(:config)
       @nav_controller.unfocus_preview_pane
       navigate_to_directory(config_directory)
     rescue SystemCallError => e
       @notification_manager.add("Cannot open config directory: #{e.message}", :error, duration: 0)
       false
+    end
+
+    # モード遷移の入口。ヘルプ・検索のオーバーレイは元のモードを保持する。
+    def switch_mode(mode)
+      case mode
+      when :files  then leave_other_modes(:files)
+      when :logs   then enter_log_viewer_mode
+      when :jobs   then enter_job_mode
+      when :config then enter_config_mode
+      when :global then start_global_search
+      when :help   then show_help_dialog
+      else false
+      end
+    end
+
+    def navigate_to_directory(path)
+      @nav_controller.navigate_to_directory(path)
     end
 
     def preview_scroll_offset
@@ -273,17 +288,15 @@ module Rufio
       return false unless @directory_listing
       return true if @in_help_mode
 
-      exit_log_viewer_mode if @in_log_viewer_mode
-
-      # 現在のディレクトリを保存
-      @pre_help_directory = @directory_listing.current_path
-
       # info ディレクトリに移動
       rufio_root = File.expand_path('../..', __dir__)
       info_dir = File.join(rufio_root, 'info')
 
       # info ディレクトリが存在することを確認
       return false unless Dir.exist?(info_dir)
+
+      leave_other_modes(:help_directory)
+      @pre_help_directory = @directory_listing.current_path
 
       # ヘルプモードを有効化
       @in_help_mode = true
@@ -323,13 +336,9 @@ module Rufio
       return false unless @directory_listing
       return true if @in_log_viewer_mode
 
-      exit_help_mode if @in_help_mode
-
-      # 現在のディレクトリを保存
+      FileUtils.mkdir_p(@log_dir)
+      leave_other_modes(:logs)
       @pre_log_viewer_directory = @directory_listing.current_path
-
-      # log ディレクトリを作成（存在しない場合）
-      FileUtils.mkdir_p(@log_dir) unless Dir.exist?(@log_dir)
 
       # log ディレクトリに移動
       navigate_to_directory(@log_dir)
@@ -452,6 +461,14 @@ module Rufio
 
     private
 
+    # 別モードへ入る際の終了順序はここだけで管理する。
+    def leave_other_modes(target)
+      exit_help_mode if target != :help_directory && help_mode?
+      exit_log_viewer_mode if target != :logs && log_viewer_mode?
+      exit_job_mode if target != :jobs && in_job_mode?
+      true
+    end
+
     def navigate_parent
       @nav_controller.navigate_parent
     end
@@ -573,19 +590,6 @@ module Rufio
       @bookmark_controller.show_script_paths_manager
     end
 
-    def navigate_to_directory(path)
-      return false unless @directory_listing
-
-      result = @directory_listing.navigate_to_path(path)
-      if result
-        @nav_controller.select_index(0)
-        @nav_controller.clear_filter_mode
-        true
-      else
-        false
-      end
-    end
-
     # zoxide 機能
     def show_zoxide_menu
       @bookmark_controller.show_zoxide_menu
@@ -601,7 +605,7 @@ module Rufio
     def move_to_input_line
       # 画面の最終行にカーソルを移動
       # terminal_uiから画面の高さを取得できない場合は、24行目（デフォルト）を使用
-      screen_height = @terminal_ui&.instance_variable_get(:@screen_height) || 24
+      screen_height = @terminal_ui&.screen_height || 24
       print "\e[#{screen_height};1H"  # 最終行の先頭にカーソル移動
       print "\e[2K"  # 行全体をクリア
     end
@@ -657,6 +661,9 @@ module Rufio
 
     # ジョブモードに入る
     def enter_job_mode
+      return true if @job_mode.active?
+
+      leave_other_modes(:jobs)
       @job_mode.activate
       @terminal_ui&.set_job_mode(@job_mode, @job_manager, @notification_manager) if @terminal_ui
       true

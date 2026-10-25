@@ -264,29 +264,13 @@ module Rufio
         ''
       ]
 
-      confirmed = false
-      show_overlay_dialog('Exit Confirmation', content_lines, {
+      confirm_dialog('Exit Confirmation', content_lines, {
         width: CONFIRMATION_DIALOG_WIDTH,
         height: DIALOG_BORDER_HEIGHT + content_lines.length,
         border_color: "\e[33m",
         title_color: "\e[1;33m",
         content_color: "\e[37m"
-      }) do
-        loop do
-          input = STDIN.getch.downcase
-          case input
-          when 'y'
-            confirmed = true
-            break
-          when 'n', "\e", "\x03"
-            confirmed = false
-            break
-          end
-        end
-        nil
-      end
-
-      confirmed
+      }, cancel_on_quit: false)
     end
 
     private
@@ -308,111 +292,37 @@ module Rufio
 
       print "\a"
 
-      confirmed = false
-      show_overlay_dialog(title, content_lines, {
+      confirm_dialog(title, content_lines, {
         width: dialog_width,
         height: dialog_height,
         border_color: "\e[31m",
         title_color: "\e[1;31m",
         content_color: "\e[37m"
-      }) do
-        loop do
-          input = STDIN.getch.downcase
-          case input
-          when 'y'
-            confirmed = true
-            break
-          when 'n', "\e", "\x03", 'q'
-            confirmed = false
-            break
-          end
-        end
-        nil
-      end
-
-      confirmed
+      })
     end
 
     def show_move_confirmation(count, source_path, dest_path)
-      source_display = shorten_path(source_path, 35)
-      dest_display = shorten_path(dest_path, 35)
-
-      content_lines = [
-        '',
-        "Move #{count} item(s)?",
-        '',
-        "From: #{source_display}",
-        "To:   #{dest_display}",
-        '',
-        '  [Y]es - Move',
-        '  [N]o  - Cancel',
-        ''
-      ]
-
-      confirmed = false
-      show_overlay_dialog('Move Confirmation', content_lines, {
-        width: CONFIRMATION_DIALOG_WIDTH,
-        height: DIALOG_BORDER_HEIGHT + content_lines.length,
-        border_color: "\e[34m",
-        title_color: "\e[1;34m",
-        content_color: "\e[37m"
-      }) do
-        loop do
-          input = STDIN.getch.downcase
-          case input
-          when 'y'
-            confirmed = true
-            break
-          when 'n', "\e", "\x03", 'q'
-            confirmed = false
-            break
-          end
-        end
-        nil
-      end
-
-      confirmed
+      show_transfer_confirmation('Move', count, source_path, dest_path, '34')
     end
 
     def show_copy_confirmation(count, source_path, dest_path)
-      source_display = shorten_path(source_path, 35)
-      dest_display = shorten_path(dest_path, 35)
+      show_transfer_confirmation('Copy', count, source_path, dest_path, '32')
+    end
 
+    def show_transfer_confirmation(action, count, source_path, dest_path, color)
       content_lines = [
-        '',
-        "Copy #{count} item(s)?",
-        '',
-        "From: #{source_display}",
-        "To:   #{dest_display}",
-        '',
-        '  [Y]es - Copy',
-        '  [N]o  - Cancel',
-        ''
+        '', "#{action} #{count} item(s)?", '',
+        "From: #{shorten_path(source_path, 35)}",
+        "To:   #{shorten_path(dest_path, 35)}", '',
+        "  [Y]es - #{action}", '  [N]o  - Cancel', ''
       ]
-
-      confirmed = false
-      show_overlay_dialog('Copy Confirmation', content_lines, {
+      confirm_dialog("#{action} Confirmation", content_lines, {
         width: CONFIRMATION_DIALOG_WIDTH,
         height: DIALOG_BORDER_HEIGHT + content_lines.length,
-        border_color: "\e[32m",
-        title_color: "\e[1;32m",
+        border_color: "\e[#{color}m",
+        title_color: "\e[1;#{color}m",
         content_color: "\e[37m"
-      }) do
-        loop do
-          input = STDIN.getch.downcase
-          case input
-          when 'y'
-            confirmed = true
-            break
-          when 'n', "\e", "\x03", 'q'
-            confirmed = false
-            break
-          end
-        end
-        nil
-      end
-
-      confirmed
+      })
     end
 
     def show_deletion_result(success_count, total_count, error_messages = [])

@@ -108,12 +108,8 @@ module Rufio
     # @param history [CommandHistory] 履歴オブジェクト
     # @return [Array<String>] コマンドのリスト
     def get_history_commands(history)
-      # CommandHistoryの内部データにアクセスするため、
-      # instance_variable_getを使用（本来はpublicメソッドを追加すべき）
-      history_array = history.instance_variable_get(:@history) || []
-
       # ! を除去したコマンドを返す
-      history_array.map do |cmd|
+      history.entries.map do |cmd|
         cmd.start_with?('!') ? cmd[1..-1] : cmd
       end
     end

@@ -6,7 +6,27 @@ module Rufio
   # ダイアログの表示方式選択と入力待ち・後片付けを共有する。
   # 利用側は @dialog_renderer と @terminal_ui を設定する。
   module DialogSupport
+    CONFIRMATION_CANCEL_KEYS = ["n", "\e", "\x03"].freeze
+
     private
+
+    # 表示とキー判定を共有し、終了確認だけは従来どおり q を無視する。
+    def confirm_dialog(title, content_lines, options = {}, cancel_on_quit: true)
+      confirmed = false
+      show_overlay_dialog(title, content_lines, options) do
+        confirmed = read_confirmation(cancel_on_quit: cancel_on_quit)
+        nil
+      end
+      confirmed
+    end
+
+    def read_confirmation(cancel_on_quit: true)
+      loop do
+        input = STDIN.getch.downcase
+        return true if input == 'y'
+        return false if CONFIRMATION_CANCEL_KEYS.include?(input) || (cancel_on_quit && input == 'q')
+      end
+    end
 
     def show_overlay_dialog(title, content_lines, options = {}, &block)
       use_overlay = @terminal_ui &&
