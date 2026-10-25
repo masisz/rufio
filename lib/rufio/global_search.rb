@@ -7,6 +7,9 @@ require_relative 'config_loader'
 module Rufio
   # ブックマーク配下のファイル名・テキスト内容をバックグラウンドで横断検索する。
   class GlobalSearch
+    SPINNER_FRAMES = ['|', '/', '-', '\\'].freeze
+    SPINNER_INTERVAL = 0.12
+
     attr_reader :query, :results, :errors, :selected_index, :search_type, :skipped_files
 
     def initialize
@@ -65,6 +68,14 @@ module Rufio
         when :done then @scanning = false
         end
       end
+      if scanning?
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        if now - @last_spinner_update >= SPINNER_INTERVAL
+          @spinner_index = (@spinner_index + 1) % SPINNER_FRAMES.length
+          @last_spinner_update = now
+          changed = true
+        end
+      end
       changed
     end
 
@@ -93,8 +104,15 @@ module Rufio
       type = @search_type == :content ? 'Content' : 'File names'
       write_line(screen, 0, "G mode - #{type} | Tab: Switch name/content search", width, "\e[1;36m")
       write_line(screen, 1, "Search: #{@query}_", width)
-      state = scanning? ? 'Scanning...' : 'Ready'
-      write_line(screen, 2, "#{state} | #{@bookmark_count} bookmarks | #{@results.length} matches | #{@errors.length} errors | #{@skipped_files} skipped", width)
+      state = if scanning?
+                "[#{SPINNER_FRAMES[@spinner_index]}] Searching..."
+              elsif @search_type == :content && @query.empty?
+                'Ready'
+              else
+                'Search complete'
+              end
+      color = scanning? ? "\e[1;33m" : "\e[32m"
+      write_line(screen, 2, "#{state} | #{@bookmark_count} bookmarks | #{@results.length} matches | #{@errors.length} errors | #{@skipped_files} skipped", width, color)
       row_height = @search_type == :content ? 2 : 1
       capacity = [screen.height - 6, 0].max / row_height
       first = [@selected_index - capacity + 1, 0].max
@@ -136,6 +154,8 @@ module Rufio
       @skipped_files = 0
       @selected_index = 0
       @events = SizedQueue.new(256)
+      @spinner_index = 0
+      @last_spinner_update = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       @scanning = !(@search_type == :content && @query.empty?)
       return unless @scanning
 
