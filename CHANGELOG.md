@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The gem bundles the Zig library for macOS (arm64/x86_64), Linux (x86_64/aarch64, glibc 2.17+ and musl), and Windows (x64/arm64); unsupported platforms fall back to Ruby automatically
 
 ### Changed
+- Files mode shows the current path on its own top row above the bookmark list (full path with `~` for home, shortened from the left when too long) instead of on the bottom tab line; Jobs mode keeps the path on the tab line
 - Rebuild the Zig library with Zig 0.17 (`make -C lib_zig/rufio_native dist`); bundled binaries live in `lib/rufio/native/<platform>/`
 
 ### Fixed

@@ -10,8 +10,12 @@ module Rufio
   # - シンタックスハイライト（bat 連携）を担当
   class UIRenderer
     # Layout constants
-    HEADER_FOOTER_MARGIN = 2       # Header(1行) + Footer(1行) 分のマージン
-    CONTENT_START_LINE = 1         # コンテンツ開始行（フッタ1行: Y=0）
+    PATH_LINE = 0                  # 現在のパス（Y=0）
+    BOOKMARK_LINE = 1              # ブックマーク一覧（Y=1）
+    HEADER_FOOTER_MARGIN = 3       # パス(1行) + ブックマーク(1行) + モードタブ(1行) 分のマージン
+    CONTENT_START_LINE = 2         # コンテンツ開始行
+    JOB_HEADER_FOOTER_MARGIN = 2   # ジョブモード: ジョブフッタ(1行) + モードタブ(1行)
+    JOB_CONTENT_START_LINE = 1     # ジョブモードのコンテンツ開始行
     CURSOR_OFFSET = 1              # カーソル位置のオフセット
     ICON_SIZE_PADDING = 12         # アイコン、選択マーク、サイズ情報分
     BOOKMARK_HIGHLIGHT_DURATION = 0.5  # ブックマークハイライト表示時間（秒）
@@ -124,17 +128,18 @@ module Rufio
     # @param job_mode_instance [JobMode, nil] ジョブモードインスタンス
     def draw_screen(screen, notification_message: nil, fps: nil,
                     in_job_mode: false, job_manager: nil, job_mode_instance: nil)
-      content_height = @screen_height - HEADER_FOOTER_MARGIN
-
       if in_job_mode
-        # ジョブモード: フッタ y=0（上部）、コンテンツ y=1〜h-2、統合行 y=h-1（下部）
+        # ジョブモード: フッタ y=0（上部）、コンテンツ y=1〜h-2、統合行 y=h-1（下部・パス付き）
+        content_height = @screen_height - JOB_HEADER_FOOTER_MARGIN
         log_mode = job_mode_instance&.log_mode? || false
         draw_job_footer_to_buffer(screen, 0, job_manager, log_mode: log_mode)
         draw_job_list_to_buffer(screen, content_height, job_manager, job_mode_instance)
         draw_mode_tabs_to_buffer(screen, @screen_height - 1)
       else
-        # 通常モード: フッタ y=0（上部）、コンテンツ y=1〜h-2、統合行 y=h-1（下部）
-        draw_footer_to_buffer(screen, 0, fps)
+        # 通常モード: パス y=0、ブックマーク y=1、コンテンツ y=2〜h-2、モードタブ y=h-1（下部）
+        content_height = @screen_height - HEADER_FOOTER_MARGIN
+        draw_path_line_to_buffer(screen, PATH_LINE)
+        draw_footer_to_buffer(screen, BOOKMARK_LINE, fps)
 
         entries = get_display_entries
         selected_entry = entries[@keybind_handler.current_index]
@@ -145,7 +150,7 @@ module Rufio
         draw_directory_list_to_buffer(screen, entries, left_width, content_height)
         draw_file_preview_to_buffer(screen, selected_entry, right_width, content_height, left_width)
 
-        draw_mode_tabs_to_buffer(screen, @screen_height - 1)
+        draw_mode_tabs_to_buffer(screen, @screen_height - 1, show_path: false)
       end
 
       # 通知メッセージがある場合は表示
@@ -575,7 +580,41 @@ module Rufio
     # モードタブ描画
     # ============================
 
-    def draw_mode_tabs_to_buffer(screen, y)
+    # 現在のパスを 1 行で表示する（ホームは ~、長い場合は左側を省略）
+    def draw_path_line_to_buffer(screen, y)
+      path_text = " #{format_header_path(@directory_listing.current_path, @screen_width - 2)}"
+      screen.put_string(0, y, path_text.ljust(@screen_width), fg: "\e[1m")
+    end
+
+    def format_header_path(path, max_width)
+      home = Dir.home rescue nil
+      display = path.to_s
+      if home && !home.empty?
+        if display == home
+          display = '~'
+        elsif display.start_with?(home + '/')
+          display = "~#{display.delete_prefix(home)}"
+        end
+      end
+      return display if TextUtils.display_width(display) <= max_width
+
+      # 末尾（現在のディレクトリ側）を残して先頭を … に置き換える
+      ellipsis = '…'
+      budget = max_width - TextUtils.display_width(ellipsis)
+      tail = +''
+      tail_width = 0
+      display.reverse.each_char do |char|
+        char_width = TextUtils.display_width(char)
+        break if tail_width + char_width > budget
+
+        tail.prepend(char)
+        tail_width += char_width
+      end
+      "#{ellipsis}#{tail}"
+    end
+
+    # show_path: Files モードではパスを最上段に出すため、タブ行には表示しない
+    def draw_mode_tabs_to_buffer(screen, y, show_path: true)
       # タブモードマネージャの状態を同期
       sync_tab_mode_with_keybind_handler
 
@@ -626,7 +665,7 @@ module Rufio
         current_x += 1
 
         path_end = @screen_width - 1 - version_w
-        path_str = " #{shorten_path(current_path)} "
+        path_str = show_path ? " #{shorten_path(current_path)} " : ''
         path_str.each_char do |char|
           break if current_x >= path_end
           char_w = TextUtils.display_width(char)
@@ -674,7 +713,7 @@ module Rufio
       selected_index = job_mode_instance&.selected_index || 0
 
       (0...height).each do |i|
-        line_num = i + CONTENT_START_LINE
+        line_num = i + JOB_CONTENT_START_LINE
 
         if i < jobs.length
           job = jobs[i]
@@ -687,16 +726,16 @@ module Rufio
 
     def draw_job_log_to_buffer(screen, height, job)
       unless job
-        screen.put_string(0, CONTENT_START_LINE, 'No job selected'.ljust(@screen_width), fg: "\e[90m")
+        screen.put_string(0, JOB_CONTENT_START_LINE, 'No job selected'.ljust(@screen_width), fg: "\e[90m")
         return
       end
 
       log_lines = job.logs || []
       title = "=== Log: #{job.name} ==="
-      screen.put_string(0, CONTENT_START_LINE, title.ljust(@screen_width), fg: "\e[1;36m")
+      screen.put_string(0, JOB_CONTENT_START_LINE, title.ljust(@screen_width), fg: "\e[1;36m")
 
       (0...height - 1).each do |i|
-        line_num = i + CONTENT_START_LINE + 1
+        line_num = i + JOB_CONTENT_START_LINE + 1
         line = log_lines[i] || ''
         line = line[0...@screen_width].ljust(@screen_width)
         screen.put_string(0, line_num, line, fg: "\e[37m")

@@ -10,7 +10,7 @@ module Rufio
     # Layout constants
     HEADER_HEIGHT = 1              # Header占有行数（モードタブ+パス+バージョン 1行に統合）
     FOOTER_HEIGHT = 1              # Footer占有行数（ブックマーク一覧 + ステータス情報）
-    HEADER_FOOTER_MARGIN = 2       # Header(1行) + Footer(1行)分のマージン
+    HEADER_FOOTER_MARGIN = 3       # パス(1行) + ブックマーク(1行) + モードタブ(1行)（UIRenderer と同じ）
 
     # Panel layout ratios
     LEFT_PANEL_RATIO = 0.5         # 左パネルの幅比率
@@ -36,7 +36,7 @@ module Rufio
     BOOKMARK_HIGHLIGHT_DURATION = 0.5
 
     # Line offsets
-    CONTENT_START_LINE = 1         # コンテンツ開始行（フッタ1行: Y=0）
+    CONTENT_START_LINE = 2         # コンテンツ開始行（UIRenderer と同じ）
 
     def initialize(test_mode: false)
       console = IO.console
@@ -755,13 +755,14 @@ module Rufio
 
     # ファイルリストのクリック行からエントリを選択する（ダブルクリック対応）
     def handle_mouse_file_click(row)
-      # コンテンツ行はターミナル行2〜(screen_height-1)
-      content_height = @screen_height - 2
-      return unless row >= 2 && row <= @screen_height - 1
+      # コンテンツ行はターミナル行（1 始まり）で CONTENT_START_LINE+1 〜 screen_height-1
+      first_row = CONTENT_START_LINE + 1
+      content_height = @screen_height - HEADER_FOOTER_MARGIN
+      return unless row >= first_row && row <= @screen_height - 1
 
       current_idx = @keybind_handler.current_index
       start_index = [current_idx - content_height / 2, 0].max
-      target_index = start_index + (row - 2)
+      target_index = start_index + (row - first_row)
 
       entries = @keybind_handler.send(:get_active_entries)
       return unless target_index >= 0 && target_index < entries.length
