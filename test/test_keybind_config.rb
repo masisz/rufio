@@ -35,8 +35,8 @@ class TestKeybindConfig < Minitest::Test
     assert_equal 'g', Rufio::ConfigLoader.default_keybinds[:top]
   end
 
-  def test_default_keybinds_bottom_is_G
-    assert_equal 'G', Rufio::ConfigLoader.default_keybinds[:bottom]
+  def test_default_keybinds_bottom_is_closing_brace
+    assert_equal '}', Rufio::ConfigLoader.default_keybinds[:bottom]
   end
 
   def test_default_keybinds_refresh_is_R
@@ -132,9 +132,9 @@ class TestKeybindConfig < Minitest::Test
     assert_equal 0, @handler.current_index
   end
 
-  def test_G_key_moves_to_bottom
+  def test_closing_brace_key_moves_to_bottom
     entries = @dl.list_entries
-    @handler.handle_key('G')
+    @handler.handle_key('}')
     assert_equal entries.length - 1, @handler.current_index
   end
 

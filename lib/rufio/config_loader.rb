@@ -47,7 +47,7 @@ module Rufio
           navigate_parent: 'h',
           navigate_enter:  'l',
           top:             'g',
-          bottom:          'G',
+          bottom:          '}',
           refresh:         'R',
           # ファイル操作
           open_file:       'o',
@@ -72,6 +72,8 @@ module Rufio
           start_dir:       '0',
           # モード・ツール
           job_mode:        'J',
+          global_search:   'G',
+          config_mode:     'C',
           help:            '?',
           log_viewer:      'L',
           command_mode:    ':',
@@ -98,6 +100,18 @@ module Rufio
         # 新フォーマット（単一文字列値）のみ受け入れ、古いフォーマット（配列値）は無視
         user_keybinds = raw_user_keybinds.select { |_, v| v.is_a?(String) }
         default_keybinds.merge(user_keybinds)
+      end
+
+      def global_search_excluded_extensions
+        values = load_config[:global_search_excluded_extensions]
+        return [] unless values.is_a?(Array)
+
+        values.select { |value| value.is_a?(String) }.map do |value|
+          extension = value.strip.downcase
+          next if extension.empty? || extension == '.'
+
+          extension.start_with?('.') ? extension : ".#{extension}"
+        end.compact.uniq
       end
 
       def language
@@ -286,7 +300,8 @@ module Rufio
         config = {
           applications: safe_const_get(:APPLICATIONS, default_config[:applications]),
           colors: safe_const_get(:COLORS, default_config[:colors]),
-          keybinds: safe_const_get(:KEYBINDS, {})
+          keybinds: safe_const_get(:KEYBINDS, {}),
+          global_search_excluded_extensions: safe_const_get(:GLOBAL_SEARCH_EXCLUDED_EXTENSIONS, [])
         }
 
         if Object.const_defined?(:LANGUAGE)
@@ -335,6 +350,7 @@ module Rufio
             selected: { hsl: [50, 90, 70] },
             preview: { hsl: [180, 60, 65] }
           },
+          global_search_excluded_extensions: [],
           keybinds: {},    # ユーザーの上書きのみ格納（デフォルトはdefault_keybindsを参照）
           ui_options: {}   # ユーザーの上書きのみ格納（デフォルトはdefault_ui_optionsを参照）
         }

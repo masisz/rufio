@@ -56,7 +56,7 @@ module Rufio
         'ui.operation_prompt' => 'Operation: ',
 
         # Help text
-        'help.full' => 'j/k:move h:back l:enter o:open g/G:top/bottom r:refresh f:filter s:search F:content a/A:create m/p/x:ops b:bookmark z:zoxide 1-9:goto q:quit',
+        'help.full' => 'j/k:move h:back l:enter o:open g/}:top/bottom G:global-search r:refresh f:filter s:search F:content a/A:create m/p/x:ops b:bookmark z:zoxide 1-9:goto q:quit',
         'help.short' => 'j/k:move h:back l:enter o:open f:filter s:search b:bookmark z:zoxide 1-9:goto q:quit',
 
         # Health check messages
@@ -126,7 +126,7 @@ module Rufio
         'ui.operation_prompt' => 'Operation: ',
 
         # Help text
-        'help.full' => 'j/k:move h:back l:enter o:open g/G:top/end r:refresh f:filter s:search F:content a/A:create m/c/x:ops b:bookmark z:zoxide 1-9:jump q:quit',
+        'help.full' => 'j/k:move h:back l:enter o:open g/}:top/end G:global-search r:refresh f:filter s:search F:content a/A:create m/c/x:ops b:bookmark z:zoxide 1-9:jump q:quit',
         'help.short' => 'j/k:move h:back l:enter o:open f:filter s:search b:bookmark z:zoxide 1-9:jump q:quit',
 
         # Health check messages

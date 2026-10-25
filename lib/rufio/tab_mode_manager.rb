@@ -4,10 +4,12 @@ module Rufio
   # タブモード管理クラス
   # 上部メニューの2段目に表示するモードタブを管理する
   class TabModeManager
-    MODES = %i[files logs jobs help].freeze
+    MODES = %i[files config global logs jobs help].freeze
 
     MODE_LABELS = {
       files: 'Files',
+      config: 'Config',
+      global: 'Search',
       logs: 'Logs',
       jobs: 'Jobs',
       help: 'Help'
@@ -15,6 +17,8 @@ module Rufio
 
     MODE_KEYS = {
       files: nil,
+      config: 'C',
+      global: 'G',
       logs: 'L',
       jobs: 'J',
       help: '?'

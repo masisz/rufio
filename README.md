@@ -84,7 +84,7 @@ rufio /path/to  # Launch in specified directory
 |-----|----------|
 | `j/k` | Move up/down |
 | `h/l` | Parent/child directory |
-| `g/G` | Top/bottom |
+| `g/}` | Top/bottom |
 | `Enter` | Enter directory/open file |
 | `q` | Quit |
 
@@ -123,10 +123,42 @@ rufio /path/to  # Launch in specified directory
 | Key | Function |
 |-----|----------|
 | `:` | Command mode |
+| `G` | Search file names or contents across all bookmarked directories |
+| `C` | Open ~/.config/rufio/ in Config mode (same controls as Files) |
 | `J` | Job mode |
 | `L` | View execution logs |
 | `?` | Help |
 | `Shift+Tab` | Switch mode (reverse) |
+
+### Global Search (G mode)
+
+Press `G` to search recursively across all bookmarked directories. `Tab`
+switches between **File names** and **Content**. Type a literal string to
+search (case insensitive); content results include the file, line number,
+and matching text. Text is read as UTF-8; files containing NUL bytes in the
+first 8 KB are skipped as binary. Use Up/Down or Ctrl+N/P to select a
+result, and press Enter to jump to that file in Files mode. `Ctrl+U` clears
+the query; `Esc` cancels and returns to your previous view. Scanning runs in
+the background and skips inaccessible directories and directory symlinks.
+Add bookmarks with `b` before searching. G mode needs no external search tools.
+While scanning, a yellow `Searching...` indicator animates even before matches
+arrive. It turns green and displays `Search complete` when the scan finishes.
+
+To exclude extensions from both file name and content searches, add this to
+`~/.config/rufio/config.rb` and restart Rufio:
+
+```ruby
+GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.png .jpg .zip .tar.gz .log].freeze
+```
+
+Extensions are case insensitive and the leading dot is optional. The default
+is `[]` (no extension exclusions). Directory names are unaffected.
+
+### Config Mode (C)
+
+Press `C` to open `~/.config/rufio/`, creating it if needed. Navigation, previews,
+and file operations work as in Files mode. Browse settings and scripts directly;
+leaving the config directory returns the mode display to Files.
 
 ## Command Mode
 

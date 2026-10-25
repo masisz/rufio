@@ -41,6 +41,14 @@ KEYBINDS = {
 }.freeze
 
 # ========================================
+# G Mode Search Exclusions
+# ========================================
+# Exclude these extensions from both file name and content searches.
+# Case insensitive; a leading dot is optional. Compound suffixes work too.
+# Example: %w[.png .jpg .zip .tar.gz .log]
+GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = [].freeze
+
+# ========================================
 # Application Associations
 # ========================================
 # Specify which application to open for each file extension

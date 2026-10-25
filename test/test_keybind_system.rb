@@ -64,12 +64,12 @@ class TestKeybindSystem
         puts "✗ vertical_navigation_up (k key)"
       end
       
-      # G キー（最下部移動）のテスト
-      handler.handle_key('G')
+      # } キー（最下部移動）のテスト
+      handler.handle_key('}')
       if handler.current_index == entries_count - 1
-        puts "✓ vertical_navigation_bottom (G key)"
+        puts "✓ vertical_navigation_bottom (} key)"
       else
-        puts "✗ vertical_navigation_bottom (G key)"
+        puts "✗ vertical_navigation_bottom (} key)"
       end
       
       # g キー（最上部移動）のテスト
