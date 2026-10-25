@@ -73,6 +73,7 @@ module Rufio
           # モード・ツール
           job_mode:        'J',
           global_search:   'G',
+          config_mode:     'C',
           help:            '?',
           log_viewer:      'L',
           command_mode:    ':',

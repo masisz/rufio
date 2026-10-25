@@ -33,6 +33,32 @@ module Rufio
       @terminal_ui&.start_global_search(@bookmark_manager.list)
     end
 
+    def config_directory
+      Config::CONFIG_DIR
+    end
+
+    def config_mode?
+      return false if @in_log_viewer_mode || @in_help_mode || @job_mode.active?
+
+      path = @directory_listing&.current_path
+      root = File.expand_path(config_directory)
+      path && (path == root || path.start_with?(root + File::SEPARATOR))
+    end
+
+    def enter_config_mode
+      return false unless @directory_listing
+
+      FileUtils.mkdir_p(config_directory)
+      exit_log_viewer_mode if @in_log_viewer_mode
+      exit_help_mode if @in_help_mode
+      exit_job_mode if @job_mode.active?
+      @nav_controller.unfocus_preview_pane
+      navigate_to_directory(config_directory)
+    rescue SystemCallError => e
+      @notification_manager.add("Cannot open config directory: #{e.message}", :error, duration: 0)
+      false
+    end
+
     def preview_scroll_offset
       @nav_controller.preview_scroll_offset
     end
@@ -144,6 +170,10 @@ module Rufio
 
       if @key_map[key] == :global_search && !@filter_manager.filter_mode
         return start_global_search
+      end
+
+      if @key_map[key] == :config_mode && !@filter_manager.filter_mode
+        return enter_config_mode
       end
 
       # ジョブモード中の特別処理

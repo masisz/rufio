@@ -635,13 +635,13 @@ module Rufio
       return handle_global_search_input(input) if global_search_active?
 
       # TabキーはFilesモードの時のみブックマーク循環移動（ジョブモード中は無効）
-      if input == "\t" && @tab_mode_manager.current_mode == :files && !@in_job_mode
+      if input == "\t" && (@tab_mode_manager.current_mode == :files || @keybind_handler.config_mode?) && !@in_job_mode
         handle_tab_key
         return true
       end
 
       # 数字キー（1-9）: Filesモード かつ フィルターモード外でブックマークジャンプ＋ハイライト
-      if input&.match?(/^[1-9]$/) && @tab_mode_manager.current_mode == :files && !@keybind_handler.filter_active?
+      if input&.match?(/^[1-9]$/) && (@tab_mode_manager.current_mode == :files || @keybind_handler.config_mode?) && !@keybind_handler.filter_active?
         handle_bookmark_key(input.to_i)
         return true
       end
@@ -694,7 +694,7 @@ module Rufio
 
     # Shift+Tab: Filesモードでは前のブックマークへ循環移動、それ以外はモード逆順切り替え
     def handle_shift_tab
-      if @tab_mode_manager.current_mode == :files
+      if @tab_mode_manager.current_mode == :files || @keybind_handler.config_mode?
         prev_idx = @keybind_handler.goto_prev_bookmark
         if prev_idx
           @ui_renderer.set_highlighted_bookmark(prev_idx + 1)
@@ -810,6 +810,8 @@ module Rufio
     # モード変更を適用
     def apply_mode_change(mode)
       case mode
+      when :config
+        @keybind_handler.enter_config_mode
       when :global
         @keybind_handler.start_global_search
       when :files
@@ -1254,6 +1256,8 @@ module Rufio
                  :jobs
                elsif @keybind_handler.log_viewer_mode?
                  :logs
+               elsif @keybind_handler.config_mode?
+                 :config
                else
                  :files
                end

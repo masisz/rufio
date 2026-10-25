@@ -78,6 +78,10 @@ module Rufio
       when 'Modes'
         [
           'Files', 'Browse directories, select files and view previews.',
+          '', "[#{key(:config_mode)}] Config",
+          'Open ~/.config/rufio/ to edit settings and scripts.',
+          'Navigation, previews and file operations work as in Files.',
+          'Use h to leave the config directory and return to Files.',
           '', "[#{key(:global_search)}] Global search",
           'Search file names recursively across every bookmarked directory.',
           'Type to filter | Up/Down: Select | Enter: Go to file',

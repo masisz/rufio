@@ -68,6 +68,13 @@ class TestConfigMode < Minitest::Test
     assert_equal 'C', @handler.filter_query
   end
 
+  def test_config_directory_creation_failure_keeps_current_location
+    File.write(@config, 'not a directory')
+    refute @handler.handle_key('C')
+    assert_equal @root, @listing.current_path
+    assert_equal 1, @handler.notification_manager.count
+  end
+
   def test_bottom_bar_highlights_config
     @handler.handle_key('C')
     renderer = Rufio::UIRenderer.new(screen_width: 100, screen_height: 24,

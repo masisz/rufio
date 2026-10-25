@@ -790,6 +790,8 @@ module Rufio
                        :help
                      elsif @keybind_handler.log_viewer_mode?
                        :logs
+                     elsif @keybind_handler.config_mode?
+                       :config
                      else
                        :files
                      end

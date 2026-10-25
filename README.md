@@ -124,6 +124,7 @@ rufio /path/to  # Launch in specified directory
 |-----|----------|
 | `:` | Command mode |
 | `G` | Search file names across all bookmarked directories |
+| `C` | Open ~/.config/rufio/ in Config mode (same controls as Files) |
 | `J` | Job mode |
 | `L` | View execution logs |
 | `?` | Help |
