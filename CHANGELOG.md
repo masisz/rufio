@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document results show the PDF page, Excel sheet and cell, or PowerPoint slide alongside matching text; Enter still locates the source file in Files mode
 - A bounded in-memory document text cache avoids re-extracting unchanged documents when editing the query; file changes invalidate cached text, and corrupt or encrypted documents report errors without stopping other searches
 
+- G mode content search runs on a bundled Zig engine: parallel directory walking, SIMD literal matching, and a revalidated in-memory file cache make the first search about 1.8x and repeated searches about 10x faster than `rg` on a 31k-file tree; queries with non-ASCII cased letters still use the Ruby search, and `RUFIO_NATIVE_SEARCH=0` disables the engine
+- The gem bundles the Zig library for macOS (arm64/x86_64), Linux (x86_64/aarch64, glibc 2.17+ and musl), and Windows (x64/arm64); unsupported platforms fall back to Ruby automatically
+
+### Changed
+- Rebuild the Zig library with Zig 0.17 (`make -C lib_zig/rufio_native dist`); bundled binaries live in `lib/rufio/native/<platform>/`
+
 ### Fixed
 - Restore the scanner mode after native scanner tests so test order no longer affects normal directory listings
 

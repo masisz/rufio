@@ -14,10 +14,23 @@ end
 # Default task
 task default: :test
 
+# Zig native library tasks
+namespace :native do
+  desc 'Cross-compile the Zig library for every bundled platform (requires zig)'
+  task :build do
+    sh 'make -C lib_zig/rufio_native dist'
+  end
+
+  desc 'Verify bundled Zig binaries for macOS, Linux and Windows'
+  task :check do
+    ruby '-I test -I lib test/test_native_platform_binaries.rb'
+  end
+end
+
 # Gem build and push tasks
 namespace :gem do
   desc 'Build the gem file'
-  task :build do
+  task :build => 'native:check' do
     puts "Building rufio v#{Rufio::VERSION}..."
     
     # Clean old gem files

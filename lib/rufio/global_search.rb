@@ -4,6 +4,7 @@ require 'thread'
 require_relative 'text_utils'
 require_relative 'config_loader'
 require_relative 'document_text_extractor'
+require_relative 'native_content_search'
 
 module Rufio
   # ブックマーク配下のファイル名・テキスト内容をバックグラウンドで横断検索する。
@@ -12,6 +13,16 @@ module Rufio
     SPINNER_INTERVAL = 0.12
 
     attr_reader :query, :results, :errors, :selected_index, :search_type, :skipped_files
+
+    class << self
+      # nil: 利用可能なら Zig 実装を使う（RUFIO_NATIVE_SEARCH=0 で無効化）
+      attr_writer :native_search
+
+      def native_search?
+        enabled = @native_search.nil? ? ENV['RUFIO_NATIVE_SEARCH'] != '0' : @native_search
+        enabled && NativeContentSearch.available?
+      end
+    end
 
     def initialize
       @active = false
@@ -66,8 +77,12 @@ module Rufio
         when :entry
           @entries << value
           @results << value if @search_type == :content || matches_query?(value)
+        when :entries
+          # Zig 実装の結果はまとめて届くので、1 フレーム 256 件の上限に縛られない
+          @entries.concat(value)
+          @results.concat(value)
         when :error then @errors << value
-        when :skipped then @skipped_files += 1
+        when :skipped then @skipped_files += value || 1
         when :done then @scanning = false
         end
       end
@@ -169,9 +184,14 @@ module Rufio
       return unless @scanning
 
       roots, events, type, query = @roots, @events, @search_type, @query.downcase
+      native_cache = self.class.native_search? ? (@native_cache ||= NativeContentSearch::Cache.new) : nil
       @worker = Thread.new do
         begin
-          scan_roots(roots, events, type, query)
+          if native_cache && type == :content && NativeContentSearch.supports_query?(query)
+            scan_roots_natively(roots, events, query, native_cache)
+          else
+            scan_roots(roots, events, type, query)
+          end
         rescue StandardError => e
           events << [:error, e.message]
         end
@@ -237,6 +257,45 @@ module Rufio
           events << [:error, "#{name}: #{e.message}"]
         end
       end
+    end
+
+    # Zig 実装で走査・検索し、PDF などのドキュメントだけ Ruby 側で抽出する
+    def scan_roots_natively(roots, events, query, cache)
+      valid_roots = []
+      roots.each do |name, root|
+        root = File.expand_path(root)
+        raise Errno::ENOTDIR, root unless File.directory?(root)
+
+        valid_roots << [name, root]
+      rescue SystemCallError, IOError => e
+        events << [:error, "#{name}: #{e.message}"]
+      end
+      return if valid_roots.empty?
+
+      engine = NativeContentSearch.new(roots: valid_roots.map(&:last), query: query,
+                                       excluded_extensions: @excluded_extensions,
+                                       document_extensions: DocumentTextExtractor::EXTENSIONS, cache: cache)
+      engine.each_batch do |batch|
+        entries = []
+        batch.each do |kind, *args|
+          case kind
+          when :match, :document
+            name, root = valid_roots[args[0]]
+            path = args[1]
+            entry = { path: path, bookmark: name, relative_path: path.delete_prefix(root + File::SEPARATOR) }
+            if kind == :document
+              scan_content(entry, query, events)
+            else
+              entries << entry.merge(line_number: args[2], match_text: args[3])
+            end
+          when :error then events << [:error, args[1]]
+          when :skipped then events << [:skipped, args[0]]
+          end
+        end
+        events << [:entries, entries] unless entries.empty?
+      end
+    ensure
+      engine&.close
     end
 
     def scan_content(entry, query, events)

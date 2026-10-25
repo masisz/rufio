@@ -381,6 +381,17 @@ apt install fzf bat zoxide
 
 ## Advanced Features
 
+### Native Content Search
+
+G mode content search uses a bundled Zig engine on macOS (arm64/x86_64), Linux (x86_64/aarch64, glibc 2.17+ or musl), and Windows (x64/arm64). It searches bookmarks in parallel and caches file contents between queries, so retyping a query is about 10x faster than `rg`. Other platforms, and queries containing non-ASCII letters with case, use the Ruby search automatically. Set `RUFIO_NATIVE_SEARCH=0` to disable it.
+
+To rebuild the bundled binaries (requires Zig 0.17):
+
+```bash
+make -C lib_zig/rufio_native dist   # all platforms
+bundle exec rake native:check       # verify bundled binaries
+```
+
 ### Native Scanner (Experimental)
 
 Support for native implementation for fast directory scanning:

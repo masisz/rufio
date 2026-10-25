@@ -345,6 +345,17 @@ apt install fzf bat zoxide
 
 ## 高度な機能
 
+### ネイティブコンテンツ検索
+
+G mode のコンテンツ検索は、macOS（arm64/x86_64）、Linux（x86_64/aarch64、glibc 2.17 以降または musl）、Windows（x64/arm64）では同梱の Zig エンジンで動作します。ブックマークを並列に検索し、検索の間でファイル内容をキャッシュするため、検索語を打ち直したときの再検索は `rg` の約 10 倍速くなります。その他のプラットフォームや、大文字小文字のある非 ASCII 文字を含む検索語では自動的に Ruby の検索を使います。`RUFIO_NATIVE_SEARCH=0` で無効化できます。
+
+同梱バイナリの再ビルド（Zig 0.17 が必要）：
+
+```bash
+make -C lib_zig/rufio_native dist   # 全プラットフォーム
+bundle exec rake native:check       # 同梱バイナリの検証
+```
+
 ### ネイティブスキャナー（実験的）
 
 高速なディレクトリスキャンのためのネイティブ実装をサポート：
