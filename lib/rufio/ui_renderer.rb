@@ -796,20 +796,9 @@ module Rufio
     private
 
     def get_display_entries
-      entries = if @keybind_handler.filter_active?
-                  all_entries = @directory_listing.list_entries
-                  query = @keybind_handler.filter_query.downcase
-                  query.empty? ? all_entries : all_entries.select { |entry| entry[:name].downcase.include?(query) }
-                else
-                  @directory_listing.list_entries
-                end
+      return @keybind_handler.get_active_entries if @keybind_handler.respond_to?(:get_active_entries)
 
-      # ヘルプモードとLogsモードでは..を非表示にする
-      if @keybind_handler.help_mode? || @keybind_handler.log_viewer_mode?
-        entries.reject { |entry| entry[:name] == '..' }
-      else
-        entries
-      end
+      @directory_listing.list_entries
     end
 
     # キーバインドハンドラの状態とタブモードを同期

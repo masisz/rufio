@@ -229,12 +229,7 @@ module Rufio
       return if out_of_bounds?(x, y)
 
       char_width = width || TextUtils.display_width(char)
-      @overlay_cells[y][x] = {
-        char: char,
-        fg: fg,
-        bg: bg,
-        width: char_width
-      }
+      @overlay_cells[y][x] = Cell.new(char, fg, bg, char_width)
 
       @dirty_rows.add(y)
 
@@ -243,12 +238,7 @@ module Rufio
         (char_width - 1).times do |offset|
           next_x = x + 1 + offset
           break if next_x >= @width
-          @overlay_cells[y][next_x] = {
-            char: '',
-            fg: nil,
-            bg: nil,
-            width: 0
-          }
+          @overlay_cells[y][next_x] = Cell.new('', nil, nil, 0)
         end
       end
     end

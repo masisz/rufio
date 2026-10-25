@@ -4,39 +4,15 @@ require 'io/console'
 require_relative 'text_utils'
 require_relative 'help_menu'
 require_relative 'global_search'
+require_relative 'ui_renderer'
 
 module Rufio
   class TerminalUI
-    # Layout constants
-    HEADER_HEIGHT = 1              # Header占有行数（モードタブ+パス+バージョン 1行に統合）
-    FOOTER_HEIGHT = 1              # Footer占有行数（ブックマーク一覧 + ステータス情報）
-    HEADER_FOOTER_MARGIN = 3       # パス(1行) + ブックマーク(1行) + モードタブ(1行)（UIRenderer と同じ）
-
-    # Panel layout ratios
-    LEFT_PANEL_RATIO = 0.5         # 左パネルの幅比率
-    RIGHT_PANEL_RATIO = 1.0 - LEFT_PANEL_RATIO
-
     # Display constants
     DEFAULT_SCREEN_WIDTH = 80      # デフォルト画面幅
     DEFAULT_SCREEN_HEIGHT = 24     # デフォルト画面高さ
-    HEADER_PADDING = 2             # ヘッダーのパディング
-    FILTER_TEXT_RESERVED = 15      # フィルタテキスト表示の予約幅
-    TAB_SEPARATOR = ">"              # タブ間セパレータ
-
-    # File display constants
-    ICON_SIZE_PADDING = 12         # アイコン、選択マーク、サイズ情報分
-    CURSOR_OFFSET = 1              # カーソル位置のオフセット
-
-    # Size display constants (bytes)
-    KILOBYTE = 1024
-    MEGABYTE = KILOBYTE * 1024
-    GIGABYTE = MEGABYTE * 1024
-
-    # Bookmark highlight duration (seconds)
-    BOOKMARK_HIGHLIGHT_DURATION = 0.5
-
-    # Line offsets
-    CONTENT_START_LINE = 2         # コンテンツ開始行（UIRenderer と同じ）
+    HEADER_FOOTER_MARGIN = UIRenderer::HEADER_FOOTER_MARGIN
+    CONTENT_START_LINE = UIRenderer::CONTENT_START_LINE
 
     def initialize(test_mode: false)
       console = IO.console
@@ -86,7 +62,7 @@ module Rufio
       @background_status = @ui_renderer.background_status
     end
 
-    attr_reader :ui_renderer
+    attr_reader :ui_renderer, :screen_width, :screen_height
 
     def start(directory_listing, keybind_handler, file_preview, background_executor = nil)
       @directory_listing = directory_listing
@@ -131,16 +107,7 @@ module Rufio
       @ui_renderer.clear_preview_cache
       @ui_renderer.clear_bookmark_cache
 
-      # バッファベースの描画が利用可能な場合は全画面を再描画
-      if @screen && @renderer
-        # レンダラーの前フレーム情報をリセット（差分レンダリングを強制的に全体描画にする）
-        @renderer.clear
-        @screen.clear
-        draw_screen_to_buffer(@screen, nil, nil)
-        @renderer.render(@screen)
-        # カーソルを画面外に移動
-        print "\e[#{@screen_height};#{@screen_width}H"
-      end
+      render_full_screen
     end
 
     # スクリプトランナーを設定
@@ -814,22 +781,9 @@ module Rufio
         @command_input = ""
       when "\e"
         # Escape キーでコマンドモードをキャンセル
-        # まずコマンドウィンドウをクリア
         @command_mode_ui.clear_prompt
         deactivate_command_mode
-        # ファイラー画面を再描画（バッファベース）
-        if @screen && @renderer
-          # レンダラーの前フレーム情報をリセット（差分レンダリングを強制的に全体描画にする）
-          @renderer.clear
-          @screen.clear
-          draw_screen_to_buffer(@screen, nil, nil)
-          @renderer.render(@screen)
-          # カーソルを画面外に移動（メインループと同じ処理）
-          print "\e[#{@screen_height};#{@screen_width}H"
-        else
-          # フォールバック（古い実装）
-          draw_screen
-        end
+        render_full_screen
       when "\t"
         # Tab キーで補完
         handle_tab_completion
@@ -956,16 +910,6 @@ module Rufio
       info_notice.mark_as_shown(notice[:file])
     end
 
-    # ログモードに入る（廃止済み: 空のメソッド）
-    def enter_log_mode(_project_log)
-      # プロジェクトモード廃止により何もしない
-    end
-
-    # ログモードを終了（廃止済み: 空のメソッド）
-    def exit_log_mode
-      # プロジェクトモード廃止により何もしない
-    end
-
     # ジョブモードを設定
     def set_job_mode(job_mode, job_manager, notification_manager)
       @job_mode_instance = job_mode
@@ -983,86 +927,13 @@ module Rufio
       @in_job_mode = false
       @job_mode_instance = nil
       @job_manager = nil
-      # バッファベースの全画面再描画を使用
       update_screen_size
-      if @screen && @renderer
-        @renderer.clear
-        @screen.clear
-        draw_screen_to_buffer(@screen, nil, nil)
-        @renderer.render(@screen)
-        print "\e[#{@screen_height};#{@screen_width}H"
-      else
-        draw_screen
-      end
+      render_full_screen
     end
 
     # ジョブモード再描画をトリガー
     def trigger_job_mode_redraw
       @job_mode_needs_redraw = true
-    end
-
-    # ジョブモード画面を描画（バッファベース描画への橋渡し）
-    def draw_job_mode_screen
-      return unless @in_job_mode && @job_mode_instance && @job_manager
-      return unless @screen && @renderer
-
-      # バッファベースの描画を使用
-      draw_screen_to_buffer(@screen, nil, nil)
-      @renderer.render(@screen)
-      print "\e[#{@screen_height};#{@screen_width}H"
-
-      STDOUT.flush
-      @job_mode_needs_redraw = false
-    end
-
-    # Noice風の通知を描画
-    def draw_notifications
-      nm = @notification_manager || @keybind_handler&.notification_manager
-      return unless nm
-
-      # 期限切れの通知を削除
-      nm.expire_old_notifications
-
-      notifications = nm.notifications
-      return if notifications.empty?
-
-      # 通知の幅と位置
-      notification_width = 22
-      x = @screen_width - notification_width - 2  # 右端から2文字マージン
-
-      notifications.each_with_index do |notif, i|
-        y = 2 + (i * 5)  # 各通知4行 + 間隔1行
-
-        # 色設定
-        border_color = notif[:border_color] == :green ? "\e[32m" : "\e[31m"
-        reset = "\e[0m"
-
-        # ステータスアイコン
-        icon = notif[:type] == :success ? '✓' : '✗'
-
-        # 通知の内容を作成
-        name_line = "#{icon} #{notif[:name]}"[0...notification_width - 4]
-        status_line = notif[:status_text][0...notification_width - 4]
-
-        # 上部ボーダー
-        print "\e[#{y};#{x}H#{border_color}╭#{'─' * (notification_width - 2)}╮#{reset}"
-
-        # 1行目: アイコン + 名前
-        print "\e[#{y + 1};#{x}H#{border_color}│#{reset} #{name_line.ljust(notification_width - 4)} #{border_color}│#{reset}"
-
-        # 2行目: ステータス
-        print "\e[#{y + 2};#{x}H#{border_color}│#{reset}   #{status_line.ljust(notification_width - 6)} #{border_color}│#{reset}"
-
-        # Exit code行（失敗時のみ）
-        if notif[:type] == :error && notif[:exit_code]
-          exit_line = "Exit code: #{notif[:exit_code]}"[0...notification_width - 6]
-          print "\e[#{y + 3};#{x}H#{border_color}│#{reset}   #{exit_line.ljust(notification_width - 6)} #{border_color}│#{reset}"
-          print "\e[#{y + 4};#{x}H#{border_color}╰#{'─' * (notification_width - 2)}╯#{reset}"
-        else
-          # 下部ボーダー
-          print "\e[#{y + 3};#{x}H#{border_color}╰#{'─' * (notification_width - 2)}╯#{reset}"
-        end
-      end
     end
 
     # オーバーレイダイアログを表示してキー入力を待つヘルパーメソッド
@@ -1123,7 +994,7 @@ module Rufio
     end
 
     # Screen と Renderer のアクセサ（他のクラスから利用可能に）
-    attr_reader :screen, :renderer, :screen_height
+    attr_reader :screen, :renderer
 
     def start_global_search(bookmarks)
       @global_search.open(bookmarks)
@@ -1186,6 +1057,17 @@ module Rufio
         ch = read_next_input_byte
         break if ch.nil? || ch =~ /[A-Za-z]/
       end
+    end
+
+    # 全画面をバッファから再描画する
+    def render_full_screen
+      return unless @screen && @renderer
+
+      @renderer.clear
+      @screen.clear
+      draw_screen_to_buffer(@screen, nil, nil)
+      @renderer.render(@screen)
+      print "\e[#{@screen_height};#{@screen_width}H"
     end
 
   end

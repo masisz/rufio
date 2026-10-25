@@ -263,12 +263,12 @@ module Rufio
   if NativeScannerZigFFI.load!
     class NativeScanner
       class << self
-        # zigモードを追加
+        # zigモードを追加（autoモードの優先順位: Zig > Ruby）
         alias_method :original_mode=, :mode= unless method_defined?(:original_mode=)
 
         def mode=(value)
           case value
-          when 'zig'
+          when 'auto', 'zig'
             if NativeScannerZigFFI.available?
               @mode = 'zig'
               @current_library = nil
@@ -277,7 +277,7 @@ module Rufio
               @current_library = nil
             end
           else
-            original_mode=(value)
+            send(:original_mode=, value)
           end
         end
 
@@ -285,24 +285,10 @@ module Rufio
         def scan_directory_with_zig(path)
           raise StandardError, "Directory does not exist: #{path}" unless Dir.exist?(path)
 
-          # 非同期スキャナーを作成してスキャン
           scanner = NativeScannerZigCore.new
           begin
             scanner.scan_async(path)
-            entries = scanner.wait(timeout: 60)
-
-            # 結果の形式を統一（type フィールドを追加）
-            entries.map do |entry|
-              {
-                name: entry[:name],
-                type: entry[:is_dir] ? 'directory' : 'file',
-                size: entry[:size],
-                mtime: entry[:mtime],
-                mode: 0,
-                executable: entry[:executable],
-                hidden: entry[:hidden]
-              }
-            end
+            normalize_zig_entries(scanner.wait(timeout: 60))
           ensure
             scanner.close
           end
@@ -317,19 +303,7 @@ module Rufio
           scanner = NativeScannerZigCore.new
           begin
             scanner.scan_fast_async(path, max_entries)
-            entries = scanner.wait(timeout: 60)
-
-            entries.map do |entry|
-              {
-                name: entry[:name],
-                type: entry[:is_dir] ? 'directory' : 'file',
-                size: entry[:size],
-                mtime: entry[:mtime],
-                mode: 0,
-                executable: entry[:executable],
-                hidden: entry[:hidden]
-              }
-            end
+            normalize_zig_entries(scanner.wait(timeout: 60))
           ensure
             scanner.close
           end
@@ -387,28 +361,19 @@ module Rufio
           original.merge(zig: NativeScannerZigFFI.available?)
         end
 
-        # autoモードの優先順位を更新（zig > ruby）
-        def mode=(value)
-          case value
-          when 'auto'
-            # 優先順位: Zig > Ruby
-            if NativeScannerZigFFI.available?
-              @mode = 'zig'
-              @current_library = nil
-            else
-              @mode = 'ruby'
-              @current_library = nil
-            end
-          when 'zig'
-            if NativeScannerZigFFI.available?
-              @mode = 'zig'
-              @current_library = nil
-            else
-              @mode = 'ruby'
-              @current_library = nil
-            end
-          else
-            send(:original_mode=, value)
+        private
+
+        def normalize_zig_entries(entries)
+          entries.map do |entry|
+            {
+              name: entry[:name],
+              type: entry[:is_dir] ? 'directory' : 'file',
+              size: entry[:size],
+              mtime: entry[:mtime],
+              mode: 0,
+              executable: entry[:executable],
+              hidden: entry[:hidden]
+            }
           end
         end
       end

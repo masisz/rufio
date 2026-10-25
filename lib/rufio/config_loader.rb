@@ -282,17 +282,8 @@ module Rufio
         Config.save_script_paths(SCRIPT_PATHS_YML, paths)
       end
 
-      # YAMLファイルにセクションを保存（Config経由）
-      def save_to_yaml(key, value)
-        Config.save_yaml_config(YAML_CONFIG_PATH, key, value)
-      end
-
       def filter_valid_bookmarks(bookmarks)
-        return [] unless bookmarks.is_a?(Array)
-
-        bookmarks.select do |b|
-          b.is_a?(Hash) && b[:path] && b[:name]
-        end
+        Config.filter_valid_bookmarks(bookmarks)
       end
 
       def load_config_file

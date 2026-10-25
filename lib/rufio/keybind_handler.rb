@@ -368,45 +368,19 @@ module Rufio
 
     # ヘルプモード時の制限付き親ディレクトリナビゲーション
     def navigate_parent_with_restriction
-      if @in_help_mode
-        # info ディレクトリより上には移動できない
-        rufio_root = File.expand_path('../..', __dir__)
-        info_dir = File.join(rufio_root, 'info')
+      restricted_root = if @in_help_mode
+                          File.join(File.expand_path('../..', __dir__), 'info')
+                        elsif @in_log_viewer_mode
+                          @log_dir
+                        end
 
+      if restricted_root
         current_path = @directory_listing.current_path
-
-        # 現在のパスが info ディレクトリ以下でない場合は移動を許可しない
-        unless current_path.start_with?(info_dir)
-          return false
-        end
-
-        # 現在のパスが info ディレクトリそのものの場合は移動を許可しない
-        if current_path == info_dir
-          return false
-        end
-
-        # info ディレクトリ配下であれば、通常のナビゲーションを実行
-        navigate_parent
-      elsif @in_log_viewer_mode
-        # log ディレクトリより上には移動できない
-        current_path = @directory_listing.current_path
-
-        # 現在のパスが log ディレクトリ以下でない場合は移動を許可しない
-        unless current_path.start_with?(@log_dir)
-          return false
-        end
-
-        # 現在のパスが log ディレクトリそのものの場合は移動を許可しない
-        if current_path == @log_dir
-          return false
-        end
-
-        # log ディレクトリ配下であれば、通常のナビゲーションを実行
-        navigate_parent
-      else
-        # ヘルプモード・ログビューワモード外では通常のナビゲーション
-        navigate_parent
+        return false unless current_path.start_with?(restricted_root)
+        return false if current_path == restricted_root
       end
+
+      navigate_parent
     end
 
     # プレビューペイン関連メソッド（NavigationController に委譲）
@@ -603,11 +577,9 @@ module Rufio
 
     # カーソルを画面下部の入力行に移動
     def move_to_input_line
-      # 画面の最終行にカーソルを移動
-      # terminal_uiから画面の高さを取得できない場合は、24行目（デフォルト）を使用
       screen_height = @terminal_ui&.screen_height || 24
-      print "\e[#{screen_height};1H"  # 最終行の先頭にカーソル移動
-      print "\e[2K"  # 行全体をクリア
+      print "\e[#{screen_height};1H"
+      print "\e[2K"
     end
 
     # Escキーでキャンセル可能な入力処理

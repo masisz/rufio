@@ -209,27 +209,28 @@ module Rufio
       # コマンドが空の場合
       return { success: false, error: "コマンドが指定されていません" } if shell_command.strip.empty?
 
-      begin
-        # Open3を使って標準出力と標準エラーを分離して取得
-        stdout, stderr, status = Open3.capture3(shell_command)
+      run_shell_capture(shell_command)
+    end
 
-        result = {
-          success: status.success?,
-          output: stdout.strip,
-          stderr: stderr.strip
-        }
+    # Open3.capture3 によるコマンド実行と結果ハッシュの組み立て
+    def run_shell_capture(command, chdir: nil, not_found_label: "コマンド", error_label: "コマンド実行")
+      stdout, stderr, status = if chdir
+                                 Open3.capture3(command, chdir: chdir)
+                               else
+                                 Open3.capture3(command)
+                               end
 
-        # コマンドが失敗した場合、エラーメッセージを追加
-        unless status.success?
-          result[:error] = "コマンドが失敗しました (終了コード: #{status.exitstatus})"
-        end
-
-        result
-      rescue Errno::ENOENT => e
-        { success: false, error: "コマンドが見つかりません: #{e.message}" }
-      rescue StandardError => e
-        { success: false, error: "コマンド実行エラー: #{e.message}" }
-      end
+      result = {
+        success: status.success?,
+        output: stdout.strip,
+        stderr: stderr.strip
+      }
+      result[:error] = "コマンドが失敗しました (終了コード: #{status.exitstatus})" unless status.success?
+      result
+    rescue Errno::ENOENT => e
+      { success: false, error: "#{not_found_label}が見つかりません: #{e.message}" }
+    rescue StandardError => e
+      { success: false, error: "#{error_label}エラー: #{e.message}" }
     end
 
     # スクリプトを実行する（@プレフィックス用）
@@ -316,32 +317,14 @@ module Rufio
       working_dir ||= Dir.pwd
       shell_command = "rake #{task_name.shellescape}"
 
-      begin
-        stdout, stderr, status = Open3.capture3(shell_command, chdir: working_dir)
-
-        result = {
-          success: status.success?,
-          output: stdout.strip,
-          stderr: stderr.strip
-        }
-
-        unless status.success?
-          result[:error] = "コマンドが失敗しました (終了コード: #{status.exitstatus})"
-        end
-
-        # Logsに記録
-        log_execution("rake:#{task_name}", result)
-
-        result
-      rescue Errno::ENOENT => e
-        result = { success: false, error: "rakeが見つかりません: #{e.message}" }
-        log_execution("rake:#{task_name}", result)
-        result
-      rescue StandardError => e
-        result = { success: false, error: "rake実行エラー: #{e.message}" }
-        log_execution("rake:#{task_name}", result)
-        result
-      end
+      result = run_shell_capture(
+        shell_command,
+        chdir: working_dir,
+        not_found_label: "rake",
+        error_label: "rake実行"
+      )
+      log_execution("rake:#{task_name}", result)
+      result
     end
 
     # スクリプトパスからスクリプトを検索して実行を試みる

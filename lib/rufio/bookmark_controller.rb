@@ -82,8 +82,6 @@ module Rufio
     end
 
     def show_bookmark_menu
-      current_path = @directory_listing&.current_path || Dir.pwd
-
       menu_items = [
         '1. Add current dir to bookmarks',
         '2. Add to script paths',
@@ -158,56 +156,14 @@ module Rufio
     # 存在しないパスのブックマークはスキップする
     # @return [Integer, nil] 新しいブックマークインデックス、またはnil
     def goto_next_bookmark
-      bookmarks = @bookmark_manager.list
-      return nil unless bookmarks&.any?
-
-      current_path = @directory_listing.current_path
-      current_position = bookmarks.find_index { |bm| bm[:path] == current_path }
-      start_idx = if current_position
-        (current_position + 1) % bookmarks.length
-      elsif @last_bookmark_idx
-        (@last_bookmark_idx + 1) % bookmarks.length
-      else
-        0
-      end
-
-      bookmarks.length.times do |i|
-        idx = (start_idx + i) % bookmarks.length
-        next unless Dir.exist?(bookmarks[idx][:path])
-
-        @last_bookmark_idx = idx
-        navigate_to_directory(bookmarks[idx][:path])
-        return @last_bookmark_idx
-      end
-      nil
+      cycle_bookmark(1)
     end
 
     # 前のブックマークに移動（Shift+Tabキー）
     # 存在しないパスのブックマークはスキップする
     # @return [Integer, nil] 新しいブックマークインデックス、またはnil
     def goto_prev_bookmark
-      bookmarks = @bookmark_manager.list
-      return nil unless bookmarks&.any?
-
-      current_path = @directory_listing.current_path
-      current_position = bookmarks.find_index { |bm| bm[:path] == current_path }
-      start_idx = if current_position
-        (current_position - 1 + bookmarks.length) % bookmarks.length
-      elsif @last_bookmark_idx
-        (@last_bookmark_idx - 1 + bookmarks.length) % bookmarks.length
-      else
-        bookmarks.length - 1
-      end
-
-      bookmarks.length.times do |i|
-        idx = (start_idx - i + bookmarks.length) % bookmarks.length
-        next unless Dir.exist?(bookmarks[idx][:path])
-
-        @last_bookmark_idx = idx
-        navigate_to_directory(bookmarks[idx][:path])
-        return @last_bookmark_idx
-      end
-      nil
+      cycle_bookmark(-1)
     end
 
     # ============================
@@ -266,8 +222,6 @@ module Rufio
       end
 
       selected_index = 0
-      screen = @terminal_ui&.screen
-      renderer = @terminal_ui&.renderer
 
       loop do
         menu_items = paths.each_with_index.map do |path, i|
@@ -281,30 +235,13 @@ module Rufio
         width = 50
         height = content_lines.length + 4
 
-        if screen && renderer
-          screen.enable_overlay
-          x, y = @dialog_renderer.calculate_center(width, height)
-          @dialog_renderer.draw_floating_window_to_overlay(screen, x, y, width, height, title, content_lines, {
-            border_color: "\e[35m",
-            title_color: "\e[1;35m",
-            content_color: "\e[37m"
-          })
-          renderer.render(screen)
-
-          key = STDIN.getch
-          screen.disable_overlay
-          renderer.render(screen)
-        else
-          x, y = @dialog_renderer.calculate_center(width, height)
-          @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-            border_color: "\e[35m",
-            title_color: "\e[1;35m",
-            content_color: "\e[37m"
-          })
-
-          key = STDIN.getch
-          @dialog_renderer.clear_area(x, y, width, height)
-        end
+        key = show_overlay_dialog(title, content_lines, {
+          width: width,
+          height: height,
+          border_color: "\e[35m",
+          title_color: "\e[1;35m",
+          content_color: "\e[37m"
+        })
 
         case key
         when 'j'
@@ -367,7 +304,33 @@ module Rufio
 
     private
 
-    def show_notification(title, message, type)
+    def cycle_bookmark(step)
+      bookmarks = @bookmark_manager.list
+      return nil unless bookmarks&.any?
+
+      len = bookmarks.length
+      current_path = @directory_listing.current_path
+      current_position = bookmarks.find_index { |bm| bm[:path] == current_path }
+      start_idx = if current_position
+                    (current_position + step + len) % len
+                  elsif @last_bookmark_idx
+                    (@last_bookmark_idx + step + len) % len
+                  else
+                    step > 0 ? 0 : len - 1
+                  end
+
+      len.times do |i|
+        idx = (start_idx + (i * step) + len) % len
+        next unless Dir.exist?(bookmarks[idx][:path])
+
+        @last_bookmark_idx = idx
+        navigate_to_directory(bookmarks[idx][:path])
+        return @last_bookmark_idx
+      end
+      nil
+    end
+
+    def show_notification(title, _message, type)
       return unless @notification_manager
 
       @notification_manager.add(title, type, duration: 3, exit_code: nil)
@@ -387,10 +350,7 @@ module Rufio
     def truncate_path(path, max_length)
       return path if path.length <= max_length
 
-      display_path = path.sub(Dir.home, '~')
-      return display_path if display_path.length <= max_length
-
-      "...#{display_path[-(max_length - 3)..]}"
+      TextUtils.shorten_path_from_end(path, max_length, tilde: true)
     end
   end
 end

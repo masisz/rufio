@@ -17,69 +17,17 @@ module Rufio
 
     # 非同期スキャン開始
     def scan_async(path)
-      raise StandardError, "Directory does not exist: #{path}" unless Dir.exist?(path)
-      raise StandardError, "Scanner is already running" unless @state == :idle
-
-      @mutex.synchronize do
-        @state = :scanning
-        @results = []
-        @error = nil
-        @current_progress = 0
-        @total_progress = 0
-      end
-
-      @thread = Thread.new do
-        begin
-          # ディレクトリをスキャン
-          entries = []
-          Dir.foreach(path) do |entry|
-            next if entry == '.' || entry == '..'
-
-            # キャンセルチェック
-            break if @state == :cancelled
-
-            full_path = File.join(path, entry)
-            stat = File.lstat(full_path)
-
-            entries << {
-              name: entry,
-              type: file_type(stat),
-              size: stat.size,
-              mtime: stat.mtime.to_i,
-              mode: stat.mode,
-              executable: stat.executable?,
-              hidden: entry.start_with?('.')
-            }
-
-            # 進捗を更新
-            @mutex.synchronize do
-              @current_progress += 1
-              @total_progress = entries.length + 1
-            end
-          end
-
-          # 結果を保存
-          @mutex.synchronize do
-            if @state == :cancelled
-              @state = :cancelled
-            else
-              @results = entries
-              @state = :done
-            end
-          end
-        rescue StandardError => e
-          @mutex.synchronize do
-            @error = e
-            @state = :failed
-          end
-        end
-      end
-
-      self
+      start_scan_thread(path, nil)
     end
 
     # 高速スキャン（エントリ数制限付き）
     def scan_fast_async(path, max_entries)
+      start_scan_thread(path, max_entries)
+    end
+
+    private
+
+    def start_scan_thread(path, max_entries)
       raise StandardError, "Directory does not exist: #{path}" unless Dir.exist?(path)
       raise StandardError, "Scanner is already running" unless @state == :idle
 
@@ -88,7 +36,7 @@ module Rufio
         @results = []
         @error = nil
         @current_progress = 0
-        @total_progress = max_entries
+        @total_progress = max_entries || 0
       end
 
       @thread = Thread.new do
@@ -98,9 +46,7 @@ module Rufio
 
           Dir.foreach(path) do |entry|
             next if entry == '.' || entry == '..'
-            break if count >= max_entries
-
-            # キャンセルチェック
+            break if max_entries && count >= max_entries
             break if @state == :cancelled
 
             full_path = File.join(path, entry)
@@ -117,17 +63,14 @@ module Rufio
             }
             count += 1
 
-            # 進捗を更新
             @mutex.synchronize do
               @current_progress = count
+              @total_progress = entries.length + 1 unless max_entries
             end
           end
 
-          # 結果を保存
           @mutex.synchronize do
-            if @state == :cancelled
-              @state = :cancelled
-            else
+            if @state != :cancelled
               @results = entries
               @state = :done
             end
@@ -142,6 +85,8 @@ module Rufio
 
       self
     end
+
+    public
 
     # ポーリングして完了待ち
     def wait(timeout: nil)

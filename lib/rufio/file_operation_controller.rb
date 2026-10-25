@@ -39,51 +39,15 @@ module Rufio
     # ============================
 
     def create_file
-      current_path = @directory_listing&.current_path || Dir.pwd
-
-      filename = @dialog_renderer.show_input_dialog("Create File", "Enter file name:", {
-        border_color: "\e[32m",
-        title_color: "\e[1;32m",
-        content_color: "\e[37m"
-      })
-
-      return false if filename.nil? || filename.empty?
-
-      result = @file_operations.create_file(current_path, filename)
-
-      if result.success
-        @directory_listing.refresh
-        entries = @directory_listing.list_entries
-        new_file_index = entries.find_index { |entry| entry[:name] == filename }
-        @nav_controller.select_index(new_file_index) if new_file_index
+      prompt_and_select_entry("Create File", "Enter file name:", "\e[32m", "\e[1;32m") do |path, name|
+        @file_operations.create_file(path, name)
       end
-
-      @terminal_ui&.refresh_display
-      result.success
     end
 
     def create_directory
-      current_path = @directory_listing&.current_path || Dir.pwd
-
-      dirname = @dialog_renderer.show_input_dialog("Create Directory", "Enter directory name:", {
-        border_color: "\e[34m",
-        title_color: "\e[1;34m",
-        content_color: "\e[37m"
-      })
-
-      return false if dirname.nil? || dirname.empty?
-
-      result = @file_operations.create_directory(current_path, dirname)
-
-      if result.success
-        @directory_listing.refresh
-        entries = @directory_listing.list_entries
-        new_dir_index = entries.find_index { |entry| entry[:name] == dirname }
-        @nav_controller.select_index(new_dir_index) if new_dir_index
+      prompt_and_select_entry("Create Directory", "Enter directory name:", "\e[34m", "\e[1;34m") do |path, name|
+        @file_operations.create_directory(path, name)
       end
-
-      @terminal_ui&.refresh_display
-      result.success
     end
 
     # ============================
@@ -95,27 +59,9 @@ module Rufio
       return false unless entry
 
       current_name = entry[:name]
-      current_path = @directory_listing&.current_path || Dir.pwd
-
-      new_name = @dialog_renderer.show_input_dialog("Rename: #{current_name}", "Enter new name:", {
-        border_color: "\e[33m",
-        title_color: "\e[1;33m",
-        content_color: "\e[37m"
-      })
-
-      return false if new_name.nil? || new_name.empty?
-
-      result = @file_operations.rename(current_path, current_name, new_name)
-
-      if result.success
-        @directory_listing.refresh
-        entries = @directory_listing.list_entries
-        new_index = entries.find_index { |e| e[:name] == new_name }
-        @nav_controller.select_index(new_index) if new_index
+      prompt_and_select_entry("Rename: #{current_name}", "Enter new name:", "\e[33m", "\e[1;33m") do |path, new_name|
+        @file_operations.rename(path, current_name, new_name)
       end
-
-      @terminal_ui&.refresh_display
-      result.success
     end
 
     # ============================
@@ -158,31 +104,13 @@ module Rufio
         ''
       ]
 
-      title = 'Confirm Delete'
-      width = [50, current_name.length + 10].max
-      height = content_lines.length + 4
-
-      confirmed = false
-      show_overlay_dialog(title, content_lines, {
-        width: width,
-        height: height,
+      confirmed = confirm_dialog('Confirm Delete', content_lines, {
+        width: [50, current_name.length + 10].max,
+        height: content_lines.length + 4,
         border_color: "\e[31m",
         title_color: "\e[1;31m",
         content_color: "\e[37m"
-      }) do
-        loop do
-          input = STDIN.getch.downcase
-          case input
-          when 'y'
-            confirmed = true
-            break
-          when 'n', "\e"
-            confirmed = false
-            break
-          end
-        end
-        nil
-      end
+      })
 
       return false unless confirmed
 
@@ -275,6 +203,30 @@ module Rufio
 
     private
 
+    def prompt_and_select_entry(title, prompt, border_color, title_color)
+      current_path = @directory_listing&.current_path || Dir.pwd
+
+      name = @dialog_renderer.show_input_dialog(title, prompt, {
+        border_color: border_color,
+        title_color: title_color,
+        content_color: "\e[37m"
+      })
+
+      return false if name.nil? || name.empty?
+
+      result = yield(current_path, name)
+
+      if result.success
+        @directory_listing.refresh
+        entries = @directory_listing.list_entries
+        new_index = entries.find_index { |e| e[:name] == name }
+        @nav_controller.select_index(new_index) if new_index
+      end
+
+      @terminal_ui&.refresh_display
+      result.success
+    end
+
     def show_delete_confirmation(count, source_path = nil)
       title = 'Delete Confirmation'
       source_display = source_path ? shorten_path(source_path, 35) : ''
@@ -366,8 +318,7 @@ module Rufio
     end
 
     def shorten_path(path, max_length)
-      return path if path.length <= max_length
-      "...#{path[-(max_length - 3)..-1]}"
+      TextUtils.shorten_path_from_end(path, max_length)
     end
   end
 end

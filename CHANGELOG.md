@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Files mode shows the current path on its own top row above the bookmark list (full path with `~` for home, shortened from the left when too long) instead of on the bottom tab line; Jobs mode keeps the path on the tab line
 - Rebuild the Zig library with Zig 0.17 (`make -C lib_zig/rufio_native dist`); bundled binaries live in `lib/rufio/native/<platform>/`
+- Consolidate UI rendering, dialog drawing, file operations, bookmark flows, native scanner helpers, shell execution, and localized message definitions, removing dead code and runtime warnings
 
 ### Fixed
 - Restore the scanner mode after native scanner tests so test order no longer affects normal directory listings
