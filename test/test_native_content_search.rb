@@ -24,8 +24,12 @@ class TestNativeContentSearch < Minitest::Test
     File.binwrite(File.join(@b, 'binary.dat'), "\x00world\xff")
     File.binwrite(File.join(@b, 'late_nul.dat'), ('a' * 9000) + "\x00\nworld\n")
     File.write(File.join(@b, 'long.txt'), ('あ' * 500) + 'needle world' + ('y' * 3000) + "\n")
-    File.symlink(File.join(@a, 'first.txt'), File.join(@b, 'link_to_file.txt'))
-    File.symlink(@a, File.join(@b, 'link_to_dir'))
+    begin
+      File.symlink(File.join(@a, 'first.txt'), File.join(@b, 'link_to_file.txt'))
+      File.symlink(@a, File.join(@b, 'link_to_dir'))
+    rescue NotImplementedError, SystemCallError
+      # Windows では権限がないとシンボリックリンクを作れない
+    end
     @bookmarks = [{ name: 'A', path: @a }, { name: 'B', path: @b }, { name: 'Deep', path: File.join(@a, 'deep') }]
   end
 
