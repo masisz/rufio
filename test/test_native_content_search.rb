@@ -177,6 +177,41 @@ class TestNativeContentSearch < Minitest::Test
     search&.close
   end
 
+  def test_large_result_sets_arrive_in_few_frames
+    File.write(File.join(@a, 'many.txt'), "world\n" * 20_000)
+    Rufio::GlobalSearch.native_search = true
+    search = Rufio::GlobalSearch.new
+    search.open([{ name: 'A', path: @a }])
+    search.handle_key("\t")
+    search.handle_key('world')
+    frames = 0
+    Timeout.timeout(20) do
+      loop do
+        search.poll
+        frames += 1
+        break unless search.scanning?
+
+        sleep 0.01
+      end
+    end
+    assert_operator search.results.length, :>, 20_000
+    # 1 件ずつ流すと 1 フレーム 256 件の上限で最低 79 フレームかかる
+    assert_operator frames, :<, 40
+  ensure
+    search&.close
+  end
+
+  def test_engine_yields_batches_per_drain
+    engine = Rufio::NativeContentSearch.new(roots: [@a, @b], query: 'world', excluded_extensions: ['.png'])
+    batches = []
+    engine.each_batch { |batch| batches << batch }
+    refute_empty batches
+    assert(batches.all? { |batch| batch.is_a?(Array) && !batch.empty? })
+    assert_equal engine_matches(nil).length, batches.flatten(1).count { |e| e[0] == :match }
+  ensure
+    engine&.close
+  end
+
   def test_engine_streams_records_directly
     engine = Rufio::NativeContentSearch.new(roots: [@a], query: 'world', excluded_extensions: ['.png'],
                                             document_extensions: ['.pdf'])
