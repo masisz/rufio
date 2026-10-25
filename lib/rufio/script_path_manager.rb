@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
+require_relative 'script_file'
+
 require 'yaml'
+require 'set'
 require_relative 'config'
 
 module Rufio
@@ -10,7 +13,7 @@ module Rufio
     attr_reader :paths
 
     # サポートするスクリプト拡張子
-    SUPPORTED_EXTENSIONS = %w[.sh .rb .py .pl .js .ts .ps1].freeze
+    SUPPORTED_EXTENSIONS = ScriptFile::EXTENSIONS
 
     # 履歴の最大サイズ
     MAX_HISTORY_SIZE = 100
@@ -56,14 +59,7 @@ module Rufio
 
       scripts = find_scripts(command_name)
 
-      case scripts.size
-      when 0
-        nil
-      when 1
-        @cache[command_name] = scripts.first
-      else
-        @cache[command_name] = scripts.first
-      end
+      @cache[command_name] = scripts.first unless scripts.empty?
     end
 
     # 全スクリプト一覧を取得（タブ補完用）
@@ -121,7 +117,7 @@ module Rufio
 
     # すべてのマッチを取得（複数マッチ対応）
     def find_all_matches(command_name)
-      find_scripts_all_paths(command_name)
+      find_scripts(command_name, all_paths: true)
     end
 
     # スクリプト名を補完
@@ -232,7 +228,7 @@ module Rufio
       paths.map { |p| File.expand_path(p) }
     end
 
-    def find_scripts(command_name)
+    def find_scripts(command_name, all_paths: false)
       scripts = []
       basename_without_ext = command_name.sub(/\.[^.]+$/, '')
       has_extension = command_name.include?('.')
@@ -255,44 +251,14 @@ module Rufio
           end
         end
 
-        return scripts unless scripts.empty?
+        return scripts if !all_paths && !scripts.empty?
       end
 
       scripts
     end
 
     def executable_script?(path)
-      ext = File.extname(path).downcase
-      return true if SUPPORTED_EXTENSIONS.include?(ext)
-
-      File.executable?(path)
-    end
-
-    def find_scripts_all_paths(command_name)
-      scripts = []
-      basename_without_ext = command_name.sub(/\.[^.]+$/, '')
-      has_extension = command_name.include?('.')
-
-      @paths.each do |path|
-        next unless Dir.exist?(path)
-
-        Dir.glob(File.join(path, '**', '*')).each do |file|
-          next unless File.file?(file)
-
-          file_basename = File.basename(file)
-          next if file_basename.start_with?('.')
-          next unless executable_script?(file)
-
-          if has_extension
-            scripts << file if file_basename.downcase == command_name.downcase
-          else
-            file_name_without_ext = File.basename(file, '.*')
-            scripts << file if file_name_without_ext.downcase == basename_without_ext.downcase
-          end
-        end
-      end
-
-      scripts
+      ScriptFile.executable?(path)
     end
 
     def levenshtein_distance(s1, s2)

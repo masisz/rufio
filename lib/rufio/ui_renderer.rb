@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative 'text_utils'
+require_relative 'background_status'
 
 module Rufio
   # UIレンダリング専用クラス
@@ -28,7 +29,7 @@ module Rufio
 
     attr_accessor :keybind_handler, :directory_listing, :file_preview
     attr_accessor :background_executor, :test_mode
-    attr_accessor :completion_lamp_message, :completion_lamp_time
+    attr_reader :background_status
     attr_reader :tab_mode_manager, :highlight_updated, :left_panel_ratio
 
     def preview_enabled?
@@ -68,9 +69,8 @@ module Rufio
       @highlighted_bookmark_index = nil
       @highlighted_bookmark_time = nil
 
-      # Completion lamp
-      @completion_lamp_message = nil
-      @completion_lamp_time = nil
+      # 通知とフッターで同じ完了状態を参照する。
+      @background_status = BackgroundStatus.new
 
       # Tab mode manager
       @tab_mode_manager = TabModeManager.new
@@ -523,13 +523,8 @@ module Rufio
           if @background_executor.running?
             command_name = @background_executor.current_command || "処理中"
             right_parts << "\e[32m🔄\e[0m #{command_name}"
-          elsif @completion_lamp_message && @completion_lamp_time
-            if (Time.now - @completion_lamp_time) < 3.0
-              right_parts << @completion_lamp_message
-            else
-              @completion_lamp_message = nil
-              @completion_lamp_time = nil
-            end
+          elsif @background_status.message
+            right_parts << @background_status.message
           end
         end
 

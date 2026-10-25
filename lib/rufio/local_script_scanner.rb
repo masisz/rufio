@@ -1,12 +1,14 @@
 # frozen_string_literal: true
 
+require_relative 'script_file'
+
 module Rufio
   # 閲覧中ディレクトリのスクリプトファイルを検出するスキャナー
   # カレントディレクトリ直下のスクリプトファイル（.sh, .rb, .py等）を検出し、
   # コマンドモードから @script.sh 形式で実行可能にする
   class LocalScriptScanner
     # サポートするスクリプト拡張子
-    SUPPORTED_EXTENSIONS = %w[.sh .rb .py .pl .js .ts .ps1].freeze
+    SUPPORTED_EXTENSIONS = ScriptFile::EXTENSIONS
 
     # @param directory [String, nil] スキャン対象ディレクトリ
     def initialize(directory = nil)
@@ -33,27 +35,14 @@ module Rufio
     # @param name [String] スクリプト名（拡張子あり/なし）
     # @return [Hash, nil] スクリプト情報 { name:, path:, dir: } または nil
     def find_script(name)
-      # 完全一致を優先
-      script = available_scripts.find { |s| s[:name] == name }
-      return script if script
-
-      # 拡張子なしで検索
-      SUPPORTED_EXTENSIONS.each do |ext|
-        script = available_scripts.find { |s| s[:name] == "#{name}#{ext}" }
-        return script if script
-      end
-
-      nil
+      ScriptFile.find(available_scripts, name)
     end
 
     # Tab補完候補を取得
     # @param prefix [String] 入力中の文字列
     # @return [Array<String>] 補完候補のスクリプト名
     def complete(prefix)
-      available_scripts
-        .map { |s| s[:name] }
-        .select { |name| name.start_with?(prefix) }
-        .sort
+      ScriptFile.complete(available_scripts, prefix)
     end
 
     private
@@ -85,8 +74,7 @@ module Rufio
     # @param filename [String] ファイル名
     # @return [Boolean]
     def script_file?(filename)
-      ext = File.extname(filename).downcase
-      SUPPORTED_EXTENSIONS.include?(ext)
+      ScriptFile.supported?(filename)
     end
   end
 end

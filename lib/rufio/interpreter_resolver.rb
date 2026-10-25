@@ -1,20 +1,15 @@
 # frozen_string_literal: true
 
+require_relative 'script_file'
+
 module Rufio
   # 拡張子からインタープリタを解決するクラス
   class InterpreterResolver
     # デフォルトの拡張子とインタープリタのマッピング
-    DEFAULT_EXTENSIONS = {
-      ".rb" => "ruby",
-      ".py" => "python3",
-      ".sh" => "bash",
-      ".js" => "node",
-      ".pl" => "perl",
-      ".lua" => "lua",
-      ".ts" => "ts-node",
-      ".php" => "php",
-      ".ps1" => nil # プラットフォーム依存
-    }.freeze
+    # DSLでは .sh にインタープリタを指定し、WindowsのPowerShellを別途解決する。
+    DEFAULT_EXTENSIONS = ScriptFile::INTERPRETERS.merge(
+      ".sh" => "bash", ".lua" => "lua", ".php" => "php", ".ps1" => nil
+    ).freeze
 
     class << self
       # 拡張子からインタープリタを解決する

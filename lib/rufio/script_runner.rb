@@ -1,13 +1,16 @@
 # frozen_string_literal: true
 
+require_relative 'script_file'
+
 require 'open3'
+require 'set'
 
 module Rufio
   # スクリプトパスからスクリプトを検索・実行するクラス
   # ジョブマネージャーと連携してバックグラウンド実行を管理
   class ScriptRunner
     # サポートするスクリプト拡張子
-    SUPPORTED_EXTENSIONS = %w[.sh .rb .py .pl .js .ts .ps1].freeze
+    SUPPORTED_EXTENSIONS = ScriptFile::EXTENSIONS
 
     # @param script_paths [Array<String>] スクリプトを検索するディレクトリのリスト
     # @param job_manager [JobManager, nil] ジョブマネージャー（nilの場合は同期実行）
@@ -29,28 +32,14 @@ module Rufio
     # @param name [String] スクリプト名（拡張子あり/なし）
     # @return [Hash, nil] スクリプト情報 { name:, path:, dir: } または nil
     def find_script(name)
-      # 完全一致を優先
-      script = available_scripts.find { |s| s[:name] == name }
-      return script if script
-
-      # 拡張子なしで検索
-      SUPPORTED_EXTENSIONS.each do |ext|
-        script = available_scripts.find { |s| s[:name] == "#{name}#{ext}" }
-        return script if script
-      end
-
-      nil
+      ScriptFile.find(available_scripts, name)
     end
 
     # スクリプト名の補完候補を取得
     # @param prefix [String] 入力中の文字列
     # @return [Array<String>] 補完候補のスクリプト名
     def complete(prefix)
-      available_scripts
-        .map { |s| s[:name] }
-        .select { |name| name.start_with?(prefix) }
-        .uniq
-        .sort
+      ScriptFile.complete(available_scripts, prefix)
     end
 
     # スクリプトをジョブとして実行
@@ -64,6 +53,11 @@ module Rufio
       script = find_script(name)
       return nil unless script
 
+      execute(script, working_dir: working_dir, args: args, selected_file: selected_file, selected_dir: selected_dir)
+    end
+
+    # 検出済みスクリプトの実行。検索元によらず同じジョブ・ログ処理を使う。
+    def execute(script, working_dir:, args: nil, selected_file: nil, selected_dir: nil)
       env = build_environment(working_dir, selected_file, selected_dir)
       execute_script(script, working_dir, env, args)
     end
@@ -108,11 +102,7 @@ module Rufio
     # @param path [String] ファイルパス
     # @return [Boolean]
     def executable_script?(path)
-      ext = File.extname(path).downcase
-      return true if SUPPORTED_EXTENSIONS.include?(ext)
-
-      # 拡張子がなくても実行可能なら対象
-      File.executable?(path)
+      ScriptFile.executable?(path)
     end
 
     # 環境変数を構築
@@ -136,8 +126,7 @@ module Rufio
     # @param args [String, nil] スクリプトに渡す引数
     # @return [TaskStatus] 作成されたジョブ
     def execute_script(script, working_dir, env = {}, args = nil)
-      command = build_command(script)
-      command = "#{command} #{args}" if args && !args.empty?
+      command = ScriptFile.command(script[:path], args: args)
 
       if @job_manager
         # ジョブマネージャーにジョブを追加
@@ -163,32 +152,6 @@ module Rufio
           error: stderr,
           exit_code: status.exitstatus
         }
-      end
-    end
-
-    # スクリプトの実行コマンドを構築
-    # @param script [Hash] スクリプト情報
-    # @return [String] 実行コマンド
-    def build_command(script)
-      path = script[:path]
-      ext = File.extname(path).downcase
-
-      case ext
-      when '.rb'
-        "ruby #{path.shellescape}"
-      when '.py'
-        "python3 #{path.shellescape}"
-      when '.js'
-        "node #{path.shellescape}"
-      when '.ts'
-        "ts-node #{path.shellescape}"
-      when '.pl'
-        "perl #{path.shellescape}"
-      when '.ps1'
-        "pwsh #{path.shellescape}"
-      else
-        # shスクリプトまたは実行可能ファイル
-        path.shellescape
       end
     end
 

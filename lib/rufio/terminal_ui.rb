@@ -73,17 +73,6 @@ module Rufio
       @in_job_mode = false
       @job_mode_needs_redraw = false
 
-      # Preview cache
-      @preview_cache = {}
-      @last_preview_path = nil
-
-      # シンタックスハイライター（bat が利用可能な場合のみ動作）
-      @syntax_highlighter = SyntaxHighlighter.new
-
-
-      # Tab mode manager
-      @tab_mode_manager = TabModeManager.new
-
       # UIRenderer（描画ロジックを担当）
       ui_opts = ConfigLoader.ui_options
       @ui_renderer = UIRenderer.new(
@@ -93,6 +82,8 @@ module Rufio
         left_panel_ratio: ui_opts[:panel_ratio],
         preview_enabled: ui_opts[:preview_enabled]
       )
+      @tab_mode_manager = @ui_renderer.tab_mode_manager
+      @background_status = @ui_renderer.background_status
     end
 
     attr_reader :ui_renderer
@@ -137,13 +128,8 @@ module Rufio
       # ウィンドウサイズを更新してから画面をクリアして再描画
       update_screen_size
 
-      # プレビューキャッシュをクリア（ディレクトリ変更やリフレッシュ時）
-      @preview_cache.clear
-      @last_preview_path = nil
-
-      # ブックマークキャッシュもクリア
-      @cached_bookmarks = nil
-      @cached_bookmark_time = nil
+      @ui_renderer.clear_preview_cache
+      @ui_renderer.clear_bookmark_cache
 
       # バッファベースの描画が利用可能な場合は全画面を再描画
       if @screen && @renderer
@@ -365,7 +351,6 @@ module Rufio
       # 最小スリープ時間（入力チェック間隔）
       # Windows は入力をキュー経由で受けるため、入力遅延を抑えるよう短めにする
       min_sleep_interval = windows? ? 0.008 : 0.0333  # Windows: 約8ms / Unix: 30FPS
-      check_interval = 0.1  # バックグラウンドタスクのチェック間隔
 
       # Phase 3: Screen/Rendererを初期化
       @screen = Screen.new(@screen_width, @screen_height)
@@ -375,13 +360,6 @@ module Rufio
       @screen.clear
       draw_screen_to_buffer(@screen, nil, nil)
       @renderer.render(@screen)
-
-      last_notification_check = Time.now
-      last_lamp_check = Time.now
-      notification_message = nil
-      notification_time = nil
-      previous_notification = nil
-      previous_lamp_message = @ui_renderer.completion_lamp_message
 
       # FPS計測用
       frame_times = []
@@ -429,52 +407,8 @@ module Rufio
         end
         needs_redraw = true if had_input
 
-        # バックグラウンドコマンドの完了チェック（0.1秒ごと）
-        if @background_executor && (start - last_notification_check) > check_interval
-          if (completion_msg = @background_executor.consume_completion_message)
-            # 通知メッセージとして表示
-            notification_message = completion_msg
-            notification_time = start
-            # フッターのランプ表示用にも設定（UIRenderer が管理）
-            @ui_renderer.completion_lamp_message = completion_msg
-            @ui_renderer.completion_lamp_time = start
-            needs_redraw = true
-          end
-          last_notification_check = start
-        end
-
-        # バックグラウンドコマンドの実行状態が変わった場合も再描画
-        if @background_executor
-          current_running = @background_executor.running?
-          if @last_bg_running != current_running
-            @last_bg_running = current_running
-            needs_redraw = true
-          end
-        end
-
-        # 完了ランプの表示状態をチェック（0.5秒ごと）
-        if (start - last_lamp_check) > 0.5
-          current_lamp = @ui_renderer.completion_lamp_message
-          if current_lamp != previous_lamp_message
-            previous_lamp_message = current_lamp
-            needs_redraw = true
-          end
-          # 完了ランプのタイムアウトチェック
-          if @ui_renderer.completion_lamp_message && @ui_renderer.completion_lamp_time &&
-             (start - @ui_renderer.completion_lamp_time) >= 3.0
-            @ui_renderer.completion_lamp_message = nil
-            needs_redraw = true
-          end
-          last_lamp_check = start
-        end
-
-        # 通知メッセージの変化をチェック
-        current_notification = notification_message && (start - notification_time) < 3.0 ? notification_message : nil
-        if current_notification != previous_notification
-          previous_notification = current_notification
-          notification_message = nil if current_notification.nil?
-          needs_redraw = true
-        end
+        # 通知・ランプ・実行状態の更新を一か所に集約する。
+        needs_redraw = true if @background_status.update(@background_executor, now: start)
 
         needs_redraw = true if @global_search.poll
 
@@ -493,11 +427,7 @@ module Rufio
         # DRAW & RENDER phase - 変更があった場合のみ描画
         if needs_redraw
           # Screenバッファに描画（clearは呼ばない。必要な部分だけ更新）
-          if notification_message && (start - notification_time) < 3.0
-            draw_screen_to_buffer(@screen, notification_message, current_fps)
-          else
-            draw_screen_to_buffer(@screen, nil, current_fps)
-          end
+          draw_screen_to_buffer(@screen, @background_status.message, current_fps)
 
           # ヘルプまたはコマンドモードのダイアログをオーバーレイに描画
           if help_dialog_active?

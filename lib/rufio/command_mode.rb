@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'open3'
+require_relative 'script_runner'
 
 module Rufio
   # コマンドモード - DSLコマンドを実行するための統一インターフェース
@@ -37,14 +38,8 @@ module Rufio
     # @param config_file [String] 設定ファイルのパス
     # @param job_manager [JobManager] ジョブマネージャー
     def setup_script_path_manager(config_file:, job_manager:)
-      @job_manager = job_manager
       @script_path_manager = ScriptPathManager.new(config_file)
-      # ScriptRunnerも設定（ScriptPathManagerのパスを使用）
-      @script_runner = ScriptRunner.new(
-        script_paths: @script_path_manager.paths,
-        job_manager: job_manager,
-        command_logger: @background_executor&.command_logger
-      )
+      setup_script_runner(script_paths: @script_path_manager.paths, job_manager: job_manager)
     end
 
     # 閲覧中ディレクトリを更新
@@ -276,36 +271,17 @@ module Rufio
     # @param args [String, nil] スクリプトに渡す引数
     # @return [String, Hash] 実行結果メッセージ
     def execute_local_script(script, working_dir, args = nil)
-      command = build_script_command(script)
-      command = "#{command} #{args}" if args && !args.empty?
+      runner = ScriptRunner.new(
+        script_paths: [], job_manager: @job_manager,
+        command_logger: @background_executor&.command_logger
+      )
+      result = runner.execute(script, working_dir: working_dir, args: args)
+      return "🚀 ジョブを開始: #{script[:name]}" if @job_manager
 
-      if @job_manager
-        job = @job_manager.add_job(
-          name: script[:name],
-          path: working_dir,
-          command: command
-        )
-        job.start
-
-        Thread.new do
-          execute_script_in_background(job, script, working_dir, command)
-        end
-
-        "🚀 ジョブを開始: #{script[:name]}"
-      else
-        # 同期実行
-        stdout, stderr, status = Open3.capture3(command, chdir: working_dir)
-        result = {
-          success: status.success?,
-          output: stdout.strip,
-          stderr: stderr.strip
-        }
-
-        # Logsに記録
-        log_execution("@#{script[:name]}", result)
-
-        result
-      end
+      # CommandMode の表示用の戻り値は維持する。
+      result = { success: result[:success], output: result[:output].strip, stderr: result[:error].strip }
+      log_execution("@#{script[:name]}", result)
+      result
     end
 
     # 実行結果をCommandLoggerに記録
@@ -322,59 +298,6 @@ module Rufio
         success: result[:success],
         error: result[:error]
       )
-    end
-
-    # スクリプトの実行コマンドを構築
-    # @param script [Hash] スクリプト情報
-    # @return [String] 実行コマンド
-    def build_script_command(script)
-      path = script[:path]
-      ext = File.extname(path).downcase
-
-      case ext
-      when '.rb'
-        "ruby #{path.shellescape}"
-      when '.py'
-        "python3 #{path.shellescape}"
-      when '.js'
-        "node #{path.shellescape}"
-      when '.ts'
-        "ts-node #{path.shellescape}"
-      when '.pl'
-        "perl #{path.shellescape}"
-      when '.ps1'
-        "pwsh #{path.shellescape}"
-      else
-        path.shellescape
-      end
-    end
-
-    # ローカルスクリプトをバックグラウンドで実行
-    def execute_script_in_background(job, script, working_dir, command)
-      stdout, stderr, status = Open3.capture3(command, chdir: working_dir)
-
-      job.append_log(stdout) unless stdout.empty?
-      job.append_log(stderr) unless stderr.empty?
-
-      if status.success?
-        job.complete(exit_code: status.exitstatus)
-      else
-        job.fail(exit_code: status.exitstatus)
-      end
-
-      # Logsに記録
-      log_execution("@#{script[:name]}", {
-        success: status.success?,
-        output: stdout.strip,
-        stderr: stderr.strip
-      })
-
-      @job_manager&.notify_completion(job)
-    rescue StandardError => e
-      job.append_log("Error: #{e.message}")
-      job.fail(exit_code: -1)
-      log_execution("@#{script[:name]}", { success: false, output: '', stderr: e.message })
-      @job_manager&.notify_completion(job)
     end
 
     # rakeタスクを実行する
