@@ -102,6 +102,18 @@ module Rufio
         default_keybinds.merge(user_keybinds)
       end
 
+      def global_search_excluded_extensions
+        values = load_config[:global_search_excluded_extensions]
+        return [] unless values.is_a?(Array)
+
+        values.select { |value| value.is_a?(String) }.map do |value|
+          extension = value.strip.downcase
+          next if extension.empty? || extension == '.'
+
+          extension.start_with?('.') ? extension : ".#{extension}"
+        end.compact.uniq
+      end
+
       def language
         load_config[:language] || Config.current_language
       end
@@ -288,7 +300,8 @@ module Rufio
         config = {
           applications: safe_const_get(:APPLICATIONS, default_config[:applications]),
           colors: safe_const_get(:COLORS, default_config[:colors]),
-          keybinds: safe_const_get(:KEYBINDS, {})
+          keybinds: safe_const_get(:KEYBINDS, {}),
+          global_search_excluded_extensions: safe_const_get(:GLOBAL_SEARCH_EXCLUDED_EXTENSIONS, [])
         }
 
         if Object.const_defined?(:LANGUAGE)
@@ -337,6 +350,7 @@ module Rufio
             selected: { hsl: [50, 90, 70] },
             preview: { hsl: [180, 60, 65] }
           },
+          global_search_excluded_extensions: [],
           keybinds: {},    # ユーザーの上書きのみ格納（デフォルトはdefault_keybindsを参照）
           ui_options: {}   # ユーザーの上書きのみ格納（デフォルトはdefault_ui_optionsを参照）
         }

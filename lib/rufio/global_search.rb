@@ -2,6 +2,7 @@
 
 require 'thread'
 require_relative 'text_utils'
+require_relative 'config_loader'
 
 module Rufio
   # ブックマーク配下のファイル名・テキスト内容をバックグラウンドで横断検索する。
@@ -27,6 +28,7 @@ module Rufio
       @active = true
       @query = ''
       @search_type = :filename
+      @excluded_extensions = ConfigLoader.global_search_excluded_extensions
       @bookmark_count = bookmarks.length
       @roots = bookmarks.map { |bookmark| [bookmark[:name].to_s, bookmark[:path].to_s] }
       start_scan
@@ -185,6 +187,11 @@ module Rufio
                 if File.directory?(path)
                   pending << path unless File.symlink?(path)
                 elsif File.file?(path)
+                  if child.scrub.downcase.end_with?(*@excluded_extensions)
+                    events << [:skipped, nil]
+                    next
+                  end
+
                   entry = { path: path, bookmark: name, relative_path: path.delete_prefix(root + File::SEPARATOR) }
                   if type == :content
                     scan_content(entry, query, events)

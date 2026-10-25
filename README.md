@@ -142,6 +142,16 @@ the query; `Esc` cancels and returns to your previous view. Scanning runs in
 the background and skips inaccessible directories and directory symlinks.
 Add bookmarks with `b` before searching. G mode needs no external search tools.
 
+To exclude extensions from both file name and content searches, add this to
+`~/.config/rufio/config.rb` and restart Rufio:
+
+```ruby
+GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.png .jpg .zip .tar.gz .log].freeze
+```
+
+Extensions are case insensitive and the leading dot is optional. The default
+is `[]` (no extension exclusions). Directory names are unaffected.
+
 ## Command Mode
 
 Press `:` to enter command mode and execute various commands.
