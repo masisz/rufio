@@ -86,4 +86,14 @@ class TestGlobalContentSearch < Minitest::Test
     refute @search.active?
     refute @search.scanning?
   end
+
+  def test_long_line_preview_includes_the_matching_text
+    File.write(File.join(@a, 'long.txt'), ('x' * 1000) + 'needle' + ('y' * 1000))
+    @search.handle_key("\t")
+    @search.handle_key('needle')
+    wait_for_scan
+    assert_equal 1, @search.results.length
+    assert_includes @search.results.first[:match_text], 'needle'
+    assert_operator @search.results.first[:match_text].length, :<=, 200
+  end
 end
