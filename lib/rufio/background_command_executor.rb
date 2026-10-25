@@ -135,6 +135,15 @@ module Rufio
       @completion_message
     end
 
+    # 完了メッセージを一度だけ受け取る。実行中は消費しない。
+    def consume_completion_message
+      return nil if running?
+
+      message = @completion_message
+      @completion_message = nil
+      message
+    end
+
     # 現在実行中のコマンド名を取得
     # @return [String, nil] コマンド名（実行中でない場合はnil）
     def current_command

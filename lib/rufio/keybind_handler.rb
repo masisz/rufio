@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative 'dialog_support'
+
 require 'shellwords'
 require_relative 'file_opener'
 require_relative 'filter_manager'
@@ -16,6 +18,8 @@ require_relative 'logger'
 
 module Rufio
   class KeybindHandler
+    include DialogSupport
+
     # NavigationController への委譲
     def current_index
       @nav_controller.current_index
@@ -236,6 +240,10 @@ module Rufio
       entries[@nav_controller.current_index]
     end
 
+    def filter_mode?
+      @filter_manager.filter_mode
+    end
+
     def filter_active?
       @filter_manager.filter_active?
     end
@@ -444,54 +452,6 @@ module Rufio
 
     private
 
-    # オーバーレイダイアログを表示してキー入力を待つヘルパーメソッド
-    # terminal_ui が利用可能な場合はオーバーレイを使用、そうでなければ従来の方法を使用
-    # @param title [String] ダイアログタイトル
-    # @param content_lines [Array<String>] コンテンツ行
-    # @param options [Hash] オプション
-    # @yield キー入力処理（ブロックが与えられた場合）
-    # @return [String] 入力されたキー
-    def show_overlay_dialog(title, content_lines, options = {}, &block)
-      # terminal_ui が利用可能で、screen と renderer が存在する場合のみオーバーレイを使用
-      use_overlay = @terminal_ui &&
-                    @terminal_ui.respond_to?(:screen) &&
-                    @terminal_ui.respond_to?(:renderer) &&
-                    @terminal_ui.screen &&
-                    @terminal_ui.renderer
-
-      if use_overlay
-        # オーバーレイを使用
-        @terminal_ui.show_overlay_dialog(title, content_lines, options, &block)
-      else
-        # フォールバック: 従来の方法
-        width = options[:width]
-        height = options[:height]
-
-        unless width && height
-          width, height = @dialog_renderer.calculate_dimensions(content_lines, {
-            title: title,
-            min_width: options[:min_width] || 40,
-            max_width: options[:max_width] || 80
-          })
-        end
-
-        x, y = @dialog_renderer.calculate_center(width, height)
-
-        @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-          border_color: options[:border_color] || "\e[37m",
-          title_color: options[:title_color] || "\e[1;33m",
-          content_color: options[:content_color] || "\e[37m"
-        })
-
-        key = block_given? ? yield : STDIN.getch
-
-        @dialog_renderer.clear_area(x, y, width, height)
-        @terminal_ui&.refresh_display
-
-        key
-      end
-    end
-
     def navigate_parent
       @nav_controller.navigate_parent
     end
@@ -589,8 +549,6 @@ module Rufio
       @selection_manager.toggle_selection(entry, current_path)
       true
     end
-
-
 
     def goto_start_directory
       @bookmark_controller.goto_start_directory

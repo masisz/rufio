@@ -473,7 +473,7 @@ module Rufio
 
     def draw_footer_to_buffer(screen, y, fps = nil)
       if @keybind_handler.filter_active?
-        if @keybind_handler.instance_variable_get(:@filter_mode)
+        if @keybind_handler.filter_mode?
           help_text = "Filter mode: Type to filter, ESC to clear, Enter to apply, Backspace to delete"
         else
           help_text = "Filtered view active - Space to edit filter, ESC to clear filter"

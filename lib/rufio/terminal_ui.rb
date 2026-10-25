@@ -431,15 +431,13 @@ module Rufio
 
         # バックグラウンドコマンドの完了チェック（0.1秒ごと）
         if @background_executor && (start - last_notification_check) > check_interval
-          if !@background_executor.running? && @background_executor.get_completion_message
-            completion_msg = @background_executor.get_completion_message
+          if (completion_msg = @background_executor.consume_completion_message)
             # 通知メッセージとして表示
             notification_message = completion_msg
             notification_time = start
             # フッターのランプ表示用にも設定（UIRenderer が管理）
             @ui_renderer.completion_lamp_message = completion_msg
             @ui_renderer.completion_lamp_time = start
-            @background_executor.instance_variable_set(:@completion_message, nil)  # メッセージをクリア
             needs_redraw = true
           end
           last_notification_check = start

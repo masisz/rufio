@@ -41,16 +41,18 @@ class TestRefactoringContracts < Minitest::Test
       border_color: "\e[37m", title_color: "\e[1;33m", content_color: "\e[37m"
     }])
     renderer.expect(:clear_area, nil, [2, 3, 40, 6])
-    terminal = Minitest::Mock.new
-    terminal.expect(:screen, nil)
-    terminal.expect(:refresh_display, nil)
+    terminal = Struct.new(:screen, :renderer, :refreshed) do
+      def refresh_display
+        self.refreshed = true
+      end
+    end.new(nil, true, false)
     host = dialog_host(renderer, terminal)
 
     STDIN.stub(:getch, 'q') do
       assert_equal 'q', host.send(:show_overlay_dialog, 'Title', ['body'])
     end
     renderer.verify
-    terminal.verify
+    assert terminal.refreshed
   end
 
   def test_dialog_fallback_preserves_explicit_dimensions_colors_and_block_result
