@@ -141,6 +141,8 @@ result, and press Enter to jump to that file in Files mode. `Ctrl+U` clears
 the query; `Esc` cancels and returns to your previous view. Scanning runs in
 the background and skips inaccessible directories and directory symlinks.
 Add bookmarks with `b` before searching. G mode needs no external search tools.
+While scanning, a yellow `Searching...` indicator animates even before matches
+arrive. It turns green and displays `Search complete` when the scan finishes.
 
 To exclude extensions from both file name and content searches, add this to
 `~/.config/rufio/config.rb` and restart Rufio:
@@ -151,6 +153,12 @@ GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.png .jpg .zip .tar.gz .log].freeze
 
 Extensions are case insensitive and the leading dot is optional. The default
 is `[]` (no extension exclusions). Directory names are unaffected.
+
+### Config Mode (C)
+
+Press `C` to open `~/.config/rufio/`, creating it if needed. Navigation, previews,
+and file operations work as in Files mode. Browse settings and scripts directly;
+leaving the config directory returns the mode display to Files.
 
 ## Command Mode
 
