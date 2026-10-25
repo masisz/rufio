@@ -36,6 +36,13 @@ class TestDocumentTextExtractor < Minitest::Test
     assert_equal '2', records.find { |record| record[:cell] == 'D3' }[:text]
   end
 
+  def test_pdf_unicode_text_is_extracted_as_utf8
+    path = write_unicode_search_pdf(File.join(@root, 'japanese.pdf'))
+    text = @extractor.each_record(path).map { |record| record[:text] }.join
+    assert_includes text, '日本語needle'
+    assert_equal Encoding::UTF_8, text.encoding
+  end
+
   def test_powerpoint_slide_order_and_split_text_runs
     records = @extractor.each_record(write_search_pptx(File.join(@root, 'sample.pptx'))).to_a
     first = records.find { |record| record[:text].include?('日本語') }
@@ -89,5 +96,28 @@ class TestDocumentTextExtractor < Minitest::Test
     File.write(a, 'x' * 1024)
     2.times { assert_equal 1024, cache.each_record(a).to_a.first[:text].length }
     assert_equal 5, calls
+  end
+
+  def test_cache_does_not_store_partial_or_changed_extractions
+    path = File.join(@root, 'changing.pdf')
+    File.write(path, 'before')
+    calls = 0
+    fake = Object.new
+    fake.define_singleton_method(:each_record) do |file, &block|
+      calls += 1
+      block.call(text: File.read(file))
+      if calls == 1
+        raise Rufio::DocumentTextExtractor::ExtractionError, 'interrupted extraction'
+      elsif calls == 2
+        File.write(file, 'changed during extraction')
+      end
+    end
+    cache = Rufio::DocumentTextCache.new(extractor: fake)
+    assert_raises(Rufio::DocumentTextExtractor::ExtractionError) { cache.each_record(path).to_a }
+    cache.each_record(path).to_a
+    assert_equal 'changed during extraction', cache.each_record(path).to_a.first[:text]
+    assert_equal 3, calls
+    cache.each_record(path).to_a
+    assert_equal 3, calls
   end
 end

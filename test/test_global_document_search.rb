@@ -64,4 +64,14 @@ class TestGlobalDocumentSearch < Minitest::Test
       assert_empty @search.errors
     end
   end
+
+  def test_japanese_search_finds_pdf_and_powerpoint_text
+    write_unicode_search_pdf(File.join(@root, 'japanese.pdf'))
+    @search.open([{ name: 'Docs', path: @root }])
+    @search.handle_key("\t")
+    @search.handle_key('日本語')
+    wait_for_scan
+    assert_equal %w[japanese.pdf sample.pptx], @search.results.map { |result| File.basename(result[:path]) }.sort
+    assert @search.results.all? { |result| result[:match_text].include?('日本語') }
+  end
 end

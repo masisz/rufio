@@ -3,6 +3,7 @@
 require 'thread'
 require_relative 'text_utils'
 require_relative 'config_loader'
+require_relative 'document_text_extractor'
 
 module Rufio
   # ブックマーク配下のファイル名・テキスト内容をバックグラウンドで横断検索する。
@@ -16,6 +17,8 @@ module Rufio
       @active = false
       @scanning = false
       @worker = nil
+      @document_extractor = DocumentTextExtractor.new
+      @document_cache = DocumentTextCache.new(extractor: @document_extractor)
     end
 
     def active?
@@ -119,10 +122,16 @@ module Rufio
       @results.slice(first, capacity).to_a.each_with_index do |entry, index|
         selected = first + index == @selected_index
         text = "#{selected ? '>' : ' '} [#{entry[:bookmark]}] #{entry[:relative_path]}"
-        text += ":#{entry[:line_number]}" if entry[:line_number]
+        text += if entry[:location]
+                  " - #{entry[:location]}"
+                elsif entry[:line_number]
+                  ":#{entry[:line_number]}"
+                else
+                  ''
+                end
         y = index * row_height + 3
         write_line(screen, y, text, width, selected ? "\e[1;36m" : nil)
-        write_line(screen, y + 1, "    #{entry[:match_text]}", width) if entry[:line_number]
+        write_line(screen, y + 1, "    #{entry[:match_text]}", width) if entry[:match_text]
       end
       if @results.empty?
         message = if @bookmark_count.zero?
@@ -231,6 +240,18 @@ module Rufio
     end
 
     def scan_content(entry, query, events)
+      if @document_extractor.supported?(entry[:path])
+        @document_cache.each_record(entry[:path]) do |record|
+          match_index = record[:search_text].index(query)
+          next unless match_index
+
+          snippet = record[:text][[match_index - 30, 0].max, 200].to_s.strip
+          metadata = record.reject { |key, _| key == :text || key == :search_text }
+          events << [:entry, entry.merge(metadata).merge(match_text: snippet)]
+        end
+        return
+      end
+
       File.open(entry[:path], 'rb') do |file|
         sample = file.read(8192).to_s
         if sample.include?("\0")
@@ -249,7 +270,7 @@ module Rufio
           events << [:entry, entry.merge(line_number: number, match_text: snippet)]
         end
       end
-    rescue SystemCallError, IOError => e
+    rescue SystemCallError, IOError, DocumentTextExtractor::ExtractionError => e
       events << [:error, "#{entry[:path]}: #{e.message}"]
     end
 

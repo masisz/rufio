@@ -5,6 +5,16 @@ All notable changes to rufio will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- G mode content search reads PDF (`pdf-reader`), Excel `.xlsx` (`roo`), and PowerPoint `.pptx` (Rubyzip and XML) directly from Ruby, without Python or external conversion commands
+- Document results show the PDF page, Excel sheet and cell, or PowerPoint slide alongside matching text; Enter still locates the source file in Files mode
+- A bounded in-memory document text cache avoids re-extracting unchanged documents when editing the query; file changes invalidate cached text, and corrupt or encrypted documents report errors without stopping other searches
+
+### Fixed
+- Restore the scanner mode after native scanner tests so test order no longer affects normal directory listings
+
 ## [1.1.0] - 2026-10-25
 
 ### Added
