@@ -11,6 +11,9 @@ module Rufio
   class GlobalSearch
     SPINNER_FRAMES = ['|', '/', '-', '\\'].freeze
     SPINNER_INTERVAL = 0.12
+    # 検索語に一致した部分の表示（黒の太字・黄色背景）
+    MATCH_FG = "\e[30m\e[1m"
+    MATCH_BG = "\e[43m"
 
     attr_reader :query, :results, :errors, :selected_index, :search_type, :skipped_files
 
@@ -136,7 +139,8 @@ module Rufio
       first = [@selected_index - capacity + 1, 0].max
       @results.slice(first, capacity).to_a.each_with_index do |entry, index|
         selected = first + index == @selected_index
-        text = "#{selected ? '>' : ' '} [#{entry[:bookmark]}] #{entry[:relative_path]}"
+        prefix = "#{selected ? '>' : ' '} [#{entry[:bookmark]}] "
+        text = "#{prefix}#{entry[:relative_path]}"
         text += if entry[:location]
                   " - #{entry[:location]}"
                 elsif entry[:line_number]
@@ -145,8 +149,10 @@ module Rufio
                   ''
                 end
         y = index * row_height + 3
-        write_line(screen, y, text, width, selected ? "\e[1;36m" : nil)
-        write_line(screen, y + 1, "    #{entry[:match_text]}", width) if entry[:match_text]
+        # ファイル名検索はパス、本文検索はスニペットの一致箇所をハイライトする
+        path_highlight = @search_type == :filename ? prefix.length : nil
+        write_line(screen, y, text, width, selected ? "\e[1;36m" : nil, highlight_from: path_highlight)
+        write_line(screen, y + 1, "    #{entry[:match_text]}", width, highlight_from: 4) if entry[:match_text]
       end
       if @results.empty?
         message = if @bookmark_count.zero?
@@ -333,9 +339,35 @@ module Rufio
       events << [:error, "#{entry[:path]}: #{e.message}"]
     end
 
-    def write_line(screen, y, text, width, color = nil)
+    def write_line(screen, y, text, width, color = nil, highlight_from: nil)
       safe_text = text.scrub.gsub(/[[:cntrl:]]/, ' ')
-      screen.put_string(0, y, TextUtils.truncate_to_width(safe_text, width), fg: color)
+      visible = TextUtils.truncate_to_width(safe_text, width)
+      screen.put_string(0, y, visible, fg: color)
+      return unless highlight_from
+
+      match_ranges(visible, highlight_from).each do |start, length|
+        x = TextUtils.display_width(visible[0, start])
+        screen.put_string(x, y, visible[start, length], fg: MATCH_FG, bg: MATCH_BG)
+      end
+    end
+
+    # 検索と同じく大文字小文字を区別せず、from 文字目以降の一致位置を [開始, 長さ] で返す
+    def match_ranges(text, from)
+      needle = @query.to_s.downcase.chars
+      return [] if needle.empty?
+
+      folded = text.chars.map(&:downcase)
+      ranges = []
+      index = from
+      while index + needle.length <= folded.length
+        if folded[index, needle.length] == needle
+          ranges << [index, needle.length]
+          index += needle.length
+        else
+          index += 1
+        end
+      end
+      ranges
     end
   end
 end
