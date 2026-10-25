@@ -114,6 +114,69 @@ class TestNativeContentSearch < Minitest::Test
     refute search.scanning?
   end
 
+  def engine_matches(cache, query = 'world', roots = [@a, @b])
+    engine = Rufio::NativeContentSearch.new(roots: roots, query: query, excluded_extensions: ['.png'],
+                                            document_extensions: ['.pdf'], cache: cache)
+    matches = []
+    engine.each_event { |event| matches << [File.basename(event[2]), event[3], event[4]] if event[0] == :match }
+    matches.sort
+  ensure
+    engine&.close
+  end
+
+  def test_cache_returns_identical_results_on_repeated_searches
+    cache = Rufio::NativeContentSearch::Cache.new
+    uncached = engine_matches(nil)
+    assert_equal uncached, engine_matches(cache)
+    assert_equal uncached, engine_matches(cache)
+    assert_operator cache.cached_bytes, :>, 0
+    assert_equal engine_matches(nil, 'needle'), engine_matches(cache, 'needle')
+  ensure
+    cache&.close
+  end
+
+  def test_cache_revalidates_changed_deleted_and_new_files
+    cache = Rufio::NativeContentSearch::Cache.new
+    engine_matches(cache)
+    path = File.join(@a, 'first.txt')
+    File.write(path, "changed\nno hit\n")
+    File.write(File.join(@b, 'second.txt'), "WORLD again\nno match\nworld twice\n") # 同サイズでの書き換え
+    File.binwrite(File.join(@b, 'binary.dat'), "now world\n")
+    File.delete(File.join(@a, 'twice.txt'))
+    File.write(File.join(@a, 'new.txt'), "brand new world\n")
+    assert_equal engine_matches(nil), engine_matches(cache)
+    refute(engine_matches(cache).any? { |name, _| name == 'twice.txt' })
+    assert(engine_matches(cache).any? { |name, line| name == 'binary.dat' && line == 1 })
+  ensure
+    cache&.close
+  end
+
+  def test_cache_respects_memory_budget
+    cache = Rufio::NativeContentSearch::Cache.new(max_bytes: 0)
+    assert_equal engine_matches(nil), engine_matches(cache)
+    assert_equal engine_matches(nil), engine_matches(cache)
+    assert_equal 0, cache.cached_bytes
+  ensure
+    cache&.close
+  end
+
+  def test_global_search_reuses_cache_between_queries
+    Rufio::GlobalSearch.native_search = true
+    search = Rufio::GlobalSearch.new
+    search.open(@bookmarks)
+    search.handle_key("\t")
+    search.handle_key('world')
+    Timeout.timeout(10) { search.poll while search.scanning? }
+    first = search.results.length
+    File.write(File.join(@a, 'extra.txt'), "world\n")
+    search.handle_key("\x15")
+    search.handle_key('world')
+    Timeout.timeout(10) { search.poll while search.scanning? }
+    assert_equal first + 1, search.results.length
+  ensure
+    search&.close
+  end
+
   def test_engine_streams_records_directly
     engine = Rufio::NativeContentSearch.new(roots: [@a], query: 'world', excluded_extensions: ['.png'],
                                             document_extensions: ['.pdf'])
