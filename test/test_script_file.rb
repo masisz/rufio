@@ -44,10 +44,16 @@ class TestScriptFile < Minitest::Test
       refute_includes local, 'nested.rb'
       refute_includes local, 'tool'
       assert_includes runner, 'nested.rb'
-      assert_includes runner, 'tool'
       refute_includes runner, 'ignored.txt'
       assert_includes manager, 'nested'
-      assert_includes manager, 'tool'
+      # Windows には実行ビットがなく、拡張子のないファイルは実行可能と判定されない
+      if Gem.win_platform?
+        refute_includes runner, 'tool'
+        refute_includes manager, 'tool'
+      else
+        assert_includes runner, 'tool'
+        assert_includes manager, 'tool'
+      end
     end
   end
 

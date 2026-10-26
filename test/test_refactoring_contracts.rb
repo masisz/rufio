@@ -114,11 +114,19 @@ class TestRefactoringContracts < Minitest::Test
 
   def test_shell_execution_preserves_shell_syntax_environment_and_working_directory
     Dir.mktmpdir do |dir|
-      command = Rufio::DslCommand.new(name: 'shell', shell_command: 'printf "%s" "$RUFIO_CONTRACT"; pwd; exit 7')
+      # シェルコマンドは OS のシェルで動く（Windows は cmd.exe）ので、その構文で検証する
+      shell_command = if Gem.win_platform?
+                        '<nul set /p="%RUFIO_CONTRACT%" & cd & exit 7'
+                      else
+                        'printf "%s" "$RUFIO_CONTRACT"; pwd; exit 7'
+                      end
+      command = Rufio::DslCommand.new(name: 'shell', shell_command: shell_command)
       [nil, 3].each do |timeout|
         result = Rufio::ScriptExecutor.execute_shell(command, timeout: timeout, chdir: dir,
           env: { 'RUFIO_CONTRACT' => 'environment:' })
-        assert_equal "environment:#{File.realpath(dir)}\n", result[:stdout]
+        # cmd.exe の cd は区切りが \ で改行が CRLF
+        stdout = result[:stdout].gsub("\r\n", "\n").tr('\\', '/')
+        assert_equal "environment:#{File.realpath(dir)}\n", stdout
         assert_equal 7, result[:exit_code]
         refute result[:success]
         refute result[:timeout]
@@ -127,7 +135,7 @@ class TestRefactoringContracts < Minitest::Test
   end
 
   def test_shell_execution_times_out
-    command = Rufio::DslCommand.new(name: 'slow', shell_command: "#{RbConfig.ruby.shellescape} -e 'sleep 5'")
+    command = Rufio::DslCommand.new(name: 'slow', shell_command: "#{RbConfig.ruby.shellescape} -e \"sleep 5\"")
     result = Rufio::ScriptExecutor.execute_shell(command, timeout: 0.1)
     assert result[:timeout]
     refute result[:success]
