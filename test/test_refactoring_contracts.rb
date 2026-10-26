@@ -135,7 +135,9 @@ class TestRefactoringContracts < Minitest::Test
   end
 
   def test_shell_execution_times_out
-    command = Rufio::DslCommand.new(name: 'slow', shell_command: "#{RbConfig.ruby.shellescape} -e \"sleep 5\"")
+    # cmd.exe は C:/... の / をオプションと解釈するため、Windows では \ 区切りで渡す
+    ruby = Gem.win_platform? ? RbConfig.ruby.tr('/', '\\') : RbConfig.ruby.shellescape
+    command = Rufio::DslCommand.new(name: 'slow', shell_command: "#{ruby} -e \"sleep 5\"")
     result = Rufio::ScriptExecutor.execute_shell(command, timeout: 0.1)
     assert result[:timeout]
     refute result[:success]
