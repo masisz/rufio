@@ -312,7 +312,7 @@ module Rufio
         title_color: title_color,
         content_color: "\e[37m"
       }) do
-        STDIN.getch
+        KeyInput.getch
         nil
       end
     end

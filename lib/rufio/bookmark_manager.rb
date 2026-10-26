@@ -182,7 +182,7 @@ module Rufio
         content_color: "\e[37m"
       }) do
         loop do
-          input = STDIN.getch.downcase
+          input = KeyInput.getch.downcase
 
           if input >= '1' && input <= '9'
             number = input.to_i

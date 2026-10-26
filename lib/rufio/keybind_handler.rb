@@ -589,7 +589,7 @@ module Rufio
       input = []
 
       loop do
-        char = STDIN.getch
+        char = KeyInput.getch
 
         case char
         when "\e" # Escape

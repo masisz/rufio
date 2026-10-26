@@ -22,7 +22,7 @@ module Rufio
 
     def read_confirmation(cancel_on_quit: true)
       loop do
-        input = STDIN.getch.downcase
+        input = KeyInput.getch.downcase
         return true if input == 'y'
         return false if CONFIRMATION_CANCEL_KEYS.include?(input) || (cancel_on_quit && input == 'q')
       end
@@ -57,7 +57,7 @@ module Rufio
           content_color: options[:content_color] || "\e[37m"
         })
 
-        key = block_given? ? yield : STDIN.getch
+        key = block_given? ? yield : KeyInput.getch
 
         @dialog_renderer.clear_area(x, y, width, height)
         @terminal_ui&.refresh_display

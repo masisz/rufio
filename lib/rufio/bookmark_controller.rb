@@ -344,7 +344,7 @@ module Rufio
 
     def wait_for_keypress
       print ConfigLoader.message('keybind.press_any_key') || 'Press any key to continue...'
-      STDIN.getch
+      KeyInput.getch
     end
 
     def truncate_path(path, max_length)

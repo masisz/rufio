@@ -160,6 +160,8 @@ module Rufio
         rescue
           # スレッド終了
         end
+        # ダイアログのキー入力もこのキューから読ませ、入力スレッドとの奪い合いを防ぐ
+        KeyInput.attach(@input_queue)
       end
 
       # SGR拡張マウスレポートを有効化
@@ -191,11 +193,14 @@ module Rufio
     end
 
     # エスケープシーケンスの後続バイトを読み取る（矢印キー等の短いシーケンス用）。
-    # Windows: IO.select を使わずキューから取得（5ms タイムアウト）。
+    # Windows: IO.select を使わずキューから取得。
     def read_next_input_byte
       if windows?
-        # ConPTY ではバイト到着が遅れることがあるため 5ms では ESC 単体と誤判定する
-        b = windows_queue_pop_with_timeout(0.025)
+        # ConPTY ではバイト到着が遅れることがあるため 5ms では ESC 単体と誤判定する。
+        # G mode は検索中に全画面を再描画し続けて遅延が大きくなりやすく、
+        # しかも ESC 単体で閉じてしまうため、待ち時間を長めに取る。
+        timeout = global_search_active? ? 0.1 : 0.025
+        b = windows_queue_pop_with_timeout(timeout)
         b.nil? ? nil : b.chr(Encoding::BINARY)
       else
         STDIN.read_nonblock(1) rescue nil
@@ -216,46 +221,12 @@ module Rufio
     # Windows 専用: キューから1文字（マルチバイト対応）を組み立てる。
     # first_byte_int は getbyte が返す Integer。
     def windows_build_char(first_byte_int)
-      remaining = case first_byte_int
-                  when 0x00..0x7F then 0
-                  when 0xC0..0xDF then 1
-                  when 0xE0..0xEF then 2
-                  when 0xF0..0xF7 then 3
-                  else 0
-                  end
-      if remaining == 0
-        first_byte_int.chr(Encoding::UTF_8)
-      else
-        buf = first_byte_int.chr(Encoding::BINARY)
-        remaining.times do
-          b = windows_queue_pop_with_timeout(0.005)
-          return nil if b.nil?
-          buf << b.chr(Encoding::BINARY)
-        end
-        result = buf.force_encoding(Encoding::UTF_8)
-        result.valid_encoding? ? result : nil
-      end
+      KeyInput.build_char(first_byte_int, @input_queue)
     end
 
     # Windows 専用: @input_queue からタイムアウト付きで Integer バイトを取り出す。
-    # Ruby 3.2+ は Queue#pop(timeout:) で正確に待機する（sleep ポーリングは
-    # Windows のタイマー分解能 約15ms により遅延する）。それ以前はポーリング。
-    QUEUE_POP_TIMEOUT_SUPPORTED = Queue.instance_method(:pop).parameters.any? { |_, n| n == :timeout }
-
     def windows_queue_pop_with_timeout(timeout_sec)
-      if QUEUE_POP_TIMEOUT_SUPPORTED
-        return @input_queue.pop(timeout: timeout_sec)
-      end
-
-      deadline = Time.now + timeout_sec
-      loop do
-        begin
-          return @input_queue.pop(true)
-        rescue ThreadError
-          return nil if Time.now >= deadline
-          sleep 0.001
-        end
-      end
+      KeyInput.pop_with_timeout(@input_queue, timeout_sec)
     end
 
     def cleanup_terminal
@@ -270,6 +241,7 @@ module Rufio
 
       # Windows 入力スレッドを停止
       if windows? && @input_thread
+        KeyInput.detach
         @stop_input_thread = true
         @input_thread.kill rescue nil
         @input_thread.join(0.5) rescue nil
@@ -982,7 +954,7 @@ module Rufio
       @renderer.render(@screen)
 
       # キー入力を待つ
-      key = block_given? ? yield : STDIN.getch
+      key = block_given? ? yield : KeyInput.getch
 
       # オーバーレイを無効化
       @screen.disable_overlay

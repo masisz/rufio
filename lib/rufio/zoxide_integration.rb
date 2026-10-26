@@ -159,7 +159,7 @@ module Rufio
         input_buffer = ''
 
         loop do
-          char = STDIN.getch
+          char = KeyInput.getch
 
           case char
           when "\e", "\x03" # ESC, Ctrl+C

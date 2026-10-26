@@ -241,7 +241,7 @@ module Rufio
       max_input_width = dialog_width - 8 # Leave space for borders and padding (border 2 + padding 4 + border 2)
 
       loop do
-        char = STDIN.getch
+        char = KeyInput.getch
 
         case char
         when "\e" # Escape - cancel
