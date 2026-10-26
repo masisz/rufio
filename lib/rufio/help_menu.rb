@@ -73,7 +73,8 @@ module Rufio
           'Tab / Shift+Tab: Next / previous bookmark',
           "1-9: Jump to bookmark | #{key(:start_dir)}: Start directory",
           "#{key(:zoxide)}: Directory history (zoxide)",
-          "#{key(:quit)}: Quit (with confirmation)"
+          "#{key(:quit)}: Quit (with confirmation)",
+          "#{key(:quit_cd)}: Quit and cd to the current directory (rufio --shell-init)"
         ]
       when 'Modes'
         [

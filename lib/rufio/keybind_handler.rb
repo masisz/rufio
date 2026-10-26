@@ -495,6 +495,7 @@ module Rufio
       when :log_viewer      then enter_log_viewer_mode
       when :command_mode    then activate_command_mode
       when :quit            then exit_request
+      when :quit_cd         then quit_to_current_directory
       else
         false
       end
@@ -502,6 +503,14 @@ module Rufio
 
     def exit_request
       @file_op_controller.show_exit_confirmation
+    end
+
+    # 確認なしで終了し、シェル関数（rufio --shell-init）が移動する先として現在のディレクトリを伝える。
+    # ヘルプ・ログビューワは rufio 内部のディレクトリを表示しているため対象外。
+    def quit_to_current_directory
+      return false if @in_help_mode || @in_log_viewer_mode
+
+      :quit_cd
     end
 
     def fzf_search

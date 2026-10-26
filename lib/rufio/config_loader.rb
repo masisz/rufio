@@ -77,7 +77,8 @@ module Rufio
           help:            '?',
           log_viewer:      'L',
           command_mode:    ':',
-          quit:            'q'
+          quit:            'q',
+          quit_cd:         'T'
         }.freeze
       end
 

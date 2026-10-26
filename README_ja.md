@@ -87,6 +87,7 @@ rufio /path/to  # 指定したディレクトリで起動
 | `g/}` | 先頭/末尾 |
 | `Enter` | ディレクトリに入る/ファイルを開く |
 | `q` | 終了 |
+| `T` | 終了して現在のディレクトリへ移動（[シェル連携](#シェル連携)） |
 
 ### ファイル操作
 
@@ -184,6 +185,29 @@ PDFの文字抽出精度は、文書のフォントや文字コードの対応�
 `C` で `~/.config/rufio/` を開きます。ディレクトリがなければ作成します。
 移動・プレビュー・ファイル操作はFilesモードと共通で、設定やスクリプトを直接編集できます。
 設定ディレクトリの外へ移動すると、モード表示がFilesに戻ります。
+
+### シェル連携
+
+`rufio --shell-init` は OS に合わせた `rf` というシェル関数を出力します。Windows では
+PowerShell 用、それ以外ではログインシェル（`bash`・`zsh`・`fish`）用です。シェル名を
+指定して切り替えることもできます。`rf` で rufio を起動し `T` を押すと、終了してシェルが
+表示中のディレクトリへ移動します。`q` で終了した場合は移動しません。
+
+```bash
+# bash / zsh（~/.bashrc または ~/.zshrc）
+eval "$(rufio --shell-init)"
+
+# fish（~/.config/fish/config.fish）
+rufio --shell-init fish | source
+```
+
+```powershell
+# PowerShell（$PROFILE）
+Invoke-Expression (& rufio --shell-init powershell | Out-String)
+```
+
+シェル起動のたびに Ruby を起動したくない場合は、`rufio --shell-init >> ~/.bashrc` の
+ように一度だけ出力を追記してください。
 
 ## コマンドモード
 

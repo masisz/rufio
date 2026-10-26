@@ -19,6 +19,8 @@ start_directory = nil
 test_mode = false
 yjit_mode = false
 zjit_mode = false
+choosedir = nil
+shell_init = nil
 skip_next = false
 
 ARGV.each_with_index do |arg, idx|
@@ -49,6 +51,21 @@ ARGV.each_with_index do |arg, idx|
     end
   when /^--native=(rust|go|auto|ruby)$/
     native_mode = $1
+  when '--choosedir'
+    choosedir = ARGV[idx + 1]
+    skip_next = true
+  when /^--choosedir=(.+)$/
+    choosedir = $1
+  when '--shell-init'
+    # 次の引数がシェル名なら使い、なければ OS から判定する
+    if Rufio::ShellInit::SHELLS.include?(ARGV[idx + 1]) || ARGV[idx + 1] == 'pwsh'
+      shell_init = ARGV[idx + 1]
+      skip_next = true
+    else
+      shell_init = Rufio::ShellInit.detect
+    end
+  when /^--shell-init=(.+)$/
+    shell_init = $1
   when '-c', '--check-health', '--help', '-h', '--yjit', '--zjit'
     # これらは後で処理
   when /^--/
@@ -70,7 +87,15 @@ if ENV['RUFIO_NATIVE'] && defined?(Rufio::NativeScanner)
 end
 
 # コマンド処理
-if ARGV.include?('--check-health') || ARGV.include?('-c')
+if shell_init
+  begin
+    print Rufio::ShellInit.script(shell_init)
+    exit(0)
+  rescue ArgumentError => e
+    warn e.message
+    exit(1)
+  end
+elsif ARGV.include?('--check-health') || ARGV.include?('-c')
   # ヘルスチェック実行
   health_checker = Rufio::HealthChecker.new
   success = health_checker.run_check
@@ -87,6 +112,9 @@ elsif ARGV.include?('--help') || ARGV.include?('-h')
   puts "  --test                    Show FPS counter in footer (for performance testing)"
   puts "  --yjit                    Enable YJIT JIT compiler (Ruby 3.1+)"
   puts "  --zjit                    Enable ZJIT JIT compiler (Ruby 3.4+)"
+  puts "  --shell-init [SHELL]      Print the rf shell function (cd on T quit)"
+  puts "                            SHELL: bash|zsh|fish|powershell (default: by OS)"
+  puts "  --choosedir FILE          Write the directory to FILE when quitting with T"
   if defined?(Rufio::NativeScanner)
     puts "  --native[=MODE]           Enable native scanner (experimental)"
     puts "                            MODE: auto|rust|go (default: auto)"
@@ -117,11 +145,12 @@ elsif ARGV.include?('--help') || ARGV.include?('-h')
     puts "  RUFIO_NATIVE=rust rufio   # Use Rust via environment variable"
   end
   puts "  rufio -c                  # Check dependencies"
+  puts "  eval \"$(rufio --shell-init)\"  # Add rf to bash/zsh (T quits and cd)"
   exit(0)
 else
   start_directory ||= Dir.pwd
 
   # アプリケーション開始
-  app = Rufio::Application.new(start_directory)
+  app = Rufio::Application.new(start_directory, choosedir: choosedir)
   app.run(test_mode: test_mode)
 end

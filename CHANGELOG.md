@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - G mode content search runs on a bundled Zig engine: parallel directory walking, SIMD literal matching, and a revalidated in-memory file cache make the first search about 1.8x and repeated searches about 10x faster than `rg` on a 31k-file tree; queries with non-ASCII cased letters still use the Ruby search, and `RUFIO_NATIVE_SEARCH=0` disables the engine
 - G mode highlights the matching text (case-insensitive, every occurrence) in file name results and content snippets
+- `T` quits rufio and moves the shell to the current directory; `rufio --shell-init [bash|zsh|fish|powershell]` prints the `rf` shell function that does the move (PowerShell on Windows, the login shell elsewhere), and `--choosedir FILE` receives the directory
 - The gem bundles the Zig library for macOS (arm64/x86_64), Linux (x86_64/aarch64, glibc 2.17+ and musl), and Windows (x64/arm64); unsupported platforms fall back to Ruby automatically
 
 ### Changed
@@ -22,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consolidate UI rendering, dialog drawing, file operations, bookmark flows, native scanner helpers, shell execution, and localized message definitions, removing dead code and runtime warnings
 
 ### Fixed
+- Windows: dialogs no longer compete with the input thread for keys, so bookmark names and other dialog input no longer need every key pressed twice
+- Windows: wait longer for arrow key escape sequences in G mode so arrow keys no longer close G mode as a lone ESC
 - Restore the scanner mode after native scanner tests so test order no longer affects normal directory listings
 
 ## [1.1.0] - 2026-10-25

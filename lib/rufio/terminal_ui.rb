@@ -14,6 +14,9 @@ module Rufio
     HEADER_FOOTER_MARGIN = UIRenderer::HEADER_FOOTER_MARGIN
     CONTENT_START_LINE = UIRenderer::CONTENT_START_LINE
 
+    # T キーで終了した時のディレクトリ（それ以外の終了では nil）
+    attr_reader :exit_directory
+
     def initialize(test_mode: false)
       console = IO.console
       if console
@@ -532,6 +535,12 @@ module Rufio
 
       # 終了処理（qキーのみ、確認ダイアログの結果を確認）
       if input == 'q' && result == true
+        @running = false
+      end
+
+      # T キー: 確認なしで終了し、現在のディレクトリを終了後の移動先にする
+      if result == :quit_cd
+        @exit_directory = @directory_listing.current_path
         @running = false
       end
 

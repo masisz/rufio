@@ -87,6 +87,7 @@ rufio /path/to  # Launch in specified directory
 | `g/}` | Top/bottom |
 | `Enter` | Enter directory/open file |
 | `q` | Quit |
+| `T` | Quit and cd to the current directory ([Shell Integration](#shell-integration)) |
 
 ### File Operations
 
@@ -186,6 +187,29 @@ PDF text extraction depends on the document's font and character mappings.
 Press `C` to open `~/.config/rufio/`, creating it if needed. Navigation, previews,
 and file operations work as in Files mode. Browse settings and scripts directly;
 leaving the config directory returns the mode display to Files.
+
+### Shell Integration
+
+`rufio --shell-init` prints a shell function named `rf` for your OS: PowerShell on
+Windows, and your login shell (`bash`, `zsh` or `fish`) elsewhere. Pass the shell name to
+choose explicitly. Launch rufio with `rf` and press `T` to quit and move the shell to the
+directory you were viewing; `q` quits without moving.
+
+```bash
+# bash / zsh (~/.bashrc or ~/.zshrc)
+eval "$(rufio --shell-init)"
+
+# fish (~/.config/fish/config.fish)
+rufio --shell-init fish | source
+```
+
+```powershell
+# PowerShell ($PROFILE)
+Invoke-Expression (& rufio --shell-init powershell | Out-String)
+```
+
+To avoid starting Ruby with every shell, append the output once instead, for example
+`rufio --shell-init >> ~/.bashrc`.
 
 ## Command Mode
 
