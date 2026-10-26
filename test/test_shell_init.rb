@@ -75,6 +75,7 @@ class TestShellInit < Minitest::Test
   # === 関数の動作（rufio の代わりに --choosedir へ書くだけのスタブを使う） ===
 
   def test_bash_function_changes_directory_written_by_rufio
+    skip_posix_shell_on_windows
     skip 'bash が必要' unless command?('bash')
 
     target = File.join(@tmpdir, 'dir with space')
@@ -84,6 +85,7 @@ class TestShellInit < Minitest::Test
   end
 
   def test_bash_function_stays_when_rufio_writes_nothing
+    skip_posix_shell_on_windows
     skip 'bash が必要' unless command?('bash')
 
     pwd = run_shell('bash', Rufio::ShellInit.script('bash'), nil)
@@ -91,6 +93,7 @@ class TestShellInit < Minitest::Test
   end
 
   def test_zsh_function_changes_directory_written_by_rufio
+    skip_posix_shell_on_windows
     skip 'zsh が必要' unless command?('zsh')
 
     target = File.join(@tmpdir, 'target')
@@ -100,6 +103,7 @@ class TestShellInit < Minitest::Test
   end
 
   def test_fish_function_changes_directory_written_by_rufio
+    skip_posix_shell_on_windows
     skip 'fish が必要' unless command?('fish')
 
     target = File.join(@tmpdir, 'target')
@@ -126,11 +130,16 @@ class TestShellInit < Minitest::Test
       rf
       (Get-Location).Path
     PS1
-    output = IO.popen([shell, '-NoProfile', '-NonInteractive', '-File', script_path], &:read)
+    output = IO.popen([shell, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script_path], &:read)
     assert_equal File.realpath(target), File.realpath(output.lines.last.strip)
   end
 
   private
+
+  # Windows の bash（Git Bash など）は pwd が /c/... 形式になり Ruby のパスと比べられない
+  def skip_posix_shell_on_windows
+    skip 'Windows では PowerShell の関数だけを検証する' if Gem.win_platform?
+  end
 
   def command?(name)
     ENV['PATH'].to_s.split(File::PATH_SEPARATOR).any? do |dir|

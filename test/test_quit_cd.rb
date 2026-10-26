@@ -10,7 +10,8 @@ require 'timeout'
 class TestQuitCd < Minitest::Test
   def setup
     @tmpdir = Dir.mktmpdir('rufio_quit_cd')
-    @target = File.join(@tmpdir, 'target')
+    # Windows の一時ディレクトリは短い名前（RUNNER~1 等）になり得るため、rufio と同じく展開しておく
+    @target = File.expand_path(File.join(@tmpdir, 'target'))
     Dir.mkdir(@target)
   end
 
