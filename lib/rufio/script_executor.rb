@@ -129,8 +129,11 @@ module Rufio
           # プロセスを終了
           if pid
             begin
-              Process.kill("TERM", pid)
-              sleep 0.1
+              # Windows は TERM を送れない（Errno::EINVAL）ため KILL だけで終了させる
+              unless Gem.win_platform?
+                Process.kill("TERM", pid)
+                sleep 0.1
+              end
               Process.kill("KILL", pid)
             rescue Errno::ESRCH, Errno::EPERM
               # プロセスが既に終了している、または権限がない

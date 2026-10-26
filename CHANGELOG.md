@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Windows: dialogs no longer compete with the input thread for keys, so bookmark names and other dialog input no longer need every key pressed twice
 - Windows: wait longer for arrow key escape sequences in G mode so arrow keys no longer close G mode as a lone ESC
+- Windows: DSL shell command timeouts stop the process with KILL instead of failing with `Invalid argument` on TERM and leaving it running
 - Restore the scanner mode after native scanner tests so test order no longer affects normal directory listings
 
 ## [1.1.0] - 2026-10-25
