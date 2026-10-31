@@ -61,6 +61,7 @@ lib_zig/rufio_native/*.o
 lib_zig/rufio_native/*.dylib
 lib_zig/rufio_native/*.so
 lib_zig/rufio_native/*.dll
+lib_zig/rufio_native/rufio_search
 
 # Native libraries (generated during build)
 lib/rufio/native/*.dylib

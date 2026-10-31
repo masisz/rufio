@@ -6,12 +6,14 @@ require_relative "../lib/rufio"
 
 class TestNativeScannerZigAsync < Minitest::Test
   def setup
+    @original_scanner_mode = Rufio::NativeScanner.mode
     @test_dir = Dir.mktmpdir("rufio_test")
     create_test_structure
     Rufio::NativeScanner.mode = "zig"
   end
 
   def teardown
+    Rufio::NativeScanner.mode = @original_scanner_mode
     FileUtils.rm_rf(@test_dir)
   end
 

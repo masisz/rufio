@@ -4,9 +4,14 @@ module Rufio
   # コマンド補完機能を提供するクラス
   class CommandCompletion
     # 初期化
-    # @param history [CommandHistory, nil] コマンド履歴（オプション）
+    # @param history [CommandHistory, CommandMode, nil] 履歴、または単独で渡すコマンドモード
     # @param command_mode [CommandMode, nil] コマンドモード（スクリプト補完に使用）
     def initialize(history = nil, command_mode = nil)
+      # CommandMode だけを渡す従来の呼び方も受け付ける。
+      if history.is_a?(CommandMode) && command_mode.nil?
+        command_mode = history
+        history = nil
+      end
       @command_mode = command_mode || CommandMode.new
       @shell_completion = ShellCommandCompletion.new
       @history = history

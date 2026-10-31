@@ -35,6 +35,12 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'pastel', '~> 0.8'
   spec.add_dependency 'tty-cursor', '~> 0.7'
   spec.add_dependency 'tty-screen', '~> 0.8'
+  spec.add_dependency 'pdf-reader', '~> 2.16'
+  spec.add_dependency 'roo', '~> 2.10'
+  spec.add_dependency 'rubyzip', '>= 2.4', '< 3.0'
+  spec.add_dependency 'nokogiri', '~> 1.16'
+  spec.add_dependency 'csv', '~> 3.0'
+  spec.add_dependency 'base64', '>= 0.2', '< 1.0'
 
   spec.add_development_dependency 'minitest', '~> 5.0'
   spec.add_development_dependency 'rake', '~> 13.0'

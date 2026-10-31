@@ -132,6 +132,7 @@ Press `B` then select script path management to:
 | `?` | Enter help mode (this mode) |
 | `ESC` | Exit current mode |
 | `q` | Quit rufio |
+| `T` | Quit rufio and cd the shell to the current directory (requires `rufio --shell-init`) |
 
 ### Help Mode
 

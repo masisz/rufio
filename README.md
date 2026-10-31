@@ -87,6 +87,7 @@ rufio /path/to  # Launch in specified directory
 | `g/}` | Top/bottom |
 | `Enter` | Enter directory/open file |
 | `q` | Quit |
+| `T` | Quit and cd to the current directory ([Shell Integration](#shell-integration)) |
 
 ### File Operations
 
@@ -135,8 +136,8 @@ rufio /path/to  # Launch in specified directory
 Press `G` to search recursively across all bookmarked directories. `Tab`
 switches between **File names** and **Content**. Type a literal string to
 search (case insensitive); content results include the file, line number,
-and matching text. Text is read as UTF-8; files containing NUL bytes in the
-first 8 KB are skipped as binary. Use Up/Down or Ctrl+N/P to select a
+and matching text. Plain text is read as UTF-8; other unsupported files containing
+NUL bytes in the first 8 KB are skipped as binary. Use Up/Down or Ctrl+N/P to select a
 result, and press Enter to jump to that file in Files mode. `Ctrl+U` clears
 the query; `Esc` cancels and returns to your previous view. Scanning runs in
 the background and skips inaccessible directories and directory symlinks.
@@ -154,11 +155,61 @@ GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.png .jpg .zip .tar.gz .log].freeze
 Extensions are case insensitive and the leading dot is optional. The default
 is `[]` (no extension exclusions). Directory names are unaffected.
 
+#### PDF, Excel and PowerPoint content search (v1.2.0)
+
+Content mode also extracts text from documents using Ruby gems; Python,
+Microsoft Office and external conversion tools are not required.
+
+| File | Searchable content | Result location |
+|------|--------------------|-----------------|
+| `.pdf` | Extractable text | Page number |
+| `.xlsx` | Cell text and values | Sheet name and cell address |
+| `.pptx` | Text in slide shapes and tables | Slide number |
+
+Search remains literal and case insensitive. Split text runs in a PowerPoint
+paragraph are joined, and slides follow the presentation's display order.
+Excel formulas use the values saved in the workbook; Rufio does not recalculate them.
+Enter locates the original document in Files mode; it does not open Office at a cell or slide.
+
+Extracted text is cached in memory across searches within the running app.
+The cache keeps up to 64 documents and approximately 16 MiB of text and metadata;
+larger extracted documents remain searchable without being cached. Updated or
+replaced files are re-extracted. No document text cache is written to disk.
+
+Extension exclusions apply to documents too. Damaged, unsupported or encrypted
+documents may report errors while other files continue to be searched.
+Scanned images need OCR, which is not included. Legacy `.xls`/`.ppt`, slide notes,
+and text embedded only in images or charts are not supported by this implementation.
+PDF text extraction depends on the document's font and character mappings.
+
 ### Config Mode (C)
 
 Press `C` to open `~/.config/rufio/`, creating it if needed. Navigation, previews,
 and file operations work as in Files mode. Browse settings and scripts directly;
 leaving the config directory returns the mode display to Files.
+
+### Shell Integration
+
+`rufio --shell-init` prints a shell function named `rf` for your OS: PowerShell on
+Windows, and your login shell (`bash`, `zsh` or `fish`) elsewhere. Pass the shell name to
+choose explicitly. Launch rufio with `rf` and press `T` to quit and move the shell to the
+directory you were viewing; `q` quits without moving.
+
+```bash
+# bash / zsh (~/.bashrc or ~/.zshrc)
+eval "$(rufio --shell-init)"
+
+# fish (~/.config/fish/config.fish)
+rufio --shell-init fish | source
+```
+
+```powershell
+# PowerShell ($PROFILE)
+Invoke-Expression (& rufio --shell-init powershell | Out-String)
+```
+
+To avoid starting Ruby with every shell, append the output once instead, for example
+`rufio --shell-init >> ~/.bashrc`.
 
 ## Command Mode
 
@@ -353,6 +404,17 @@ apt install fzf bat zoxide
 ```
 
 ## Advanced Features
+
+### Native Content Search
+
+G mode content search uses a bundled Zig engine on macOS (arm64/x86_64), Linux (x86_64/aarch64, glibc 2.17+ or musl), and Windows (x64/arm64). It searches bookmarks in parallel and caches file contents between queries, so retyping a query is about 10x faster than `rg`. Other platforms, and queries containing non-ASCII letters with case, use the Ruby search automatically. Set `RUFIO_NATIVE_SEARCH=0` to disable it.
+
+To rebuild the bundled binaries (requires Zig 0.17):
+
+```bash
+make -C lib_zig/rufio_native dist   # all platforms
+bundle exec rake native:check       # verify bundled binaries
+```
 
 ### Native Scanner (Experimental)
 

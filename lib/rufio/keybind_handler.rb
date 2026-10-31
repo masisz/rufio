@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative 'dialog_support'
+
 require 'shellwords'
 require_relative 'file_opener'
 require_relative 'filter_manager'
@@ -16,6 +18,8 @@ require_relative 'logger'
 
 module Rufio
   class KeybindHandler
+    include DialogSupport
+
     # NavigationController への委譲
     def current_index
       @nav_controller.current_index
@@ -49,14 +53,29 @@ module Rufio
       return false unless @directory_listing
 
       FileUtils.mkdir_p(config_directory)
-      exit_log_viewer_mode if @in_log_viewer_mode
-      exit_help_mode if @in_help_mode
-      exit_job_mode if @job_mode.active?
+      leave_other_modes(:config)
       @nav_controller.unfocus_preview_pane
       navigate_to_directory(config_directory)
     rescue SystemCallError => e
       @notification_manager.add("Cannot open config directory: #{e.message}", :error, duration: 0)
       false
+    end
+
+    # モード遷移の入口。ヘルプ・検索のオーバーレイは元のモードを保持する。
+    def switch_mode(mode)
+      case mode
+      when :files  then leave_other_modes(:files)
+      when :logs   then enter_log_viewer_mode
+      when :jobs   then enter_job_mode
+      when :config then enter_config_mode
+      when :global then start_global_search
+      when :help   then show_help_dialog
+      else false
+      end
+    end
+
+    def navigate_to_directory(path)
+      @nav_controller.navigate_to_directory(path)
     end
 
     def preview_scroll_offset
@@ -236,6 +255,10 @@ module Rufio
       entries[@nav_controller.current_index]
     end
 
+    def filter_mode?
+      @filter_manager.filter_mode
+    end
+
     def filter_active?
       @filter_manager.filter_active?
     end
@@ -265,17 +288,15 @@ module Rufio
       return false unless @directory_listing
       return true if @in_help_mode
 
-      exit_log_viewer_mode if @in_log_viewer_mode
-
-      # 現在のディレクトリを保存
-      @pre_help_directory = @directory_listing.current_path
-
       # info ディレクトリに移動
       rufio_root = File.expand_path('../..', __dir__)
       info_dir = File.join(rufio_root, 'info')
 
       # info ディレクトリが存在することを確認
       return false unless Dir.exist?(info_dir)
+
+      leave_other_modes(:help_directory)
+      @pre_help_directory = @directory_listing.current_path
 
       # ヘルプモードを有効化
       @in_help_mode = true
@@ -315,13 +336,9 @@ module Rufio
       return false unless @directory_listing
       return true if @in_log_viewer_mode
 
-      exit_help_mode if @in_help_mode
-
-      # 現在のディレクトリを保存
+      FileUtils.mkdir_p(@log_dir)
+      leave_other_modes(:logs)
       @pre_log_viewer_directory = @directory_listing.current_path
-
-      # log ディレクトリを作成（存在しない場合）
-      FileUtils.mkdir_p(@log_dir) unless Dir.exist?(@log_dir)
 
       # log ディレクトリに移動
       navigate_to_directory(@log_dir)
@@ -351,45 +368,19 @@ module Rufio
 
     # ヘルプモード時の制限付き親ディレクトリナビゲーション
     def navigate_parent_with_restriction
-      if @in_help_mode
-        # info ディレクトリより上には移動できない
-        rufio_root = File.expand_path('../..', __dir__)
-        info_dir = File.join(rufio_root, 'info')
+      restricted_root = if @in_help_mode
+                          File.join(File.expand_path('../..', __dir__), 'info')
+                        elsif @in_log_viewer_mode
+                          @log_dir
+                        end
 
+      if restricted_root
         current_path = @directory_listing.current_path
-
-        # 現在のパスが info ディレクトリ以下でない場合は移動を許可しない
-        unless current_path.start_with?(info_dir)
-          return false
-        end
-
-        # 現在のパスが info ディレクトリそのものの場合は移動を許可しない
-        if current_path == info_dir
-          return false
-        end
-
-        # info ディレクトリ配下であれば、通常のナビゲーションを実行
-        navigate_parent
-      elsif @in_log_viewer_mode
-        # log ディレクトリより上には移動できない
-        current_path = @directory_listing.current_path
-
-        # 現在のパスが log ディレクトリ以下でない場合は移動を許可しない
-        unless current_path.start_with?(@log_dir)
-          return false
-        end
-
-        # 現在のパスが log ディレクトリそのものの場合は移動を許可しない
-        if current_path == @log_dir
-          return false
-        end
-
-        # log ディレクトリ配下であれば、通常のナビゲーションを実行
-        navigate_parent
-      else
-        # ヘルプモード・ログビューワモード外では通常のナビゲーション
-        navigate_parent
+        return false unless current_path.start_with?(restricted_root)
+        return false if current_path == restricted_root
       end
+
+      navigate_parent
     end
 
     # プレビューペイン関連メソッド（NavigationController に委譲）
@@ -444,52 +435,12 @@ module Rufio
 
     private
 
-    # オーバーレイダイアログを表示してキー入力を待つヘルパーメソッド
-    # terminal_ui が利用可能な場合はオーバーレイを使用、そうでなければ従来の方法を使用
-    # @param title [String] ダイアログタイトル
-    # @param content_lines [Array<String>] コンテンツ行
-    # @param options [Hash] オプション
-    # @yield キー入力処理（ブロックが与えられた場合）
-    # @return [String] 入力されたキー
-    def show_overlay_dialog(title, content_lines, options = {}, &block)
-      # terminal_ui が利用可能で、screen と renderer が存在する場合のみオーバーレイを使用
-      use_overlay = @terminal_ui &&
-                    @terminal_ui.respond_to?(:screen) &&
-                    @terminal_ui.respond_to?(:renderer) &&
-                    @terminal_ui.screen &&
-                    @terminal_ui.renderer
-
-      if use_overlay
-        # オーバーレイを使用
-        @terminal_ui.show_overlay_dialog(title, content_lines, options, &block)
-      else
-        # フォールバック: 従来の方法
-        width = options[:width]
-        height = options[:height]
-
-        unless width && height
-          width, height = @dialog_renderer.calculate_dimensions(content_lines, {
-            title: title,
-            min_width: options[:min_width] || 40,
-            max_width: options[:max_width] || 80
-          })
-        end
-
-        x, y = @dialog_renderer.calculate_center(width, height)
-
-        @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-          border_color: options[:border_color] || "\e[37m",
-          title_color: options[:title_color] || "\e[1;33m",
-          content_color: options[:content_color] || "\e[37m"
-        })
-
-        key = block_given? ? yield : STDIN.getch
-
-        @dialog_renderer.clear_area(x, y, width, height)
-        @terminal_ui&.refresh_display
-
-        key
-      end
+    # 別モードへ入る際の終了順序はここだけで管理する。
+    def leave_other_modes(target)
+      exit_help_mode if target != :help_directory && help_mode?
+      exit_log_viewer_mode if target != :logs && log_viewer_mode?
+      exit_job_mode if target != :jobs && in_job_mode?
+      true
     end
 
     def navigate_parent
@@ -544,6 +495,7 @@ module Rufio
       when :log_viewer      then enter_log_viewer_mode
       when :command_mode    then activate_command_mode
       when :quit            then exit_request
+      when :quit_cd         then quit_to_current_directory
       else
         false
       end
@@ -551,6 +503,14 @@ module Rufio
 
     def exit_request
       @file_op_controller.show_exit_confirmation
+    end
+
+    # 確認なしで終了し、シェル関数（rufio --shell-init）が移動する先として現在のディレクトリを伝える。
+    # ヘルプ・ログビューワは rufio 内部のディレクトリを表示しているため対象外。
+    def quit_to_current_directory
+      return false if @in_help_mode || @in_log_viewer_mode
+
+      :quit_cd
     end
 
     def fzf_search
@@ -590,8 +550,6 @@ module Rufio
       true
     end
 
-
-
     def goto_start_directory
       @bookmark_controller.goto_start_directory
     end
@@ -615,19 +573,6 @@ module Rufio
       @bookmark_controller.show_script_paths_manager
     end
 
-    def navigate_to_directory(path)
-      return false unless @directory_listing
-
-      result = @directory_listing.navigate_to_path(path)
-      if result
-        @nav_controller.select_index(0)
-        @nav_controller.clear_filter_mode
-        true
-      else
-        false
-      end
-    end
-
     # zoxide 機能
     def show_zoxide_menu
       @bookmark_controller.show_zoxide_menu
@@ -641,11 +586,9 @@ module Rufio
 
     # カーソルを画面下部の入力行に移動
     def move_to_input_line
-      # 画面の最終行にカーソルを移動
-      # terminal_uiから画面の高さを取得できない場合は、24行目（デフォルト）を使用
-      screen_height = @terminal_ui&.instance_variable_get(:@screen_height) || 24
-      print "\e[#{screen_height};1H"  # 最終行の先頭にカーソル移動
-      print "\e[2K"  # 行全体をクリア
+      screen_height = @terminal_ui&.screen_height || 24
+      print "\e[#{screen_height};1H"
+      print "\e[2K"
     end
 
     # Escキーでキャンセル可能な入力処理
@@ -655,7 +598,7 @@ module Rufio
       input = []
 
       loop do
-        char = STDIN.getch
+        char = KeyInput.getch
 
         case char
         when "\e" # Escape
@@ -699,6 +642,9 @@ module Rufio
 
     # ジョブモードに入る
     def enter_job_mode
+      return true if @job_mode.active?
+
+      leave_other_modes(:jobs)
       @job_mode.activate
       @terminal_ui&.set_job_mode(@job_mode, @job_manager, @notification_manager) if @terminal_ui
       true

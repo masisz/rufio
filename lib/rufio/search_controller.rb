@@ -64,7 +64,7 @@ module Rufio
       if search_results.empty?
         puts "\n#{ConfigLoader.message('keybind.no_matches')}"
         print ConfigLoader.message('keybind.press_any_key')
-        STDIN.getch
+        KeyInput.getch
         return true
       end
 

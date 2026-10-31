@@ -134,7 +134,7 @@ module Rufio
           line = line.encode('UTF-8', invalid: :replace, undef: :replace, replace: '?')
           # Remove trailing whitespace
           line = line.rstrip
-        rescue EncodingError, ArgumentError => e
+        rescue EncodingError, ArgumentError
           # If encoding fails completely, skip this line
           wrapped << '[encoding error]'
           next
@@ -152,7 +152,7 @@ module Rufio
             wrapped << line
             next
           end
-        rescue ArgumentError => e
+        rescue ArgumentError
           # If display_width fails, just truncate by byte length
           if line.bytesize <= max_width
             wrapped << line
@@ -181,7 +181,7 @@ module Rufio
 
           # Add remaining characters
           wrapped << current_line.join unless current_line.empty?
-        rescue ArgumentError, EncodingError => e
+        rescue ArgumentError, EncodingError
           # If character iteration fails, just add the line truncated
           truncated = line.byteslice(0, [max_width, line.bytesize].min)
           wrapped << (truncated || line)
@@ -189,6 +189,29 @@ module Rufio
       end
 
       wrapped
+    end
+
+    # Shorten a path by keeping the tail and prefixing with ellipsis if longer than max_length.
+    # Optionally replaces ENV['HOME'] / Dir.home with '~' when tilde: true.
+    def shorten_path_from_end(path, max_length, tilde: false, ellipsis: '...')
+      return path.to_s if max_length <= 0
+
+      display = path.to_s
+      if tilde
+        home = Dir.home rescue ENV['HOME']
+        if home && !home.empty?
+          if display == home
+            display = '~'
+          elsif display.start_with?(home + '/')
+            display = "~#{display.delete_prefix(home)}"
+          end
+        end
+      end
+
+      return display if display.length <= max_length
+      return display[-max_length..] || display if max_length <= ellipsis.length
+
+      "#{ellipsis}#{display[-(max_length - ellipsis.length)..]}"
     end
   end
 end

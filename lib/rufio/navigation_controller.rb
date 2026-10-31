@@ -67,31 +67,18 @@ module Rufio
     # @param in_help_mode [Boolean] ヘルプモード中かどうか
     # @param in_log_viewer_mode [Boolean] ログビューワモード中かどうか
     def navigate_enter(entry, in_help_mode, in_log_viewer_mode)
-      return false unless entry
+      return false unless entry && entry[:type] == 'directory'
+      return false if in_help_mode || in_log_viewer_mode
 
-      if entry[:type] == 'directory'
-        return false if in_help_mode || in_log_viewer_mode
-
-        result = @directory_listing.navigate_to(entry[:name])
-        if result
-          @current_index = 0
-          clear_filter_mode
-        end
-        result
-      else
-        false
-      end
+      perform_navigation { @directory_listing.navigate_to(entry[:name]) }
     end
 
     def navigate_parent
-      return false unless @directory_listing
+      perform_navigation { @directory_listing.navigate_to_parent }
+    end
 
-      result = @directory_listing.navigate_to_parent
-      if result
-        @current_index = 0
-        clear_filter_mode
-      end
-      result
+    def navigate_to_directory(path)
+      perform_navigation { @directory_listing.navigate_to_path(path) }
     end
 
     def refresh
@@ -261,6 +248,17 @@ module Rufio
       else
         navigate_enter(entry, in_help_mode, in_log_viewer_mode)
       end
+    end
+
+    private
+
+    # 移動に成功したときだけ、移動後の選択・フィルタ状態を更新する。
+    def perform_navigation
+      return false unless @directory_listing
+
+      result = yield
+      clear_filter_mode if result
+      result
     end
   end
 end

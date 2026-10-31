@@ -3,19 +3,36 @@
 require 'thread'
 require_relative 'text_utils'
 require_relative 'config_loader'
+require_relative 'document_text_extractor'
+require_relative 'native_content_search'
 
 module Rufio
   # ブックマーク配下のファイル名・テキスト内容をバックグラウンドで横断検索する。
   class GlobalSearch
     SPINNER_FRAMES = ['|', '/', '-', '\\'].freeze
     SPINNER_INTERVAL = 0.12
+    # 検索語に一致した部分の表示（黒の太字・黄色背景）
+    MATCH_FG = "\e[30m\e[1m"
+    MATCH_BG = "\e[43m"
 
     attr_reader :query, :results, :errors, :selected_index, :search_type, :skipped_files
+
+    class << self
+      # nil: 利用可能なら Zig 実装を使う（RUFIO_NATIVE_SEARCH=0 で無効化）
+      attr_writer :native_search
+
+      def native_search?
+        enabled = @native_search.nil? ? ENV['RUFIO_NATIVE_SEARCH'] != '0' : @native_search
+        enabled && NativeContentSearch.available?
+      end
+    end
 
     def initialize
       @active = false
       @scanning = false
       @worker = nil
+      @document_extractor = DocumentTextExtractor.new
+      @document_cache = DocumentTextCache.new(extractor: @document_extractor)
     end
 
     def active?
@@ -63,8 +80,12 @@ module Rufio
         when :entry
           @entries << value
           @results << value if @search_type == :content || matches_query?(value)
+        when :entries
+          # Zig 実装の結果はまとめて届くので、1 フレーム 256 件の上限に縛られない
+          @entries.concat(value)
+          @results.concat(value)
         when :error then @errors << value
-        when :skipped then @skipped_files += 1
+        when :skipped then @skipped_files += value || 1
         when :done then @scanning = false
         end
       end
@@ -118,11 +139,20 @@ module Rufio
       first = [@selected_index - capacity + 1, 0].max
       @results.slice(first, capacity).to_a.each_with_index do |entry, index|
         selected = first + index == @selected_index
-        text = "#{selected ? '>' : ' '} [#{entry[:bookmark]}] #{entry[:relative_path]}"
-        text += ":#{entry[:line_number]}" if entry[:line_number]
+        prefix = "#{selected ? '>' : ' '} [#{entry[:bookmark]}] "
+        text = "#{prefix}#{entry[:relative_path]}"
+        text += if entry[:location]
+                  " - #{entry[:location]}"
+                elsif entry[:line_number]
+                  ":#{entry[:line_number]}"
+                else
+                  ''
+                end
         y = index * row_height + 3
-        write_line(screen, y, text, width, selected ? "\e[1;36m" : nil)
-        write_line(screen, y + 1, "    #{entry[:match_text]}", width) if entry[:line_number]
+        # ファイル名検索はパス、本文検索はスニペットの一致箇所をハイライトする
+        path_highlight = @search_type == :filename ? prefix.length : nil
+        write_line(screen, y, text, width, selected ? "\e[1;36m" : nil, highlight_from: path_highlight)
+        write_line(screen, y + 1, "    #{entry[:match_text]}", width, highlight_from: 4) if entry[:match_text]
       end
       if @results.empty?
         message = if @bookmark_count.zero?
@@ -160,9 +190,14 @@ module Rufio
       return unless @scanning
 
       roots, events, type, query = @roots, @events, @search_type, @query.downcase
+      native_cache = self.class.native_search? ? (@native_cache ||= NativeContentSearch::Cache.new) : nil
       @worker = Thread.new do
         begin
-          scan_roots(roots, events, type, query)
+          if native_cache && type == :content && NativeContentSearch.supports_query?(query)
+            scan_roots_natively(roots, events, query, native_cache)
+          else
+            scan_roots(roots, events, type, query)
+          end
         rescue StandardError => e
           events << [:error, e.message]
         end
@@ -230,7 +265,58 @@ module Rufio
       end
     end
 
+    # Zig 実装で走査・検索し、PDF などのドキュメントだけ Ruby 側で抽出する
+    def scan_roots_natively(roots, events, query, cache)
+      valid_roots = []
+      roots.each do |name, root|
+        root = File.expand_path(root)
+        raise Errno::ENOTDIR, root unless File.directory?(root)
+
+        valid_roots << [name, root]
+      rescue SystemCallError, IOError => e
+        events << [:error, "#{name}: #{e.message}"]
+      end
+      return if valid_roots.empty?
+
+      engine = NativeContentSearch.new(roots: valid_roots.map(&:last), query: query,
+                                       excluded_extensions: @excluded_extensions,
+                                       document_extensions: DocumentTextExtractor::EXTENSIONS, cache: cache)
+      engine.each_batch do |batch|
+        entries = []
+        batch.each do |kind, *args|
+          case kind
+          when :match, :document
+            name, root = valid_roots[args[0]]
+            path = args[1]
+            entry = { path: path, bookmark: name, relative_path: path.delete_prefix(root + File::SEPARATOR) }
+            if kind == :document
+              scan_content(entry, query, events)
+            else
+              entries << entry.merge(line_number: args[2], match_text: args[3])
+            end
+          when :error then events << [:error, args[1]]
+          when :skipped then events << [:skipped, args[0]]
+          end
+        end
+        events << [:entries, entries] unless entries.empty?
+      end
+    ensure
+      engine&.close
+    end
+
     def scan_content(entry, query, events)
+      if @document_extractor.supported?(entry[:path])
+        @document_cache.each_record(entry[:path]) do |record|
+          match_index = record[:search_text].index(query)
+          next unless match_index
+
+          snippet = record[:text][[match_index - 30, 0].max, 200].to_s.strip
+          metadata = record.reject { |key, _| key == :text || key == :search_text }
+          events << [:entry, entry.merge(metadata).merge(match_text: snippet)]
+        end
+        return
+      end
+
       File.open(entry[:path], 'rb') do |file|
         sample = file.read(8192).to_s
         if sample.include?("\0")
@@ -249,13 +335,39 @@ module Rufio
           events << [:entry, entry.merge(line_number: number, match_text: snippet)]
         end
       end
-    rescue SystemCallError, IOError => e
+    rescue SystemCallError, IOError, DocumentTextExtractor::ExtractionError => e
       events << [:error, "#{entry[:path]}: #{e.message}"]
     end
 
-    def write_line(screen, y, text, width, color = nil)
+    def write_line(screen, y, text, width, color = nil, highlight_from: nil)
       safe_text = text.scrub.gsub(/[[:cntrl:]]/, ' ')
-      screen.put_string(0, y, TextUtils.truncate_to_width(safe_text, width), fg: color)
+      visible = TextUtils.truncate_to_width(safe_text, width)
+      screen.put_string(0, y, visible, fg: color)
+      return unless highlight_from
+
+      match_ranges(visible, highlight_from).each do |start, length|
+        x = TextUtils.display_width(visible[0, start])
+        screen.put_string(x, y, visible[start, length], fg: MATCH_FG, bg: MATCH_BG)
+      end
+    end
+
+    # 検索と同じく大文字小文字を区別せず、from 文字目以降の一致位置を [開始, 長さ] で返す
+    def match_ranges(text, from)
+      needle = @query.to_s.downcase.chars
+      return [] if needle.empty?
+
+      folded = text.chars.map(&:downcase)
+      ranges = []
+      index = from
+      while index + needle.length <= folded.length
+        if folded[index, needle.length] == needle
+          ranges << [index, needle.length]
+          index += needle.length
+        else
+          index += 1
+        end
+      end
+      ranges
     end
   end
 end

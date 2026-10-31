@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative 'dialog_support'
+require_relative 'text_utils'
 require_relative 'bookmark'
 require_relative 'bookmark_storage'
 require_relative 'config_loader'
@@ -7,6 +9,8 @@ require_relative 'config_loader'
 module Rufio
   # Manages bookmark operations with interactive UI
   class BookmarkManager
+    include DialogSupport
+
     def initialize(bookmark = nil, dialog_renderer = nil)
       @bookmark = bookmark || create_default_bookmark
       @dialog_renderer = dialog_renderer
@@ -31,159 +35,29 @@ module Rufio
 
     public
 
-    # Show bookmark menu and handle user selection
-    # @param current_path [String] Current directory path
-    # @return [Symbol, nil] Action to perform (:navigate, :add, :list, :remove, :cancel)
-    def show_menu(current_path)
-      return :cancel unless @dialog_renderer
-
-      title = 'Bookmark Menu'
-      content_lines = [
-        '',
-        '[A]dd current directory to bookmarks',
-        '[L]ist bookmarks',
-        '[R]ename bookmark',
-        '[D]elete bookmark',
-        '',
-        'Press 1-9 to go to bookmark directly',
-        '',
-        'Press any other key to cancel'
-      ]
-
-      dialog_width = 45
-      dialog_height = 4 + content_lines.length
-
-      result = { action: :cancel }
-      show_overlay_dialog(title, content_lines, {
-        width: dialog_width,
-        height: dialog_height,
-        border_color: "\e[34m", # Blue
-        title_color: "\e[1;34m",   # Bold blue
-        content_color: "\e[37m"    # White
-      }) do
-        # Wait for key input
-        loop do
-          input = STDIN.getch.downcase
-
-          case input
-          when 'a'
-            result = { action: :add, path: current_path }
-            break
-          when 'l'
-            result = { action: :list }
-            break
-          when 'r'
-            result = { action: :rename }
-            break
-          when 'd'
-            result = { action: :remove }
-            break
-          when '1', '2', '3', '4', '5', '6', '7', '8', '9'
-            result = { action: :navigate, number: input.to_i }
-            break
-          else
-            # Cancel
-            result = { action: :cancel }
-            break
-          end
-        end
-        nil
-      end
-
-      result
-    end
-
-    # Add a bookmark interactively
-    # @param path [String] Path to bookmark
-    # @return [Boolean] Success status
-    def add_interactive(path)
-      return false unless @dialog_renderer
-
-      # Show floating input dialog
-      title = 'Add Bookmark'
-      prompt = 'Enter bookmark name:'
-      name = @dialog_renderer.show_input_dialog(title, prompt, {
-        border_color: "\e[34m",    # Blue
-        title_color: "\e[1;34m",   # Bold blue
-        content_color: "\e[37m"    # White
-      })
-
-      return false if name.nil? || name.empty?
-
-      # Add bookmark (name is already trimmed in show_input_dialog)
-      if @bookmark.add(path, name)
-        show_result_dialog('Bookmark Added', "Added: #{name}", :success)
-        true
-      else
-        show_result_dialog('Add Failed', 'Failed to add bookmark', :error)
-        false
-      end
+    # List all bookmarks interactively
+    # @return [Hash, nil] Selected bookmark path or nil
+    def list_interactive
+      select_bookmark_from_dialog(
+        title: 'Bookmarks',
+        header: 'Select a bookmark:',
+        border_color: "\e[34m",
+        title_color: "\e[1;34m"
+      )
     end
 
     # Rename a bookmark interactively
     # @return [Boolean] Success status
     def rename_interactive
-      bookmarks = @bookmark.list
+      selected = select_bookmark_from_dialog(
+        title: 'Rename Bookmark',
+        header: 'Select bookmark to rename:',
+        border_color: "\e[33m",
+        title_color: "\e[1;33m"
+      )
+      return false unless selected
 
-      if bookmarks.empty?
-        show_result_dialog('No Bookmarks', 'No bookmarks found', :error)
-        return false
-      end
-
-      return false unless @dialog_renderer
-
-      # Build content lines for bookmark selection
-      content_lines = ['', 'Select bookmark to rename:', '']
-      bookmarks.each_with_index do |bookmark, index|
-        # Truncate path if too long
-        display_path = bookmark[:path]
-        if display_path.start_with?(Dir.home)
-          display_path = display_path.sub(Dir.home, '~')
-        end
-        if display_path.length > 35
-          display_path = "...#{display_path[-32..]}"
-        end
-        content_lines << "  #{index + 1}. #{bookmark[:name]}"
-        content_lines << "      #{display_path}"
-      end
-      content_lines << ''
-      content_lines << 'Press 1-9 to select, ESC to cancel'
-
-      title = 'Rename Bookmark'
-      width = 60
-      height = [content_lines.length + 4, 20].min
-
-      # Wait for selection
-      selected_number = nil
-      show_overlay_dialog(title, content_lines, {
-        width: width,
-        height: height,
-        border_color: "\e[33m",    # Yellow
-        title_color: "\e[1;33m",   # Bold yellow
-        content_color: "\e[37m"    # White
-      }) do
-        loop do
-          input = STDIN.getch.downcase
-
-          if input >= '1' && input <= '9'
-            number = input.to_i
-            if number > 0 && number <= bookmarks.length
-              selected_number = number
-              break
-            end
-          elsif input == "\e" # ESC
-            break
-          end
-        end
-        nil
-      end
-
-      return false unless selected_number
-
-      # Get new name
-      bookmark_to_rename = bookmarks[selected_number - 1]
-      old_name = bookmark_to_rename[:name]
-
+      old_name = selected[:name]
       new_name = @dialog_renderer.show_input_dialog("Rename: #{old_name}", "Enter new name:", {
         border_color: "\e[33m",    # Yellow
         title_color: "\e[1;33m",   # Bold yellow
@@ -192,138 +66,25 @@ module Rufio
 
       return false if new_name.nil? || new_name.empty?
 
-      # Rename bookmark
       @bookmark.rename(old_name, new_name)
     end
 
     # Remove a bookmark interactively
     # @return [Boolean] Success status
     def remove_interactive
-      bookmarks = @bookmark.list
+      selected = select_bookmark_from_dialog(
+        title: 'Delete Bookmark',
+        header: 'Select bookmark to delete:',
+        border_color: "\e[31m",
+        title_color: "\e[1;31m"
+      )
+      return false unless selected
 
-      if bookmarks.empty?
-        show_result_dialog('No Bookmarks', 'No bookmarks found', :error)
-        return false
-      end
-
-      return false unless @dialog_renderer
-
-      # Build content lines for bookmark selection
-      content_lines = ['', 'Select bookmark to delete:', '']
-      bookmarks.each_with_index do |bookmark, index|
-        # Truncate path if too long
-        display_path = bookmark[:path]
-        if display_path.start_with?(Dir.home)
-          display_path = display_path.sub(Dir.home, '~')
-        end
-        if display_path.length > 35
-          display_path = "...#{display_path[-32..]}"
-        end
-        content_lines << "  #{index + 1}. #{bookmark[:name]}"
-        content_lines << "      #{display_path}"
-      end
-      content_lines << ''
-      content_lines << 'Press 1-9 to select, ESC to cancel'
-
-      title = 'Delete Bookmark'
-      width = 60
-      height = [content_lines.length + 4, 20].min
-
-      # Wait for selection
-      selected_number = nil
-      show_overlay_dialog(title, content_lines, {
-        width: width,
-        height: height,
-        border_color: "\e[31m",    # Red (warning)
-        title_color: "\e[1;31m",   # Bold red
-        content_color: "\e[37m"    # White
-      }) do
-        loop do
-          input = STDIN.getch.downcase
-
-          if input >= '1' && input <= '9'
-            number = input.to_i
-            if number > 0 && number <= bookmarks.length
-              selected_number = number
-              break
-            end
-          elsif input == "\e" # ESC
-            break
-          end
-        end
-        nil
-      end
-
-      return false unless selected_number
-
-      # Confirm deletion
-      bookmark_to_remove = bookmarks[selected_number - 1]
-      if show_remove_confirmation(bookmark_to_remove[:name])
-        @bookmark.remove(bookmark_to_remove[:name])
+      if show_remove_confirmation(selected[:name])
+        @bookmark.remove(selected[:name])
       else
         false
       end
-    end
-
-    # List all bookmarks interactively
-    # @return [Hash, nil] Selected bookmark path or nil
-    def list_interactive
-      bookmarks = @bookmark.list
-
-      if bookmarks.empty?
-        show_result_dialog('No Bookmarks', 'No bookmarks found', :error)
-        return nil
-      end
-
-      return nil unless @dialog_renderer
-
-      # Build content lines
-      content_lines = ['', 'Select a bookmark:','']
-      bookmarks.each_with_index do |bookmark, index|
-        # Truncate path if too long
-        display_path = bookmark[:path]
-        if display_path.start_with?(Dir.home)
-          display_path = display_path.sub(Dir.home, '~')
-        end
-        if display_path.length > 35
-          display_path = "...#{display_path[-32..]}"
-        end
-        content_lines << "  #{index + 1}. #{bookmark[:name]}"
-        content_lines << "      #{display_path}"
-      end
-      content_lines << ''
-      content_lines << 'Press 1-9 to select, ESC to cancel'
-
-      title = 'Bookmarks'
-      width = 60
-      height = [content_lines.length + 4, 20].min
-
-      # Wait for selection
-      selected_bookmark = nil
-      show_overlay_dialog(title, content_lines, {
-        width: width,
-        height: height,
-        border_color: "\e[34m",    # Blue
-        title_color: "\e[1;34m",   # Bold blue
-        content_color: "\e[37m"    # White
-      }) do
-        loop do
-          input = STDIN.getch.downcase
-
-          if input >= '1' && input <= '9'
-            number = input.to_i
-            if number > 0 && number <= bookmarks.length
-              selected_bookmark = bookmarks[number - 1]
-              break
-            end
-          elsif input == "\e" # ESC
-            break
-          end
-        end
-        nil
-      end
-
-      selected_bookmark
     end
 
     # Get bookmark by number
@@ -390,46 +151,53 @@ module Rufio
 
     private
 
-    # オーバーレイダイアログを表示してキー入力を待つヘルパーメソッド
-    def show_overlay_dialog(title, content_lines, options = {}, &block)
-      # terminal_ui が利用可能で、screen と renderer が存在する場合のみオーバーレイを使用
-      use_overlay = @terminal_ui &&
-                    @terminal_ui.respond_to?(:screen) &&
-                    @terminal_ui.respond_to?(:renderer) &&
-                    @terminal_ui.screen &&
-                    @terminal_ui.renderer
+    def select_bookmark_from_dialog(title:, header:, border_color:, title_color:)
+      bookmarks = @bookmark.list
 
-      if use_overlay
-        # オーバーレイを使用
-        @terminal_ui.show_overlay_dialog(title, content_lines, options, &block)
-      else
-        # フォールバック: 従来の方法
-        width = options[:width]
-        height = options[:height]
-
-        unless width && height
-          width, height = @dialog_renderer.calculate_dimensions(content_lines, {
-            title: title,
-            min_width: options[:min_width] || 40,
-            max_width: options[:max_width] || 80
-          })
-        end
-
-        x, y = @dialog_renderer.calculate_center(width, height)
-
-        @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-          border_color: options[:border_color] || "\e[37m",
-          title_color: options[:title_color] || "\e[1;33m",
-          content_color: options[:content_color] || "\e[37m"
-        })
-
-        key = block_given? ? yield : STDIN.getch
-
-        @dialog_renderer.clear_area(x, y, width, height)
-        @terminal_ui&.refresh_display
-
-        key
+      if bookmarks.empty?
+        show_result_dialog('No Bookmarks', 'No bookmarks found', :error)
+        return nil
       end
+
+      return nil unless @dialog_renderer
+
+      content_lines = ['', header, '']
+      bookmarks.each_with_index do |bookmark, index|
+        display_path = TextUtils.shorten_path_from_end(bookmark[:path], 35, tilde: true)
+        content_lines << "  #{index + 1}. #{bookmark[:name]}"
+        content_lines << "      #{display_path}"
+      end
+      content_lines << ''
+      content_lines << 'Press 1-9 to select, ESC to cancel'
+
+      width = 60
+      height = [content_lines.length + 4, 20].min
+
+      selected_bookmark = nil
+      show_overlay_dialog(title, content_lines, {
+        width: width,
+        height: height,
+        border_color: border_color,
+        title_color: title_color,
+        content_color: "\e[37m"
+      }) do
+        loop do
+          input = KeyInput.getch.downcase
+
+          if input >= '1' && input <= '9'
+            number = input.to_i
+            if number > 0 && number <= bookmarks.length
+              selected_bookmark = bookmarks[number - 1]
+              break
+            end
+          elsif input == "\e"
+            break
+          end
+        end
+        nil
+      end
+
+      selected_bookmark
     end
 
     # Show result dialog with success or error styling
@@ -483,35 +251,13 @@ module Rufio
         ''
       ]
 
-      title = 'Confirm Delete'
-      width = 50
-      height = content_lines.length + 4
-
-      # Wait for confirmation
-      confirmed = false
-      show_overlay_dialog(title, content_lines, {
-        width: width,
-        height: height,
+      confirm_dialog('Confirm Delete', content_lines, {
+        width: 50,
+        height: content_lines.length + 4,
         border_color: "\e[33m",    # Yellow (warning)
         title_color: "\e[1;33m",   # Bold yellow
         content_color: "\e[37m"    # White
-      }) do
-        loop do
-          input = STDIN.getch.downcase
-
-          case input
-          when 'y'
-            confirmed = true
-            break
-          when 'n', "\e" # n or ESC
-            confirmed = false
-            break
-          end
-        end
-        nil
-      end
-
-      confirmed
+      })
     end
   end
 end

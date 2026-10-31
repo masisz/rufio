@@ -73,7 +73,8 @@ module Rufio
           'Tab / Shift+Tab: Next / previous bookmark',
           "1-9: Jump to bookmark | #{key(:start_dir)}: Start directory",
           "#{key(:zoxide)}: Directory history (zoxide)",
-          "#{key(:quit)}: Quit (with confirmation)"
+          "#{key(:quit)}: Quit (with confirmation)",
+          "#{key(:quit_cd)}: Quit and cd to the current directory (rufio --shell-init)"
         ]
       when 'Modes'
         [
@@ -87,6 +88,10 @@ module Rufio
           'Search file names or text inside every bookmarked directory.',
           'Tab: Switch File names / Content (literal, case insensitive)',
           'Content results show file, line number and matching text.',
+          'Documents: .pdf (page), .xlsx (sheet/cell), .pptx (slide)',
+          'Ruby extracts document text; no Python or Office is needed.',
+          'Unchanged document text is cached in memory for faster searches.',
+          'Images need OCR; legacy .xls/.ppt and slide notes are unsupported.',
           'Yellow Searching... + spinner: Search is running.',
           'Green Search complete: All bookmarked directories scanned.',
           'Exclude extensions in ~/.config/rufio/config.rb:',

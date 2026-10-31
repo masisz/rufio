@@ -2,6 +2,7 @@
 
 require 'fiddle'
 require 'fiddle/import'
+require 'rbconfig'
 
 module Rufio
   # Zig拡張の非同期FFI層
@@ -9,21 +10,58 @@ module Rufio
   module NativeScannerZigFFI
     extend Fiddle::Importer
 
-    LIB_PATH = File.expand_path('native/rufio_zig.bundle', __dir__)
+    NATIVE_DIR = File.expand_path('native', __dir__)
+
+    # Gem に同梱するプラットフォーム（lib/rufio/native/<platform>/<file>）
+    PLATFORMS = {
+      'aarch64-macos' => 'librufio_zig.dylib',
+      'x86_64-macos' => 'librufio_zig.dylib',
+      'x86_64-linux-gnu' => 'librufio_zig.so',
+      'aarch64-linux-gnu' => 'librufio_zig.so',
+      'x86_64-linux-musl' => 'librufio_zig.so',
+      'aarch64-linux-musl' => 'librufio_zig.so',
+      'x86_64-windows' => 'rufio_zig.dll',
+      'aarch64-windows' => 'rufio_zig.dll'
+    }.freeze
 
     @loaded = false
     @available = false
+    @loaded_path = nil
 
     class << self
+      attr_reader :loaded_path
+
+      # RbConfig の host_os / host_cpu から同梱バイナリのディレクトリ名を決める（非対応なら nil）
+      def platform_dir(host_os = RbConfig::CONFIG['host_os'], host_cpu = RbConfig::CONFIG['host_cpu'])
+        cpu = case host_cpu.to_s
+              when /\A(arm64|aarch64)/i then 'aarch64'
+              when /\A(x86_64|x64|amd64)\z/i then 'x86_64'
+              end
+        return nil unless cpu
+
+        case host_os.to_s
+        when /darwin/ then "#{cpu}-macos"
+        when /linux/ then "#{cpu}-linux-#{host_os.to_s.include?('musl') ? 'musl' : 'gnu'}"
+        when /mingw|mswin/ then "#{cpu}-windows"
+        end
+      end
+
+      def library_path(host_os = RbConfig::CONFIG['host_os'], host_cpu = RbConfig::CONFIG['host_cpu'])
+        dir = platform_dir(host_os, host_cpu)
+        dir && File.join(NATIVE_DIR, dir, PLATFORMS.fetch(dir))
+      end
+
       def load!
         return @available if @loaded
 
         @loaded = true
+        path = library_path
 
-        if File.exist?(LIB_PATH)
+        if path && File.exist?(path)
           begin
             # 動的ライブラリをロード
-            dlload LIB_PATH
+            dlload path
+            @loaded_path = path
 
             # ABI Boundary: Ruby ABI非依存のC関数（非同期版）
             extern 'uint64_t core_async_create()'
@@ -39,6 +77,7 @@ module Rufio
             extern 'char* core_async_version()'
 
             @available = true
+            load_search_functions!
           rescue StandardError => e
             warn "Failed to load zig extension: #{e.message}" if ENV['RUFIO_DEBUG']
             @available = false
@@ -55,9 +94,33 @@ module Rufio
         @available
       end
 
+      # コンテンツ検索 API（古いライブラリには存在しない）
+      def search_available?
+        load! unless @loaded
+        @search_available == true
+      end
+
       # バージョン取得
       def version
         core_async_version.to_s
+      end
+
+      private
+
+      def load_search_functions!
+        extern 'uint64_t core_search_create(const char*, size_t, const char*, size_t, const char*, size_t, const char*, size_t, uint32_t, uint64_t)'
+        extern 'uint8_t core_search_state(uint64_t)'
+        extern 'void* core_search_drain(uint64_t, void*)'
+        extern 'uint64_t core_search_skipped(uint64_t)'
+        extern 'void core_search_cancel(uint64_t)'
+        extern 'void core_search_destroy(uint64_t)'
+        extern 'uint64_t core_cache_create(uint64_t)'
+        extern 'uint64_t core_cache_bytes(uint64_t)'
+        extern 'void core_cache_destroy(uint64_t)'
+        @search_available = true
+      rescue Fiddle::DLError => e
+        warn "Zig content search unavailable: #{e.message}" if ENV['RUFIO_DEBUG']
+        @search_available = false
       end
     end
   end
@@ -200,12 +263,12 @@ module Rufio
   if NativeScannerZigFFI.load!
     class NativeScanner
       class << self
-        # zigモードを追加
+        # zigモードを追加（autoモードの優先順位: Zig > Ruby）
         alias_method :original_mode=, :mode= unless method_defined?(:original_mode=)
 
         def mode=(value)
           case value
-          when 'zig'
+          when 'auto', 'zig'
             if NativeScannerZigFFI.available?
               @mode = 'zig'
               @current_library = nil
@@ -214,7 +277,7 @@ module Rufio
               @current_library = nil
             end
           else
-            original_mode=(value)
+            send(:original_mode=, value)
           end
         end
 
@@ -222,24 +285,10 @@ module Rufio
         def scan_directory_with_zig(path)
           raise StandardError, "Directory does not exist: #{path}" unless Dir.exist?(path)
 
-          # 非同期スキャナーを作成してスキャン
           scanner = NativeScannerZigCore.new
           begin
             scanner.scan_async(path)
-            entries = scanner.wait(timeout: 60)
-
-            # 結果の形式を統一（type フィールドを追加）
-            entries.map do |entry|
-              {
-                name: entry[:name],
-                type: entry[:is_dir] ? 'directory' : 'file',
-                size: entry[:size],
-                mtime: entry[:mtime],
-                mode: 0,
-                executable: entry[:executable],
-                hidden: entry[:hidden]
-              }
-            end
+            normalize_zig_entries(scanner.wait(timeout: 60))
           ensure
             scanner.close
           end
@@ -254,19 +303,7 @@ module Rufio
           scanner = NativeScannerZigCore.new
           begin
             scanner.scan_fast_async(path, max_entries)
-            entries = scanner.wait(timeout: 60)
-
-            entries.map do |entry|
-              {
-                name: entry[:name],
-                type: entry[:is_dir] ? 'directory' : 'file',
-                size: entry[:size],
-                mtime: entry[:mtime],
-                mode: 0,
-                executable: entry[:executable],
-                hidden: entry[:hidden]
-              }
-            end
+            normalize_zig_entries(scanner.wait(timeout: 60))
           ensure
             scanner.close
           end
@@ -324,28 +361,19 @@ module Rufio
           original.merge(zig: NativeScannerZigFFI.available?)
         end
 
-        # autoモードの優先順位を更新（zig > ruby）
-        def mode=(value)
-          case value
-          when 'auto'
-            # 優先順位: Zig > Ruby
-            if NativeScannerZigFFI.available?
-              @mode = 'zig'
-              @current_library = nil
-            else
-              @mode = 'ruby'
-              @current_library = nil
-            end
-          when 'zig'
-            if NativeScannerZigFFI.available?
-              @mode = 'zig'
-              @current_library = nil
-            else
-              @mode = 'ruby'
-              @current_library = nil
-            end
-          else
-            send(:original_mode=, value)
+        private
+
+        def normalize_zig_entries(entries)
+          entries.map do |entry|
+            {
+              name: entry[:name],
+              type: entry[:is_dir] ? 'directory' : 'file',
+              size: entry[:size],
+              mtime: entry[:mtime],
+              mode: 0,
+              executable: entry[:executable],
+              hidden: entry[:hidden]
+            }
           end
         end
       end

@@ -19,147 +19,91 @@ module Rufio
     YAML_CONFIG_PATH = File.join(CONFIG_DIR, 'config.yml').freeze
     LOCAL_YAML_PATH = './rufio.yml'
 
+    # Base English message definitions
+    BASE_MESSAGES = {
+      # Application messages
+      'app.interrupted' => 'rufio interrupted',
+      'app.error_occurred' => 'Error occurred',
+      'app.terminated' => 'rufio terminated',
+
+      # File operations
+      'file.not_found' => 'File not found',
+      'file.not_readable' => 'File not readable',
+      'file.read_error' => 'File read error',
+      'file.binary_file' => 'Binary file',
+      'file.cannot_preview' => 'Cannot preview',
+      'file.encoding_error' => 'Character encoding error - cannot read file',
+      'file.preview_error' => 'Preview error',
+      'file.error_prefix' => 'Error',
+
+      # Keybind messages
+      'keybind.invalid_key' => 'invalid key',
+      'keybind.search_text' => 'Search text: ',
+      'keybind.no_matches' => 'No matches found.',
+      'keybind.press_any_key' => 'Press any key to continue...',
+      'keybind.input_filename' => 'Enter filename: ',
+      'keybind.input_dirname' => 'Enter directory name: ',
+      'keybind.invalid_filename' => 'Invalid filename (cannot contain / or \\)',
+      'keybind.invalid_dirname' => 'Invalid directory name (cannot contain / or \\)',
+      'keybind.file_exists' => 'File already exists',
+      'keybind.directory_exists' => 'Directory already exists',
+      'keybind.file_created' => 'File created',
+      'keybind.directory_created' => 'Directory created',
+      'keybind.creation_error' => 'Creation error',
+
+      # UI messages
+      'ui.operation_prompt' => 'Operation: ',
+
+      # Help text
+      'help.full' => 'j/k:move h:back l:enter o:open g/}:top/bottom G:global-search r:refresh f:filter s:search F:content a/A:create m/p/x:ops b:bookmark z:zoxide 1-9:goto q:quit',
+      'help.short' => 'j/k:move h:back l:enter o:open f:filter s:search b:bookmark z:zoxide 1-9:goto q:quit',
+
+      # Health check messages
+      'health.title' => 'rufio Health Check',
+      'health.ruby_version' => 'Ruby version',
+      'health.required_gems' => 'Required gems',
+      'health.fzf' => 'fzf (file search)',
+      'health.rga' => 'rga (content search)',
+      'health.zoxide' => 'zoxide (directory history)',
+      'health.bat' => 'bat (syntax highlight)',
+      'health.file_opener' => 'System file opener',
+      'health.summary' => 'Summary:',
+      'health.ok' => 'OK',
+      'health.warnings' => 'Warnings',
+      'health.errors' => 'Errors',
+      'health.all_passed' => 'All checks passed! rufio is ready to use.',
+      'health.critical_missing' => 'Some critical components are missing. rufio may not work properly.',
+      'health.optional_missing' => 'Some optional features are unavailable. Basic functionality will work.',
+      'health.all_gems_installed' => 'All required gems installed',
+      'health.missing_gems' => 'Missing gems',
+      'health.gem_install_instruction' => 'Run: gem install',
+      'health.tool_not_found' => 'not found',
+      'health.unknown_platform' => 'Unknown platform',
+      'health.file_open_may_not_work' => 'File opening may not work properly',
+      'health.macos_opener' => 'macOS file opener',
+      'health.linux_opener' => 'Linux file opener',
+      'health.windows_opener' => 'Windows file opener',
+      'health.install_brew' => 'Install: brew install',
+      'health.install_apt' => 'Install: apt install',
+      'health.install_guide' => 'Install: Check the installation guide for your platform',
+      'health.rga_releases' => 'Install: https://github.com/phiresky/ripgrep-all/releases',
+      'health.ruby_upgrade_needed' => 'Please upgrade Ruby to version 2.7.0 or higher'
+    }.freeze
+
     # Multi-language message definitions
     MESSAGES = {
-      'en' => {
-        # Application messages
-        'app.interrupted' => 'rufio interrupted',
-        'app.error_occurred' => 'Error occurred',
-        'app.terminated' => 'rufio terminated',
-
-        # File operations
-        'file.not_found' => 'File not found',
-        'file.not_readable' => 'File not readable',
-        'file.read_error' => 'File read error',
-        'file.binary_file' => 'Binary file',
-        'file.cannot_preview' => 'Cannot preview',
-        'file.encoding_error' => 'Character encoding error - cannot read file',
-        'file.preview_error' => 'Preview error',
-        'file.error_prefix' => 'Error',
-
-        # Keybind messages
-        'keybind.invalid_key' => 'invalid key',
-        'keybind.search_text' => 'Search text: ',
-        'keybind.no_matches' => 'No matches found.',
-        'keybind.press_any_key' => 'Press any key to continue...',
-        'keybind.input_filename' => 'Enter filename: ',
-        'keybind.input_dirname' => 'Enter directory name: ',
-        'keybind.invalid_filename' => 'Invalid filename (cannot contain / or \\)',
-        'keybind.invalid_dirname' => 'Invalid directory name (cannot contain / or \\)',
-        'keybind.file_exists' => 'File already exists',
-        'keybind.directory_exists' => 'Directory already exists',
-        'keybind.file_created' => 'File created',
-        'keybind.directory_created' => 'Directory created',
-        'keybind.creation_error' => 'Creation error',
-
-        # UI messages
-        'ui.operation_prompt' => 'Operation: ',
-
-        # Help text
-        'help.full' => 'j/k:move h:back l:enter o:open g/}:top/bottom G:global-search r:refresh f:filter s:search F:content a/A:create m/p/x:ops b:bookmark z:zoxide 1-9:goto q:quit',
-        'help.short' => 'j/k:move h:back l:enter o:open f:filter s:search b:bookmark z:zoxide 1-9:goto q:quit',
-
-        # Health check messages
-        'health.title' => 'rufio Health Check',
-        'health.ruby_version' => 'Ruby version',
-        'health.required_gems' => 'Required gems',
-        'health.fzf' => 'fzf (file search)',
-        'health.rga' => 'rga (content search)',
-        'health.zoxide' => 'zoxide (directory history)',
-        'health.bat' => 'bat (syntax highlight)',
-        'health.file_opener' => 'System file opener',
-        'health.summary' => 'Summary:',
-        'health.ok' => 'OK',
-        'health.warnings' => 'Warnings',
-        'health.errors' => 'Errors',
-        'health.all_passed' => 'All checks passed! rufio is ready to use.',
-        'health.critical_missing' => 'Some critical components are missing. rufio may not work properly.',
-        'health.optional_missing' => 'Some optional features are unavailable. Basic functionality will work.',
-        'health.all_gems_installed' => 'All required gems installed',
-        'health.missing_gems' => 'Missing gems',
-        'health.gem_install_instruction' => 'Run: gem install',
-        'health.tool_not_found' => 'not found',
-        'health.unknown_platform' => 'Unknown platform',
-        'health.file_open_may_not_work' => 'File opening may not work properly',
-        'health.macos_opener' => 'macOS file opener',
-        'health.linux_opener' => 'Linux file opener',
-        'health.windows_opener' => 'Windows file opener',
-        'health.install_brew' => 'Install: brew install',
-        'health.install_apt' => 'Install: apt install',
-        'health.install_guide' => 'Install: Check the installation guide for your platform',
-        'health.rga_releases' => 'Install: https://github.com/phiresky/ripgrep-all/releases',
-        'health.ruby_upgrade_needed' => 'Please upgrade Ruby to version 2.7.0 or higher'
-      },
-
-      'ja' => {
-        # Application messages
-        'app.interrupted' => 'rufio interrupted',
-        'app.error_occurred' => 'Error occurred',
-        'app.terminated' => 'rufio terminated',
-
-        # File operations
-        'file.not_found' => 'File not found',
-        'file.not_readable' => 'File not readable',
-        'file.read_error' => 'File read error',
-        'file.binary_file' => 'Binary file',
-        'file.cannot_preview' => 'Cannot preview',
+      'en' => BASE_MESSAGES,
+      'ja' => BASE_MESSAGES.merge(
         'file.encoding_error' => 'Encoding error - cannot read file',
-        'file.preview_error' => 'Preview error',
-        'file.error_prefix' => 'Error',
-
-        # Keybind messages
         'keybind.invalid_key' => 'Invalid key',
         'keybind.search_text' => 'Search: ',
-        'keybind.no_matches' => 'No matches found.',
-        'keybind.press_any_key' => 'Press any key to continue...',
-        'keybind.input_filename' => 'Enter filename: ',
-        'keybind.input_dirname' => 'Enter directory name: ',
-        'keybind.invalid_filename' => 'Invalid filename (cannot contain / or \\)',
-        'keybind.invalid_dirname' => 'Invalid directory name (cannot contain / or \\)',
-        'keybind.file_exists' => 'File already exists',
-        'keybind.directory_exists' => 'Directory already exists',
-        'keybind.file_created' => 'File created',
-        'keybind.directory_created' => 'Directory created',
-        'keybind.creation_error' => 'Creation error',
-
-        # UI messages
-        'ui.operation_prompt' => 'Operation: ',
-
-        # Help text
         'help.full' => 'j/k:move h:back l:enter o:open g/}:top/end G:global-search r:refresh f:filter s:search F:content a/A:create m/c/x:ops b:bookmark z:zoxide 1-9:jump q:quit',
         'help.short' => 'j/k:move h:back l:enter o:open f:filter s:search b:bookmark z:zoxide 1-9:jump q:quit',
-
-        # Health check messages
-        'health.title' => 'rufio Health Check',
-        'health.ruby_version' => 'Ruby version',
-        'health.required_gems' => 'Required gems',
-        'health.fzf' => 'fzf (file search)',
-        'health.rga' => 'rga (content search)',
-        'health.zoxide' => 'zoxide (directory history)',
-        'health.bat' => 'bat (syntax highlight)',
-        'health.file_opener' => 'System file opener',
-        'health.summary' => 'Summary:',
-        'health.ok' => 'OK',
-        'health.warnings' => 'Warnings',
-        'health.errors' => 'Errors',
-        'health.all_passed' => 'All checks passed! rufio is ready to use.',
         'health.critical_missing' => 'Critical components missing. rufio may not work properly.',
         'health.optional_missing' => 'Optional features unavailable. Basic features will work.',
         'health.all_gems_installed' => 'All required gems are installed',
-        'health.missing_gems' => 'Missing gems',
-        'health.gem_install_instruction' => 'Run: gem install',
-        'health.tool_not_found' => 'not found',
-        'health.unknown_platform' => 'Unknown platform',
-        'health.file_open_may_not_work' => 'File open may not work properly',
-        'health.macos_opener' => 'macOS file opener',
-        'health.linux_opener' => 'Linux file opener',
-        'health.windows_opener' => 'Windows file opener',
-        'health.install_brew' => 'Install: brew install',
-        'health.install_apt' => 'Install: apt install',
-        'health.install_guide' => 'Install: Check the installation guide for your platform',
-        'health.rga_releases' => 'Install: https://github.com/phiresky/ripgrep-all/releases',
-        'health.ruby_upgrade_needed' => 'Please upgrade Ruby to version 2.7.0 or higher'
-      }
+        'health.file_open_may_not_work' => 'File open may not work properly'
+      ).freeze
     }.freeze
 
     class << self
@@ -272,12 +216,19 @@ module Rufio
         return [] unless File.exist?(path)
 
         yaml = YAML.safe_load(File.read(path), symbolize_names: true)
-        return [] unless yaml.is_a?(Array)
-
-        yaml.select { |b| b.is_a?(Hash) && b[:path] && b[:name] }
+        filter_valid_bookmarks(yaml)
       rescue StandardError => e
         warn "Failed to load bookmarks: #{e.message}"
         []
+      end
+
+      # 有効なブックマーク要素のみを抽出
+      # @param bookmarks [Array<Hash>] ブックマーク配列
+      # @return [Array<Hash>] フィルタ済みブックマーク配列
+      def filter_valid_bookmarks(bookmarks)
+        return [] unless bookmarks.is_a?(Array)
+
+        bookmarks.select { |b| b.is_a?(Hash) && b[:path] && b[:name] }
       end
 
       # ブックマークを保存
@@ -398,9 +349,9 @@ module Rufio
       end
 
       def detect_language
-        # Only BENIYA_LANG environment variable takes precedence
+        # RUFIO_LANG or BENIYA_LANG (legacy) environment variable takes precedence
         # This ensures English is default unless explicitly requested
-        env_lang = ENV['BENIYA_LANG']
+        env_lang = ENV['RUFIO_LANG'] || ENV['BENIYA_LANG']
         
         if env_lang && !env_lang.empty?
           # Extract language code (e.g., 'ja_JP.UTF-8' -> 'ja')

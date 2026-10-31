@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'open3'
+require_relative 'script_runner'
 
 module Rufio
   # コマンドモード - DSLコマンドを実行するための統一インターフェース
@@ -37,14 +38,8 @@ module Rufio
     # @param config_file [String] 設定ファイルのパス
     # @param job_manager [JobManager] ジョブマネージャー
     def setup_script_path_manager(config_file:, job_manager:)
-      @job_manager = job_manager
       @script_path_manager = ScriptPathManager.new(config_file)
-      # ScriptRunnerも設定（ScriptPathManagerのパスを使用）
-      @script_runner = ScriptRunner.new(
-        script_paths: @script_path_manager.paths,
-        job_manager: job_manager,
-        command_logger: @background_executor&.command_logger
-      )
+      setup_script_runner(script_paths: @script_path_manager.paths, job_manager: job_manager)
     end
 
     # 閲覧中ディレクトリを更新
@@ -214,27 +209,28 @@ module Rufio
       # コマンドが空の場合
       return { success: false, error: "コマンドが指定されていません" } if shell_command.strip.empty?
 
-      begin
-        # Open3を使って標準出力と標準エラーを分離して取得
-        stdout, stderr, status = Open3.capture3(shell_command)
+      run_shell_capture(shell_command)
+    end
 
-        result = {
-          success: status.success?,
-          output: stdout.strip,
-          stderr: stderr.strip
-        }
+    # Open3.capture3 によるコマンド実行と結果ハッシュの組み立て
+    def run_shell_capture(command, chdir: nil, not_found_label: "コマンド", error_label: "コマンド実行")
+      stdout, stderr, status = if chdir
+                                 Open3.capture3(command, chdir: chdir)
+                               else
+                                 Open3.capture3(command)
+                               end
 
-        # コマンドが失敗した場合、エラーメッセージを追加
-        unless status.success?
-          result[:error] = "コマンドが失敗しました (終了コード: #{status.exitstatus})"
-        end
-
-        result
-      rescue Errno::ENOENT => e
-        { success: false, error: "コマンドが見つかりません: #{e.message}" }
-      rescue StandardError => e
-        { success: false, error: "コマンド実行エラー: #{e.message}" }
-      end
+      result = {
+        success: status.success?,
+        output: stdout.strip,
+        stderr: stderr.strip
+      }
+      result[:error] = "コマンドが失敗しました (終了コード: #{status.exitstatus})" unless status.success?
+      result
+    rescue Errno::ENOENT => e
+      { success: false, error: "#{not_found_label}が見つかりません: #{e.message}" }
+    rescue StandardError => e
+      { success: false, error: "#{error_label}エラー: #{e.message}" }
     end
 
     # スクリプトを実行する（@プレフィックス用）
@@ -276,36 +272,17 @@ module Rufio
     # @param args [String, nil] スクリプトに渡す引数
     # @return [String, Hash] 実行結果メッセージ
     def execute_local_script(script, working_dir, args = nil)
-      command = build_script_command(script)
-      command = "#{command} #{args}" if args && !args.empty?
+      runner = ScriptRunner.new(
+        script_paths: [], job_manager: @job_manager,
+        command_logger: @background_executor&.command_logger
+      )
+      result = runner.execute(script, working_dir: working_dir, args: args)
+      return "🚀 ジョブを開始: #{script[:name]}" if @job_manager
 
-      if @job_manager
-        job = @job_manager.add_job(
-          name: script[:name],
-          path: working_dir,
-          command: command
-        )
-        job.start
-
-        Thread.new do
-          execute_script_in_background(job, script, working_dir, command)
-        end
-
-        "🚀 ジョブを開始: #{script[:name]}"
-      else
-        # 同期実行
-        stdout, stderr, status = Open3.capture3(command, chdir: working_dir)
-        result = {
-          success: status.success?,
-          output: stdout.strip,
-          stderr: stderr.strip
-        }
-
-        # Logsに記録
-        log_execution("@#{script[:name]}", result)
-
-        result
-      end
+      # CommandMode の表示用の戻り値は維持する。
+      result = { success: result[:success], output: result[:output].strip, stderr: result[:error].strip }
+      log_execution("@#{script[:name]}", result)
+      result
     end
 
     # 実行結果をCommandLoggerに記録
@@ -324,59 +301,6 @@ module Rufio
       )
     end
 
-    # スクリプトの実行コマンドを構築
-    # @param script [Hash] スクリプト情報
-    # @return [String] 実行コマンド
-    def build_script_command(script)
-      path = script[:path]
-      ext = File.extname(path).downcase
-
-      case ext
-      when '.rb'
-        "ruby #{path.shellescape}"
-      when '.py'
-        "python3 #{path.shellescape}"
-      when '.js'
-        "node #{path.shellescape}"
-      when '.ts'
-        "ts-node #{path.shellescape}"
-      when '.pl'
-        "perl #{path.shellescape}"
-      when '.ps1'
-        "pwsh #{path.shellescape}"
-      else
-        path.shellescape
-      end
-    end
-
-    # ローカルスクリプトをバックグラウンドで実行
-    def execute_script_in_background(job, script, working_dir, command)
-      stdout, stderr, status = Open3.capture3(command, chdir: working_dir)
-
-      job.append_log(stdout) unless stdout.empty?
-      job.append_log(stderr) unless stderr.empty?
-
-      if status.success?
-        job.complete(exit_code: status.exitstatus)
-      else
-        job.fail(exit_code: status.exitstatus)
-      end
-
-      # Logsに記録
-      log_execution("@#{script[:name]}", {
-        success: status.success?,
-        output: stdout.strip,
-        stderr: stderr.strip
-      })
-
-      @job_manager&.notify_completion(job)
-    rescue StandardError => e
-      job.append_log("Error: #{e.message}")
-      job.fail(exit_code: -1)
-      log_execution("@#{script[:name]}", { success: false, output: '', stderr: e.message })
-      @job_manager&.notify_completion(job)
-    end
-
     # rakeタスクを実行する
     # @param task_name [String] タスク名
     # @param working_dir [String, nil] 作業ディレクトリ
@@ -393,32 +317,14 @@ module Rufio
       working_dir ||= Dir.pwd
       shell_command = "rake #{task_name.shellescape}"
 
-      begin
-        stdout, stderr, status = Open3.capture3(shell_command, chdir: working_dir)
-
-        result = {
-          success: status.success?,
-          output: stdout.strip,
-          stderr: stderr.strip
-        }
-
-        unless status.success?
-          result[:error] = "コマンドが失敗しました (終了コード: #{status.exitstatus})"
-        end
-
-        # Logsに記録
-        log_execution("rake:#{task_name}", result)
-
-        result
-      rescue Errno::ENOENT => e
-        result = { success: false, error: "rakeが見つかりません: #{e.message}" }
-        log_execution("rake:#{task_name}", result)
-        result
-      rescue StandardError => e
-        result = { success: false, error: "rake実行エラー: #{e.message}" }
-        log_execution("rake:#{task_name}", result)
-        result
-      end
+      result = run_shell_capture(
+        shell_command,
+        chdir: working_dir,
+        not_found_label: "rake",
+        error_label: "rake実行"
+      )
+      log_execution("rake:#{task_name}", result)
+      result
     end
 
     # スクリプトパスからスクリプトを検索して実行を試みる

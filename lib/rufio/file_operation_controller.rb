@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative 'dialog_support'
+
 require_relative 'file_operations'
 require_relative 'dialog_renderer'
 require_relative 'logger'
@@ -8,6 +10,8 @@ module Rufio
   # ファイル操作専用コントローラ
   # KeybindHandler からファイル作成・削除・リネーム・移動・コピー系メソッドを分離し、単一責任原則に準拠
   class FileOperationController
+    include DialogSupport
+
     # Dialog size constants
     CONFIRMATION_DIALOG_WIDTH = 45
     DIALOG_BORDER_HEIGHT = 4
@@ -35,51 +39,15 @@ module Rufio
     # ============================
 
     def create_file
-      current_path = @directory_listing&.current_path || Dir.pwd
-
-      filename = @dialog_renderer.show_input_dialog("Create File", "Enter file name:", {
-        border_color: "\e[32m",
-        title_color: "\e[1;32m",
-        content_color: "\e[37m"
-      })
-
-      return false if filename.nil? || filename.empty?
-
-      result = @file_operations.create_file(current_path, filename)
-
-      if result.success
-        @directory_listing.refresh
-        entries = @directory_listing.list_entries
-        new_file_index = entries.find_index { |entry| entry[:name] == filename }
-        @nav_controller.select_index(new_file_index) if new_file_index
+      prompt_and_select_entry("Create File", "Enter file name:", "\e[32m", "\e[1;32m") do |path, name|
+        @file_operations.create_file(path, name)
       end
-
-      @terminal_ui&.refresh_display
-      result.success
     end
 
     def create_directory
-      current_path = @directory_listing&.current_path || Dir.pwd
-
-      dirname = @dialog_renderer.show_input_dialog("Create Directory", "Enter directory name:", {
-        border_color: "\e[34m",
-        title_color: "\e[1;34m",
-        content_color: "\e[37m"
-      })
-
-      return false if dirname.nil? || dirname.empty?
-
-      result = @file_operations.create_directory(current_path, dirname)
-
-      if result.success
-        @directory_listing.refresh
-        entries = @directory_listing.list_entries
-        new_dir_index = entries.find_index { |entry| entry[:name] == dirname }
-        @nav_controller.select_index(new_dir_index) if new_dir_index
+      prompt_and_select_entry("Create Directory", "Enter directory name:", "\e[34m", "\e[1;34m") do |path, name|
+        @file_operations.create_directory(path, name)
       end
-
-      @terminal_ui&.refresh_display
-      result.success
     end
 
     # ============================
@@ -91,27 +59,9 @@ module Rufio
       return false unless entry
 
       current_name = entry[:name]
-      current_path = @directory_listing&.current_path || Dir.pwd
-
-      new_name = @dialog_renderer.show_input_dialog("Rename: #{current_name}", "Enter new name:", {
-        border_color: "\e[33m",
-        title_color: "\e[1;33m",
-        content_color: "\e[37m"
-      })
-
-      return false if new_name.nil? || new_name.empty?
-
-      result = @file_operations.rename(current_path, current_name, new_name)
-
-      if result.success
-        @directory_listing.refresh
-        entries = @directory_listing.list_entries
-        new_index = entries.find_index { |e| e[:name] == new_name }
-        @nav_controller.select_index(new_index) if new_index
+      prompt_and_select_entry("Rename: #{current_name}", "Enter new name:", "\e[33m", "\e[1;33m") do |path, new_name|
+        @file_operations.rename(path, current_name, new_name)
       end
-
-      @terminal_ui&.refresh_display
-      result.success
     end
 
     # ============================
@@ -154,31 +104,13 @@ module Rufio
         ''
       ]
 
-      title = 'Confirm Delete'
-      width = [50, current_name.length + 10].max
-      height = content_lines.length + 4
-
-      confirmed = false
-      show_overlay_dialog(title, content_lines, {
-        width: width,
-        height: height,
+      confirmed = confirm_dialog('Confirm Delete', content_lines, {
+        width: [50, current_name.length + 10].max,
+        height: content_lines.length + 4,
         border_color: "\e[31m",
         title_color: "\e[1;31m",
         content_color: "\e[37m"
-      }) do
-        loop do
-          input = STDIN.getch.downcase
-          case input
-          when 'y'
-            confirmed = true
-            break
-          when 'n', "\e"
-            confirmed = false
-            break
-          end
-        end
-        nil
-      end
+      })
 
       return false unless confirmed
 
@@ -260,69 +192,39 @@ module Rufio
         ''
       ]
 
-      confirmed = false
-      show_overlay_dialog('Exit Confirmation', content_lines, {
+      confirm_dialog('Exit Confirmation', content_lines, {
         width: CONFIRMATION_DIALOG_WIDTH,
         height: DIALOG_BORDER_HEIGHT + content_lines.length,
         border_color: "\e[33m",
         title_color: "\e[1;33m",
         content_color: "\e[37m"
-      }) do
-        loop do
-          input = STDIN.getch.downcase
-          case input
-          when 'y'
-            confirmed = true
-            break
-          when 'n', "\e", "\x03"
-            confirmed = false
-            break
-          end
-        end
-        nil
-      end
-
-      confirmed
+      }, cancel_on_quit: false)
     end
 
     private
 
-    def show_overlay_dialog(title, content_lines, options = {}, &block)
-      use_overlay = @terminal_ui &&
-                    @terminal_ui.respond_to?(:screen) &&
-                    @terminal_ui.respond_to?(:renderer) &&
-                    @terminal_ui.screen &&
-                    @terminal_ui.renderer
+    def prompt_and_select_entry(title, prompt, border_color, title_color)
+      current_path = @directory_listing&.current_path || Dir.pwd
 
-      if use_overlay
-        @terminal_ui.show_overlay_dialog(title, content_lines, options, &block)
-      else
-        width = options[:width]
-        height = options[:height]
+      name = @dialog_renderer.show_input_dialog(title, prompt, {
+        border_color: border_color,
+        title_color: title_color,
+        content_color: "\e[37m"
+      })
 
-        unless width && height
-          width, height = @dialog_renderer.calculate_dimensions(content_lines, {
-            title: title,
-            min_width: options[:min_width] || 40,
-            max_width: options[:max_width] || 80
-          })
-        end
+      return false if name.nil? || name.empty?
 
-        x, y = @dialog_renderer.calculate_center(width, height)
+      result = yield(current_path, name)
 
-        @dialog_renderer.draw_floating_window(x, y, width, height, title, content_lines, {
-          border_color: options[:border_color] || "\e[37m",
-          title_color: options[:title_color] || "\e[1;33m",
-          content_color: options[:content_color] || "\e[37m"
-        })
-
-        key = block_given? ? yield : STDIN.getch
-
-        @dialog_renderer.clear_area(x, y, width, height)
-        @terminal_ui&.refresh_display
-
-        key
+      if result.success
+        @directory_listing.refresh
+        entries = @directory_listing.list_entries
+        new_index = entries.find_index { |e| e[:name] == name }
+        @nav_controller.select_index(new_index) if new_index
       end
+
+      @terminal_ui&.refresh_display
+      result.success
     end
 
     def show_delete_confirmation(count, source_path = nil)
@@ -342,111 +244,37 @@ module Rufio
 
       print "\a"
 
-      confirmed = false
-      show_overlay_dialog(title, content_lines, {
+      confirm_dialog(title, content_lines, {
         width: dialog_width,
         height: dialog_height,
         border_color: "\e[31m",
         title_color: "\e[1;31m",
         content_color: "\e[37m"
-      }) do
-        loop do
-          input = STDIN.getch.downcase
-          case input
-          when 'y'
-            confirmed = true
-            break
-          when 'n', "\e", "\x03", 'q'
-            confirmed = false
-            break
-          end
-        end
-        nil
-      end
-
-      confirmed
+      })
     end
 
     def show_move_confirmation(count, source_path, dest_path)
-      source_display = shorten_path(source_path, 35)
-      dest_display = shorten_path(dest_path, 35)
-
-      content_lines = [
-        '',
-        "Move #{count} item(s)?",
-        '',
-        "From: #{source_display}",
-        "To:   #{dest_display}",
-        '',
-        '  [Y]es - Move',
-        '  [N]o  - Cancel',
-        ''
-      ]
-
-      confirmed = false
-      show_overlay_dialog('Move Confirmation', content_lines, {
-        width: CONFIRMATION_DIALOG_WIDTH,
-        height: DIALOG_BORDER_HEIGHT + content_lines.length,
-        border_color: "\e[34m",
-        title_color: "\e[1;34m",
-        content_color: "\e[37m"
-      }) do
-        loop do
-          input = STDIN.getch.downcase
-          case input
-          when 'y'
-            confirmed = true
-            break
-          when 'n', "\e", "\x03", 'q'
-            confirmed = false
-            break
-          end
-        end
-        nil
-      end
-
-      confirmed
+      show_transfer_confirmation('Move', count, source_path, dest_path, '34')
     end
 
     def show_copy_confirmation(count, source_path, dest_path)
-      source_display = shorten_path(source_path, 35)
-      dest_display = shorten_path(dest_path, 35)
+      show_transfer_confirmation('Copy', count, source_path, dest_path, '32')
+    end
 
+    def show_transfer_confirmation(action, count, source_path, dest_path, color)
       content_lines = [
-        '',
-        "Copy #{count} item(s)?",
-        '',
-        "From: #{source_display}",
-        "To:   #{dest_display}",
-        '',
-        '  [Y]es - Copy',
-        '  [N]o  - Cancel',
-        ''
+        '', "#{action} #{count} item(s)?", '',
+        "From: #{shorten_path(source_path, 35)}",
+        "To:   #{shorten_path(dest_path, 35)}", '',
+        "  [Y]es - #{action}", '  [N]o  - Cancel', ''
       ]
-
-      confirmed = false
-      show_overlay_dialog('Copy Confirmation', content_lines, {
+      confirm_dialog("#{action} Confirmation", content_lines, {
         width: CONFIRMATION_DIALOG_WIDTH,
         height: DIALOG_BORDER_HEIGHT + content_lines.length,
-        border_color: "\e[32m",
-        title_color: "\e[1;32m",
+        border_color: "\e[#{color}m",
+        title_color: "\e[1;#{color}m",
         content_color: "\e[37m"
-      }) do
-        loop do
-          input = STDIN.getch.downcase
-          case input
-          when 'y'
-            confirmed = true
-            break
-          when 'n', "\e", "\x03", 'q'
-            confirmed = false
-            break
-          end
-        end
-        nil
-      end
-
-      confirmed
+      })
     end
 
     def show_deletion_result(success_count, total_count, error_messages = [])
@@ -484,14 +312,13 @@ module Rufio
         title_color: title_color,
         content_color: "\e[37m"
       }) do
-        STDIN.getch
+        KeyInput.getch
         nil
       end
     end
 
     def shorten_path(path, max_length)
-      return path if path.length <= max_length
-      "...#{path[-(max_length - 3)..-1]}"
+      TextUtils.shorten_path_from_end(path, max_length)
     end
   end
 end

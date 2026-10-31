@@ -5,8 +5,6 @@ module Rufio
   class CommandHistory
     DEFAULT_MAX_SIZE = 1000
 
-    attr_reader :size
-
     # 初期化
     # @param history_file [String] 履歴ファイルのパス
     # @param max_size [Integer] 履歴の最大保存数
@@ -35,6 +33,11 @@ module Rufio
 
       # 位置をリセット
       reset_position
+    end
+
+    # 呼び出し側の変更が履歴本体や上下移動の位置に影響しないスナップショット。
+    def entries
+      @history.map(&:dup)
     end
 
     # 前のコマンドを取得（上矢印キー相当）

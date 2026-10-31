@@ -1,11 +1,7 @@
 const std = @import("std");
-const c = @cImport({
-    @cInclude("dirent.h");
-    @cInclude("sys/stat.h");
-    @cInclude("string.h");
-    @cInclude("stdlib.h");
-    @cInclude("pthread.h");
-});
+const c = std.c;
+const search = @import("search.zig");
+const os = @import("os.zig");
 
 /// スキャン状態
 pub const ScanState = enum(u8) {
@@ -38,11 +34,10 @@ const AsyncScanner = struct {
     state: ScanState,
     progress: usize,
     total_estimate: usize,
-    mutex: c.pthread_mutex_t,
+    mutex: os.Mutex,
     path_copy: ?[*:0]u8,
     max_entries: usize,
-    thread: c.pthread_t,
-    thread_started: bool,
+    thread: ?std.Thread,
 
     fn init() !*AsyncScanner {
         const self = @as(?*AsyncScanner, @ptrCast(@alignCast(c.malloc(@sizeOf(AsyncScanner))))) orelse return error.OutOfMemory;
@@ -60,19 +55,15 @@ const AsyncScanner = struct {
         self.*.total_estimate = 0;
         self.*.path_copy = null;
         self.*.max_entries = 0;
-        self.*.thread_started = false;
-
-        // mutex初期化
-        _ = c.pthread_mutex_init(&self.*.mutex, null);
+        self.*.thread = null;
+        self.*.mutex = .{};
 
         return self;
     }
 
     fn deinit(self: *AsyncScanner) void {
         // スレッドが実行中なら待機
-        if (self.thread_started) {
-            _ = c.pthread_join(self.thread, null);
-        }
+        if (self.thread) |thread| thread.join();
 
         // 各エントリの名前を解放
         for (self.entries[0..self.count]) |*entry| {
@@ -86,9 +77,6 @@ const AsyncScanner = struct {
 
         // エントリ配列を解放
         c.free(self.entries.ptr);
-
-        // mutex破棄
-        _ = c.pthread_mutex_destroy(&self.mutex);
 
         // 自身を解放
         c.free(self);
@@ -115,14 +103,14 @@ const AsyncScanner = struct {
     }
 
     fn isCancelled(self: *AsyncScanner) bool {
-        _ = c.pthread_mutex_lock(&self.mutex);
-        defer _ = c.pthread_mutex_unlock(&self.mutex);
+        self.mutex.lock();
+        defer self.mutex.unlock();
         return self.state == .cancelled;
     }
 
     fn setState(self: *AsyncScanner, new_state: ScanState) void {
-        _ = c.pthread_mutex_lock(&self.mutex);
-        defer _ = c.pthread_mutex_unlock(&self.mutex);
+        self.mutex.lock();
+        defer self.mutex.unlock();
         self.state = new_state;
     }
 
@@ -130,13 +118,13 @@ const AsyncScanner = struct {
         // クリア
         self.clear();
 
-        const dir = c.opendir(path) orelse return error.CannotOpenDir;
-        defer _ = c.closedir(dir);
+        var scratch: os.Scratch = .{};
+        try scratch.init();
+        defer scratch.deinit();
+        var dir = os.Dir.open(std.mem.span(path), &scratch) orelse return error.CannotOpenDir;
+        defer dir.close();
 
-        const path_len = c.strlen(path);
-        const path_slice = path[0..path_len];
-
-        while (c.readdir(dir)) |entry| {
+        while (dir.next() catch return error.ReadFailed) |entry| {
             // キャンセルチェック
             if (self.isCancelled()) {
                 return error.Cancelled;
@@ -145,63 +133,48 @@ const AsyncScanner = struct {
             // エントリ数制限チェック
             if (max_entries > 0 and self.count >= max_entries) break;
 
-            const name_ptr = @as([*:0]const u8, @ptrCast(&entry.*.d_name));
-            const name_len = c.strlen(name_ptr);
-            const name_slice = name_ptr[0..name_len];
-
-            // "." と ".." をスキップ
-            if (std.mem.eql(u8, name_slice, ".") or std.mem.eql(u8, name_slice, "..")) {
-                continue;
-            }
+            // ファイル情報を取得（シンボリックリンクは辿らない）
+            const info = dir.currentInfo(entry) orelse continue;
 
             // 容量確保
             try self.ensureCapacity(self.count + 1);
 
-            // フルパスを構築
-            var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-            const full_path = std.fmt.bufPrintZ(&path_buf, "{s}/{s}", .{ path_slice, name_slice }) catch continue;
-
-            // ファイル情報を取得
-            var stat_buf: c.struct_stat = undefined;
-            if (c.lstat(full_path.ptr, &stat_buf) != 0) {
-                continue;
-            }
-
             // 名前をコピー
+            const name_len = entry.name.len;
             const name_copy_ptr = c.malloc(name_len + 1) orelse return error.OutOfMemory;
             const name_copy_bytes = @as([*]u8, @ptrCast(@alignCast(name_copy_ptr)));
             const name_copy = name_copy_bytes[0..name_len];
-            @memcpy(name_copy, name_slice);
+            @memcpy(name_copy, entry.name);
             name_copy_bytes[name_len] = 0;
 
             // エントリを追加
             self.entries[self.count] = DirEntry{
                 .name = name_copy,
-                .is_dir = (stat_buf.st_mode & c.S_IFMT) == c.S_IFDIR,
-                .size = @intCast(stat_buf.st_size),
-                .mtime = @intCast(stat_buf.st_mtimespec.tv_sec),
-                .executable = (stat_buf.st_mode & c.S_IXUSR) != 0,
-                .hidden = name_slice[0] == '.',
+                .is_dir = info.kind == .dir,
+                .size = info.size,
+                .mtime = info.mtime_sec,
+                .executable = info.executable,
+                .hidden = entry.name[0] == '.',
             };
             self.count += 1;
 
             // 進捗更新
-            _ = c.pthread_mutex_lock(&self.mutex);
+            self.mutex.lock();
             self.progress = self.count;
-            _ = c.pthread_mutex_unlock(&self.mutex);
+            self.mutex.unlock();
         }
     }
 
     fn scanAsync(self: *AsyncScanner, path: [*:0]const u8, max_entries: usize) !void {
-        _ = c.pthread_mutex_lock(&self.mutex);
-        defer _ = c.pthread_mutex_unlock(&self.mutex);
+        self.mutex.lock();
+        defer self.mutex.unlock();
 
         if (self.state == .scanning) {
             return error.AlreadyScanning;
         }
 
         // パスをコピー
-        const path_len = c.strlen(path);
+        const path_len = std.mem.len(path);
         const path_copy_ptr = c.malloc(path_len + 1) orelse return error.OutOfMemory;
         const path_copy_bytes = @as([*:0]u8, @ptrCast(@alignCast(path_copy_ptr)));
         @memcpy(path_copy_bytes[0..path_len], path[0..path_len]);
@@ -216,13 +189,13 @@ const AsyncScanner = struct {
         self.max_entries = max_entries;
         self.state = .scanning;
 
-        // スレッド開始
-        const result = c.pthread_create(&self.thread, null, scanWorkerEntry, self);
-        if (result != 0) {
+        // 前回のスキャンスレッドは完了済みなので回収してから開始
+        if (self.thread) |thread| thread.join();
+        self.thread = std.Thread.spawn(.{}, scanWorker, .{self}) catch {
+            self.thread = null;
             self.state = .failed;
             return error.ThreadCreateFailed;
-        }
-        self.thread_started = true;
+        };
     }
 
     fn scanWorker(self: *AsyncScanner) void {
@@ -243,13 +216,6 @@ const AsyncScanner = struct {
         self.setState(.done);
     }
 };
-
-// スレッドエントリポイント
-fn scanWorkerEntry(arg: ?*anyopaque) callconv(.c) ?*anyopaque {
-    const scanner = @as(*AsyncScanner, @ptrCast(@alignCast(arg)));
-    scanner.scanWorker();
-    return null;
-}
 
 // ============================================================
 // ABI Boundary: Ruby ABI非依存・ハンドルベース
@@ -284,8 +250,8 @@ export fn core_async_get_state(handle: u64) u8 {
     if (handle == 0) return @intFromEnum(ScanState.failed);
 
     const scanner = @as(*AsyncScanner, @ptrFromInt(handle));
-    _ = c.pthread_mutex_lock(&scanner.mutex);
-    defer _ = c.pthread_mutex_unlock(&scanner.mutex);
+    scanner.mutex.lock();
+    defer scanner.mutex.unlock();
     return @intFromEnum(scanner.state);
 }
 
@@ -298,8 +264,8 @@ export fn core_async_get_progress(handle: u64, current: *usize, total: *usize) v
     }
 
     const scanner = @as(*AsyncScanner, @ptrFromInt(handle));
-    _ = c.pthread_mutex_lock(&scanner.mutex);
-    defer _ = c.pthread_mutex_unlock(&scanner.mutex);
+    scanner.mutex.lock();
+    defer scanner.mutex.unlock();
 
     current.* = scanner.progress;
     total.* = scanner.total_estimate;
@@ -310,8 +276,8 @@ export fn core_async_cancel(handle: u64) void {
     if (handle == 0) return;
 
     const scanner = @as(*AsyncScanner, @ptrFromInt(handle));
-    _ = c.pthread_mutex_lock(&scanner.mutex);
-    defer _ = c.pthread_mutex_unlock(&scanner.mutex);
+    scanner.mutex.lock();
+    defer scanner.mutex.unlock();
 
     if (scanner.state == .scanning) {
         scanner.state = .cancelled;
@@ -323,8 +289,8 @@ export fn core_async_get_count(handle: u64) usize {
     if (handle == 0) return 0;
 
     const scanner = @as(*AsyncScanner, @ptrFromInt(handle));
-    _ = c.pthread_mutex_lock(&scanner.mutex);
-    defer _ = c.pthread_mutex_unlock(&scanner.mutex);
+    scanner.mutex.lock();
+    defer scanner.mutex.unlock();
     return scanner.count;
 }
 
@@ -333,8 +299,8 @@ export fn core_async_get_name(handle: u64, index: usize, buf: [*]u8, buf_size: u
     if (handle == 0) return 0;
 
     const scanner = @as(*AsyncScanner, @ptrFromInt(handle));
-    _ = c.pthread_mutex_lock(&scanner.mutex);
-    defer _ = c.pthread_mutex_unlock(&scanner.mutex);
+    scanner.mutex.lock();
+    defer scanner.mutex.unlock();
 
     if (index >= scanner.count) return 0;
 
@@ -350,8 +316,8 @@ export fn core_async_get_attrs(handle: u64, index: usize, is_dir: *u8, size: *u6
     if (handle == 0) return -1;
 
     const scanner = @as(*AsyncScanner, @ptrFromInt(handle));
-    _ = c.pthread_mutex_lock(&scanner.mutex);
-    defer _ = c.pthread_mutex_unlock(&scanner.mutex);
+    scanner.mutex.lock();
+    defer scanner.mutex.unlock();
 
     if (index >= scanner.count) return -1;
 
@@ -375,4 +341,86 @@ export fn core_async_destroy(handle: u64) void {
 /// バージョン情報
 export fn core_async_version() [*:0]const u8 {
     return "4.0.0-async";
+}
+
+// ============================================================
+// コンテンツ検索（G mode）: NUL 区切りのリストを長さ付きで受け取る
+// ============================================================
+
+/// 検索を開始してハンドルを返す（失敗時は 0）。threads=0 で CPU 数
+export fn core_search_create(
+    roots: [*]const u8,
+    roots_len: usize,
+    query: [*]const u8,
+    query_len: usize,
+    excluded: [*]const u8,
+    excluded_len: usize,
+    documents: [*]const u8,
+    documents_len: usize,
+    threads: u32,
+    cache_handle: u64,
+) u64 {
+    const cache: ?*search.Cache = if (cache_handle == 0) null else @ptrFromInt(cache_handle);
+    const s = search.Search.create(
+        roots[0..roots_len],
+        query[0..query_len],
+        excluded[0..excluded_len],
+        documents[0..documents_len],
+        threads,
+        cache,
+    ) catch return 0;
+    return @intFromPtr(s);
+}
+
+export fn core_search_state(handle: u64) u8 {
+    if (handle == 0) return @intFromEnum(search.State.failed);
+    const s: *search.Search = @ptrFromInt(handle);
+    return @intFromEnum(s.getState());
+}
+
+/// 溜まったレコードを取り出す。返したポインタは次の drain/destroy まで有効
+export fn core_search_drain(handle: u64, out_len: *usize) ?[*]const u8 {
+    out_len.* = 0;
+    if (handle == 0) return null;
+    const s: *search.Search = @ptrFromInt(handle);
+    const data = s.drain();
+    out_len.* = data.len;
+    return if (data.len == 0) null else data.ptr;
+}
+
+export fn core_search_skipped(handle: u64) u64 {
+    if (handle == 0) return 0;
+    const s: *search.Search = @ptrFromInt(handle);
+    return s.skipped.load(.acquire);
+}
+
+export fn core_search_cancel(handle: u64) void {
+    if (handle == 0) return;
+    const s: *search.Search = @ptrFromInt(handle);
+    s.cancel();
+}
+
+export fn core_search_destroy(handle: u64) void {
+    if (handle == 0) return;
+    const s: *search.Search = @ptrFromInt(handle);
+    s.destroy();
+}
+
+/// 検索間で共有するファイル内容キャッシュ（max_bytes はキャッシュする内容の上限）
+export fn core_cache_create(max_bytes: u64) u64 {
+    const cache = search.Cache.create(max_bytes) catch return 0;
+    return @intFromPtr(cache);
+}
+
+export fn core_cache_bytes(handle: u64) u64 {
+    if (handle == 0) return 0;
+    const cache: *search.Cache = @ptrFromInt(handle);
+    return cache.cachedBytes();
+}
+
+/// 使用中の検索をすべて destroy してから呼ぶこと
+export fn core_cache_destroy(handle: u64) void {
+    if (handle == 0) return;
+    const cache: *search.Cache = @ptrFromInt(handle);
+    cache.destroy();
 }

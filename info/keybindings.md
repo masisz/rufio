@@ -69,6 +69,7 @@ Complete reference of all keyboard shortcuts in **rufio**.
 | `?` | Enter help mode |
 | `ESC` | Exit current mode (help/filter/command) |
 | `q` | Quit rufio |
+| `T` | Quit rufio and cd the shell to the current directory (requires `rufio --shell-init`) |
 
 ---
 

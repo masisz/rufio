@@ -23,12 +23,9 @@ module Rufio
       job = TaskStatus.new(
         id: @next_id,
         name: name,
-        path: path
+        path: path,
+        command: command
       )
-      # commandを保存（TaskStatusに追加）
-      job.instance_variable_set(:@command, command)
-      job.define_singleton_method(:command) { @command }
-
       @jobs << job
       @next_id += 1
       job

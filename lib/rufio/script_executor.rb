@@ -83,11 +83,7 @@ module Rufio
         options[:chdir] = chdir if chdir
         spawn_env = env || {}
 
-        if timeout
-          execute_shell_with_timeout(dsl_command.shell_command, spawn_env, options, timeout)
-        else
-          execute_shell_without_timeout(dsl_command.shell_command, spawn_env, options)
-        end
+        execute_with_options([dsl_command.shell_command], spawn_env, options, timeout)
       rescue StandardError => e
         build_error_result(e)
       end
@@ -133,8 +129,11 @@ module Rufio
           # プロセスを終了
           if pid
             begin
-              Process.kill("TERM", pid)
-              sleep 0.1
+              # Windows は TERM を送れない（Errno::EINVAL）ため KILL だけで終了させる
+              unless Gem.win_platform?
+                Process.kill("TERM", pid)
+                sleep 0.1
+              end
               Process.kill("KILL", pid)
             rescue Errno::ESRCH, Errno::EPERM
               # プロセスが既に終了している、または権限がない
@@ -165,72 +164,6 @@ module Rufio
       def execute_without_timeout(command, env, options)
         # 空の env ハッシュを渡すと Windows で SystemRoot 等が引き継がれないため省略する
         args = env.empty? ? [*command] : [env, *command]
-        stdout, stderr, status = Open3.capture3(*args, **options)
-
-        {
-          success: status.success?,
-          exit_code: status.exitstatus,
-          stdout: stdout,
-          stderr: stderr,
-          timeout: false
-        }
-      end
-
-      # シェルコマンドをタイムアウト付きで実行
-      def execute_shell_with_timeout(shell_command, env, options, timeout_sec)
-        stdout = ""
-        stderr = ""
-        status = nil
-        timed_out = false
-        pid = nil
-
-        begin
-          Timeout.timeout(timeout_sec) do
-            args = env.empty? ? [shell_command] : [env, shell_command]
-            stdin, stdout_io, stderr_io, wait_thread = Open3.popen3(*args, **options)
-            pid = wait_thread.pid
-            stdin.close
-            stdout = stdout_io.read
-            stderr = stderr_io.read
-            stdout_io.close
-            stderr_io.close
-            status = wait_thread.value
-          end
-        rescue Timeout::Error
-          timed_out = true
-          if pid
-            begin
-              Process.kill("TERM", pid)
-              sleep 0.1
-              Process.kill("KILL", pid)
-            rescue Errno::ESRCH, Errno::EPERM
-              # プロセスが既に終了している、または権限がない
-            end
-          end
-        end
-
-        if timed_out
-          {
-            success: false,
-            exit_code: nil,
-            stdout: stdout,
-            stderr: stderr,
-            timeout: true
-          }
-        else
-          {
-            success: status&.success? || false,
-            exit_code: status&.exitstatus || 1,
-            stdout: stdout,
-            stderr: stderr,
-            timeout: false
-          }
-        end
-      end
-
-      # シェルコマンドをタイムアウトなしで実行
-      def execute_shell_without_timeout(shell_command, env, options)
-        args = env.empty? ? [shell_command] : [env, shell_command]
         stdout, stderr, status = Open3.capture3(*args, **options)
 
         {

@@ -7,6 +7,7 @@ require_relative '../lib/rufio'
 
 class TestNativeScanner < Minitest::Test
   def setup
+    @original_scanner_mode = Rufio::NativeScanner.mode
     @test_dir = Dir.mktmpdir('rufio_native_scanner_test')
     # テスト用のファイルとディレクトリを作成
     FileUtils.touch(File.join(@test_dir, 'file1.txt'))
@@ -16,6 +17,7 @@ class TestNativeScanner < Minitest::Test
   end
 
   def teardown
+    Rufio::NativeScanner.mode = @original_scanner_mode
     FileUtils.rm_rf(@test_dir) if @test_dir && Dir.exist?(@test_dir)
   end
 

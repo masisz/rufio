@@ -22,6 +22,34 @@ jobs:
       - name: Run tests
         run: bundle exec rake test
 
+  test-macos:
+    name: Test (macOS / Ruby 3.3)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+      - name: Run tests
+        run: bundle exec rake test
+
+  # 同梱する Zig ライブラリ（検索エンジン）の単体テストを各 OS で実行
+  test-zig:
+    name: Zig engine (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      - name: Run Zig tests
+        working-directory: lib_zig/rufio_native
+        run: zig build test
+
   test-windows:
     name: Test (Windows / Ruby ${{ matrix.ruby }})
     runs-on: windows-latest

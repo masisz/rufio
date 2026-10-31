@@ -6,14 +6,18 @@ module Rufio
   class TaskStatus
     attr_accessor :id, :name, :path, :status, :start_time, :end_time, :logs, :exit_code
 
+    attr_reader :command
+
     # 初期化
     # @param id [Integer] タスクID
     # @param name [String] タスク名（スクリプト名）
     # @param path [String] 実行ディレクトリ
-    def initialize(id:, name:, path:)
+    # @param command [String, nil] 実行コマンド
+    def initialize(id:, name:, path:, command: nil)
       @id = id
       @name = name
       @path = path
+      @command = command
       @status = :waiting
       @start_time = nil
       @end_time = nil

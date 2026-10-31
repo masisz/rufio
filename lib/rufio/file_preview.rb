@@ -77,7 +77,7 @@ module Rufio
             end
 
             lines << line.chomp
-          rescue EncodingError, ArgumentError => e
+          rescue EncodingError, ArgumentError
             # If encoding fails, add placeholder
             lines << "[encoding error in line #{index + 1}]"
           end
@@ -104,7 +104,7 @@ module Rufio
               # Ensure line is properly encoded as UTF-8
               line = line.encode('UTF-8', invalid: :replace, undef: :replace, replace: '?')
               lines << line.chomp
-            rescue EncodingError, ArgumentError => e
+            rescue EncodingError, ArgumentError
               # If encoding fails, add placeholder
               lines << "[encoding error in line #{index + 1}]"
             end

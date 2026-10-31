@@ -4,39 +4,18 @@ require 'io/console'
 require_relative 'text_utils'
 require_relative 'help_menu'
 require_relative 'global_search'
+require_relative 'ui_renderer'
 
 module Rufio
   class TerminalUI
-    # Layout constants
-    HEADER_HEIGHT = 1              # Header占有行数（モードタブ+パス+バージョン 1行に統合）
-    FOOTER_HEIGHT = 1              # Footer占有行数（ブックマーク一覧 + ステータス情報）
-    HEADER_FOOTER_MARGIN = 2       # Header(1行) + Footer(1行)分のマージン
-
-    # Panel layout ratios
-    LEFT_PANEL_RATIO = 0.5         # 左パネルの幅比率
-    RIGHT_PANEL_RATIO = 1.0 - LEFT_PANEL_RATIO
-
     # Display constants
     DEFAULT_SCREEN_WIDTH = 80      # デフォルト画面幅
     DEFAULT_SCREEN_HEIGHT = 24     # デフォルト画面高さ
-    HEADER_PADDING = 2             # ヘッダーのパディング
-    FILTER_TEXT_RESERVED = 15      # フィルタテキスト表示の予約幅
-    TAB_SEPARATOR = ">"              # タブ間セパレータ
+    HEADER_FOOTER_MARGIN = UIRenderer::HEADER_FOOTER_MARGIN
+    CONTENT_START_LINE = UIRenderer::CONTENT_START_LINE
 
-    # File display constants
-    ICON_SIZE_PADDING = 12         # アイコン、選択マーク、サイズ情報分
-    CURSOR_OFFSET = 1              # カーソル位置のオフセット
-
-    # Size display constants (bytes)
-    KILOBYTE = 1024
-    MEGABYTE = KILOBYTE * 1024
-    GIGABYTE = MEGABYTE * 1024
-
-    # Bookmark highlight duration (seconds)
-    BOOKMARK_HIGHLIGHT_DURATION = 0.5
-
-    # Line offsets
-    CONTENT_START_LINE = 1         # コンテンツ開始行（フッタ1行: Y=0）
+    # T キーで終了した時のディレクトリ（それ以外の終了では nil）
+    attr_reader :exit_directory
 
     def initialize(test_mode: false)
       console = IO.console
@@ -73,17 +52,6 @@ module Rufio
       @in_job_mode = false
       @job_mode_needs_redraw = false
 
-      # Preview cache
-      @preview_cache = {}
-      @last_preview_path = nil
-
-      # シンタックスハイライター（bat が利用可能な場合のみ動作）
-      @syntax_highlighter = SyntaxHighlighter.new
-
-
-      # Tab mode manager
-      @tab_mode_manager = TabModeManager.new
-
       # UIRenderer（描画ロジックを担当）
       ui_opts = ConfigLoader.ui_options
       @ui_renderer = UIRenderer.new(
@@ -93,9 +61,11 @@ module Rufio
         left_panel_ratio: ui_opts[:panel_ratio],
         preview_enabled: ui_opts[:preview_enabled]
       )
+      @tab_mode_manager = @ui_renderer.tab_mode_manager
+      @background_status = @ui_renderer.background_status
     end
 
-    attr_reader :ui_renderer
+    attr_reader :ui_renderer, :screen_width, :screen_height
 
     def start(directory_listing, keybind_handler, file_preview, background_executor = nil)
       @directory_listing = directory_listing
@@ -137,24 +107,10 @@ module Rufio
       # ウィンドウサイズを更新してから画面をクリアして再描画
       update_screen_size
 
-      # プレビューキャッシュをクリア（ディレクトリ変更やリフレッシュ時）
-      @preview_cache.clear
-      @last_preview_path = nil
+      @ui_renderer.clear_preview_cache
+      @ui_renderer.clear_bookmark_cache
 
-      # ブックマークキャッシュもクリア
-      @cached_bookmarks = nil
-      @cached_bookmark_time = nil
-
-      # バッファベースの描画が利用可能な場合は全画面を再描画
-      if @screen && @renderer
-        # レンダラーの前フレーム情報をリセット（差分レンダリングを強制的に全体描画にする）
-        @renderer.clear
-        @screen.clear
-        draw_screen_to_buffer(@screen, nil, nil)
-        @renderer.render(@screen)
-        # カーソルを画面外に移動
-        print "\e[#{@screen_height};#{@screen_width}H"
-      end
+      render_full_screen
     end
 
     # スクリプトランナーを設定
@@ -207,6 +163,8 @@ module Rufio
         rescue
           # スレッド終了
         end
+        # ダイアログのキー入力もこのキューから読ませ、入力スレッドとの奪い合いを防ぐ
+        KeyInput.attach(@input_queue)
       end
 
       # SGR拡張マウスレポートを有効化
@@ -238,11 +196,14 @@ module Rufio
     end
 
     # エスケープシーケンスの後続バイトを読み取る（矢印キー等の短いシーケンス用）。
-    # Windows: IO.select を使わずキューから取得（5ms タイムアウト）。
+    # Windows: IO.select を使わずキューから取得。
     def read_next_input_byte
       if windows?
-        # ConPTY ではバイト到着が遅れることがあるため 5ms では ESC 単体と誤判定する
-        b = windows_queue_pop_with_timeout(0.025)
+        # ConPTY ではバイト到着が遅れることがあるため 5ms では ESC 単体と誤判定する。
+        # G mode は検索中に全画面を再描画し続けて遅延が大きくなりやすく、
+        # しかも ESC 単体で閉じてしまうため、待ち時間を長めに取る。
+        timeout = global_search_active? ? 0.1 : 0.025
+        b = windows_queue_pop_with_timeout(timeout)
         b.nil? ? nil : b.chr(Encoding::BINARY)
       else
         STDIN.read_nonblock(1) rescue nil
@@ -263,46 +224,12 @@ module Rufio
     # Windows 専用: キューから1文字（マルチバイト対応）を組み立てる。
     # first_byte_int は getbyte が返す Integer。
     def windows_build_char(first_byte_int)
-      remaining = case first_byte_int
-                  when 0x00..0x7F then 0
-                  when 0xC0..0xDF then 1
-                  when 0xE0..0xEF then 2
-                  when 0xF0..0xF7 then 3
-                  else 0
-                  end
-      if remaining == 0
-        first_byte_int.chr(Encoding::UTF_8)
-      else
-        buf = first_byte_int.chr(Encoding::BINARY)
-        remaining.times do
-          b = windows_queue_pop_with_timeout(0.005)
-          return nil if b.nil?
-          buf << b.chr(Encoding::BINARY)
-        end
-        result = buf.force_encoding(Encoding::UTF_8)
-        result.valid_encoding? ? result : nil
-      end
+      KeyInput.build_char(first_byte_int, @input_queue)
     end
 
     # Windows 専用: @input_queue からタイムアウト付きで Integer バイトを取り出す。
-    # Ruby 3.2+ は Queue#pop(timeout:) で正確に待機する（sleep ポーリングは
-    # Windows のタイマー分解能 約15ms により遅延する）。それ以前はポーリング。
-    QUEUE_POP_TIMEOUT_SUPPORTED = Queue.instance_method(:pop).parameters.any? { |_, n| n == :timeout }
-
     def windows_queue_pop_with_timeout(timeout_sec)
-      if QUEUE_POP_TIMEOUT_SUPPORTED
-        return @input_queue.pop(timeout: timeout_sec)
-      end
-
-      deadline = Time.now + timeout_sec
-      loop do
-        begin
-          return @input_queue.pop(true)
-        rescue ThreadError
-          return nil if Time.now >= deadline
-          sleep 0.001
-        end
-      end
+      KeyInput.pop_with_timeout(@input_queue, timeout_sec)
     end
 
     def cleanup_terminal
@@ -317,6 +244,7 @@ module Rufio
 
       # Windows 入力スレッドを停止
       if windows? && @input_thread
+        KeyInput.detach
         @stop_input_thread = true
         @input_thread.kill rescue nil
         @input_thread.join(0.5) rescue nil
@@ -365,7 +293,6 @@ module Rufio
       # 最小スリープ時間（入力チェック間隔）
       # Windows は入力をキュー経由で受けるため、入力遅延を抑えるよう短めにする
       min_sleep_interval = windows? ? 0.008 : 0.0333  # Windows: 約8ms / Unix: 30FPS
-      check_interval = 0.1  # バックグラウンドタスクのチェック間隔
 
       # Phase 3: Screen/Rendererを初期化
       @screen = Screen.new(@screen_width, @screen_height)
@@ -375,13 +302,6 @@ module Rufio
       @screen.clear
       draw_screen_to_buffer(@screen, nil, nil)
       @renderer.render(@screen)
-
-      last_notification_check = Time.now
-      last_lamp_check = Time.now
-      notification_message = nil
-      notification_time = nil
-      previous_notification = nil
-      previous_lamp_message = @ui_renderer.completion_lamp_message
 
       # FPS計測用
       frame_times = []
@@ -429,54 +349,8 @@ module Rufio
         end
         needs_redraw = true if had_input
 
-        # バックグラウンドコマンドの完了チェック（0.1秒ごと）
-        if @background_executor && (start - last_notification_check) > check_interval
-          if !@background_executor.running? && @background_executor.get_completion_message
-            completion_msg = @background_executor.get_completion_message
-            # 通知メッセージとして表示
-            notification_message = completion_msg
-            notification_time = start
-            # フッターのランプ表示用にも設定（UIRenderer が管理）
-            @ui_renderer.completion_lamp_message = completion_msg
-            @ui_renderer.completion_lamp_time = start
-            @background_executor.instance_variable_set(:@completion_message, nil)  # メッセージをクリア
-            needs_redraw = true
-          end
-          last_notification_check = start
-        end
-
-        # バックグラウンドコマンドの実行状態が変わった場合も再描画
-        if @background_executor
-          current_running = @background_executor.running?
-          if @last_bg_running != current_running
-            @last_bg_running = current_running
-            needs_redraw = true
-          end
-        end
-
-        # 完了ランプの表示状態をチェック（0.5秒ごと）
-        if (start - last_lamp_check) > 0.5
-          current_lamp = @ui_renderer.completion_lamp_message
-          if current_lamp != previous_lamp_message
-            previous_lamp_message = current_lamp
-            needs_redraw = true
-          end
-          # 完了ランプのタイムアウトチェック
-          if @ui_renderer.completion_lamp_message && @ui_renderer.completion_lamp_time &&
-             (start - @ui_renderer.completion_lamp_time) >= 3.0
-            @ui_renderer.completion_lamp_message = nil
-            needs_redraw = true
-          end
-          last_lamp_check = start
-        end
-
-        # 通知メッセージの変化をチェック
-        current_notification = notification_message && (start - notification_time) < 3.0 ? notification_message : nil
-        if current_notification != previous_notification
-          previous_notification = current_notification
-          notification_message = nil if current_notification.nil?
-          needs_redraw = true
-        end
+        # 通知・ランプ・実行状態の更新を一か所に集約する。
+        needs_redraw = true if @background_status.update(@background_executor, now: start)
 
         needs_redraw = true if @global_search.poll
 
@@ -495,11 +369,7 @@ module Rufio
         # DRAW & RENDER phase - 変更があった場合のみ描画
         if needs_redraw
           # Screenバッファに描画（clearは呼ばない。必要な部分だけ更新）
-          if notification_message && (start - notification_time) < 3.0
-            draw_screen_to_buffer(@screen, notification_message, current_fps)
-          else
-            draw_screen_to_buffer(@screen, nil, current_fps)
-          end
+          draw_screen_to_buffer(@screen, @background_status.message, current_fps)
 
           # ヘルプまたはコマンドモードのダイアログをオーバーレイに描画
           if help_dialog_active?
@@ -668,6 +538,12 @@ module Rufio
         @running = false
       end
 
+      # T キー: 確認なしで終了し、現在のディレクトリを終了後の移動先にする
+      if result == :quit_cd
+        @exit_directory = @directory_listing.current_path
+        @running = false
+      end
+
       # 入力があったことを返す
       true
     end
@@ -757,13 +633,14 @@ module Rufio
 
     # ファイルリストのクリック行からエントリを選択する（ダブルクリック対応）
     def handle_mouse_file_click(row)
-      # コンテンツ行はターミナル行2〜(screen_height-1)
-      content_height = @screen_height - 2
-      return unless row >= 2 && row <= @screen_height - 1
+      # コンテンツ行はターミナル行（1 始まり）で CONTENT_START_LINE+1 〜 screen_height-1
+      first_row = CONTENT_START_LINE + 1
+      content_height = @screen_height - HEADER_FOOTER_MARGIN
+      return unless row >= first_row && row <= @screen_height - 1
 
       current_idx = @keybind_handler.current_index
       start_index = [current_idx - content_height / 2, 0].max
-      target_index = start_index + (row - 2)
+      target_index = start_index + (row - first_row)
 
       entries = @keybind_handler.send(:get_active_entries)
       return unless target_index >= 0 && target_index < entries.length
@@ -809,37 +686,7 @@ module Rufio
 
     # モード変更を適用
     def apply_mode_change(mode)
-      case mode
-      when :config
-        @keybind_handler.enter_config_mode
-      when :global
-        @keybind_handler.start_global_search
-      when :files
-        # ヘルプモードまたはログビューワモードから戻る
-        if @keybind_handler.help_mode?
-          @keybind_handler.send(:exit_help_mode)
-        elsif @keybind_handler.log_viewer_mode?
-          @keybind_handler.send(:exit_log_viewer_mode)
-        elsif @keybind_handler.in_job_mode?
-          @keybind_handler.send(:exit_job_mode)
-        end
-      when :help
-        show_help_dialog
-      when :logs
-        # ログビューワモードに入る
-        unless @keybind_handler.log_viewer_mode?
-          @keybind_handler.send(:exit_help_mode) if @keybind_handler.help_mode?
-          @keybind_handler.send(:exit_job_mode) if @keybind_handler.in_job_mode?
-          @keybind_handler.send(:enter_log_viewer_mode)
-        end
-      when :jobs
-        # ジョブモードに入る
-        unless @keybind_handler.in_job_mode?
-          @keybind_handler.send(:exit_help_mode) if @keybind_handler.help_mode?
-          @keybind_handler.send(:exit_log_viewer_mode) if @keybind_handler.log_viewer_mode?
-          @keybind_handler.enter_job_mode
-        end
-      end
+      @keybind_handler.switch_mode(mode)
     end
 
     # コマンドモード関連のメソッドは public にする
@@ -915,22 +762,9 @@ module Rufio
         @command_input = ""
       when "\e"
         # Escape キーでコマンドモードをキャンセル
-        # まずコマンドウィンドウをクリア
         @command_mode_ui.clear_prompt
         deactivate_command_mode
-        # ファイラー画面を再描画（バッファベース）
-        if @screen && @renderer
-          # レンダラーの前フレーム情報をリセット（差分レンダリングを強制的に全体描画にする）
-          @renderer.clear
-          @screen.clear
-          draw_screen_to_buffer(@screen, nil, nil)
-          @renderer.render(@screen)
-          # カーソルを画面外に移動（メインループと同じ処理）
-          print "\e[#{@screen_height};#{@screen_width}H"
-        else
-          # フォールバック（古い実装）
-          draw_screen
-        end
+        render_full_screen
       when "\t"
         # Tab キーで補完
         handle_tab_completion
@@ -1057,16 +891,6 @@ module Rufio
       info_notice.mark_as_shown(notice[:file])
     end
 
-    # ログモードに入る（廃止済み: 空のメソッド）
-    def enter_log_mode(_project_log)
-      # プロジェクトモード廃止により何もしない
-    end
-
-    # ログモードを終了（廃止済み: 空のメソッド）
-    def exit_log_mode
-      # プロジェクトモード廃止により何もしない
-    end
-
     # ジョブモードを設定
     def set_job_mode(job_mode, job_manager, notification_manager)
       @job_mode_instance = job_mode
@@ -1084,86 +908,13 @@ module Rufio
       @in_job_mode = false
       @job_mode_instance = nil
       @job_manager = nil
-      # バッファベースの全画面再描画を使用
       update_screen_size
-      if @screen && @renderer
-        @renderer.clear
-        @screen.clear
-        draw_screen_to_buffer(@screen, nil, nil)
-        @renderer.render(@screen)
-        print "\e[#{@screen_height};#{@screen_width}H"
-      else
-        draw_screen
-      end
+      render_full_screen
     end
 
     # ジョブモード再描画をトリガー
     def trigger_job_mode_redraw
       @job_mode_needs_redraw = true
-    end
-
-    # ジョブモード画面を描画（バッファベース描画への橋渡し）
-    def draw_job_mode_screen
-      return unless @in_job_mode && @job_mode_instance && @job_manager
-      return unless @screen && @renderer
-
-      # バッファベースの描画を使用
-      draw_screen_to_buffer(@screen, nil, nil)
-      @renderer.render(@screen)
-      print "\e[#{@screen_height};#{@screen_width}H"
-
-      STDOUT.flush
-      @job_mode_needs_redraw = false
-    end
-
-    # Noice風の通知を描画
-    def draw_notifications
-      nm = @notification_manager || @keybind_handler&.notification_manager
-      return unless nm
-
-      # 期限切れの通知を削除
-      nm.expire_old_notifications
-
-      notifications = nm.notifications
-      return if notifications.empty?
-
-      # 通知の幅と位置
-      notification_width = 22
-      x = @screen_width - notification_width - 2  # 右端から2文字マージン
-
-      notifications.each_with_index do |notif, i|
-        y = 2 + (i * 5)  # 各通知4行 + 間隔1行
-
-        # 色設定
-        border_color = notif[:border_color] == :green ? "\e[32m" : "\e[31m"
-        reset = "\e[0m"
-
-        # ステータスアイコン
-        icon = notif[:type] == :success ? '✓' : '✗'
-
-        # 通知の内容を作成
-        name_line = "#{icon} #{notif[:name]}"[0...notification_width - 4]
-        status_line = notif[:status_text][0...notification_width - 4]
-
-        # 上部ボーダー
-        print "\e[#{y};#{x}H#{border_color}╭#{'─' * (notification_width - 2)}╮#{reset}"
-
-        # 1行目: アイコン + 名前
-        print "\e[#{y + 1};#{x}H#{border_color}│#{reset} #{name_line.ljust(notification_width - 4)} #{border_color}│#{reset}"
-
-        # 2行目: ステータス
-        print "\e[#{y + 2};#{x}H#{border_color}│#{reset}   #{status_line.ljust(notification_width - 6)} #{border_color}│#{reset}"
-
-        # Exit code行（失敗時のみ）
-        if notif[:type] == :error && notif[:exit_code]
-          exit_line = "Exit code: #{notif[:exit_code]}"[0...notification_width - 6]
-          print "\e[#{y + 3};#{x}H#{border_color}│#{reset}   #{exit_line.ljust(notification_width - 6)} #{border_color}│#{reset}"
-          print "\e[#{y + 4};#{x}H#{border_color}╰#{'─' * (notification_width - 2)}╯#{reset}"
-        else
-          # 下部ボーダー
-          print "\e[#{y + 3};#{x}H#{border_color}╰#{'─' * (notification_width - 2)}╯#{reset}"
-        end
-      end
     end
 
     # オーバーレイダイアログを表示してキー入力を待つヘルパーメソッド
@@ -1212,7 +963,7 @@ module Rufio
       @renderer.render(@screen)
 
       # キー入力を待つ
-      key = block_given? ? yield : STDIN.getch
+      key = block_given? ? yield : KeyInput.getch
 
       # オーバーレイを無効化
       @screen.disable_overlay
@@ -1241,10 +992,8 @@ module Rufio
       end
       result = @global_search.handle_key(input)
       if result.is_a?(Hash) && File.file?(result[:path])
-        @keybind_handler.exit_log_viewer_mode if @keybind_handler.log_viewer_mode?
-        @keybind_handler.exit_help_mode if @keybind_handler.help_mode?
-        @keybind_handler.exit_job_mode if @keybind_handler.in_job_mode?
-        if @keybind_handler.send(:navigate_to_directory, File.dirname(result[:path]))
+        @keybind_handler.switch_mode(:files)
+        if @keybind_handler.navigate_to_directory(File.dirname(result[:path]))
           index = @keybind_handler.get_active_entries.index { |entry| entry[:path] == result[:path] }
           @keybind_handler.select_index(index) if index
           @keybind_handler.unfocus_preview_pane
@@ -1289,6 +1038,17 @@ module Rufio
         ch = read_next_input_byte
         break if ch.nil? || ch =~ /[A-Za-z]/
       end
+    end
+
+    # 全画面をバッファから再描画する
+    def render_full_screen
+      return unless @screen && @renderer
+
+      @renderer.clear
+      @screen.clear
+      draw_screen_to_buffer(@screen, nil, nil)
+      @renderer.render(@screen)
+      print "\e[#{@screen_height};#{@screen_width}H"
     end
 
   end
