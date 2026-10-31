@@ -48,6 +48,7 @@
 | `m` | Move selected items to current directory |
 | `c` | Copy selected items to current directory |
 | `x` | Delete selected items |
+| `z` | With selected items: extract when all are `.zip` files (each into `<name>/`), otherwise compress them into one `.zip` (runs as a job). Without a selection, `z` opens zoxide history |
 
 ### Filtering & Search
 

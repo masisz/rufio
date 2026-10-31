@@ -2,6 +2,7 @@ const std = @import("std");
 const c = std.c;
 const search = @import("search.zig");
 const os = @import("os.zig");
+const zip = @import("zip.zig");
 
 /// スキャン状態
 pub const ScanState = enum(u8) {
@@ -423,4 +424,59 @@ export fn core_cache_destroy(handle: u64) void {
     if (handle == 0) return;
     const cache: *search.Cache = @ptrFromInt(handle);
     cache.destroy();
+}
+
+// ============================================================
+// ZIP データ処理（展開・圧縮）: 検証やパスの決定は Ruby 側で行う
+// ============================================================
+
+/// 展開ジョブを開始してハンドルを返す（失敗時は 0）。threads=0 で CPU 数
+export fn core_zip_extract_create(zip_path: [*]const u8, zip_path_len: usize, tasks: [*]const u8, tasks_len: usize, threads: u32) u64 {
+    const job = zip.Job.createExtract(zip_path[0..zip_path_len], tasks[0..tasks_len], threads) catch return 0;
+    return @intFromPtr(job);
+}
+
+/// 圧縮ジョブを開始してハンドルを返す（失敗時は 0）。level は 1〜9（それ以外は既定）
+export fn core_zip_deflate_create(tasks: [*]const u8, tasks_len: usize, level: i32, threads: u32) u64 {
+    const job = zip.Job.createDeflate(tasks[0..tasks_len], level, threads) catch return 0;
+    return @intFromPtr(job);
+}
+
+export fn core_zip_state(handle: u64) u8 {
+    if (handle == 0) return @intFromEnum(zip.State.failed);
+    const job: *zip.Job = @ptrFromInt(handle);
+    return @intFromEnum(job.getState());
+}
+
+export fn core_zip_progress(handle: u64, done: *u64, total: *u64) void {
+    done.* = 0;
+    total.* = 0;
+    if (handle == 0) return;
+    const job: *zip.Job = @ptrFromInt(handle);
+    job.progress(done, total);
+}
+
+export fn core_zip_status(handle: u64, index: usize) u8 {
+    if (handle == 0) return @intFromEnum(zip.Status.io_error);
+    const job: *zip.Job = @ptrFromInt(handle);
+    return @intFromEnum(job.status(index));
+}
+
+export fn core_zip_deflate_result(handle: u64, index: usize, crc: *u32, compressed: *u64, size: *u64) u8 {
+    if (handle == 0) return @intFromEnum(zip.Status.io_error);
+    const job: *zip.Job = @ptrFromInt(handle);
+    return @intFromEnum(job.deflateResult(index, crc, compressed, size));
+}
+
+export fn core_zip_cancel(handle: u64) void {
+    if (handle == 0) return;
+    const job: *zip.Job = @ptrFromInt(handle);
+    job.cancel();
+}
+
+/// 実行中ならキャンセルしてスレッドの終了を待つ
+export fn core_zip_destroy(handle: u64) void {
+    if (handle == 0) return;
+    const job: *zip.Job = @ptrFromInt(handle);
+    job.destroy();
 }

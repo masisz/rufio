@@ -78,6 +78,7 @@ module Rufio
 
             @available = true
             load_search_functions!
+            load_zip_functions!
           rescue StandardError => e
             warn "Failed to load zig extension: #{e.message}" if ENV['RUFIO_DEBUG']
             @available = false
@@ -98,6 +99,12 @@ module Rufio
       def search_available?
         load! unless @loaded
         @search_available == true
+      end
+
+      # ZIP データ処理 API（古いライブラリには存在しない）
+      def zip_available?
+        load! unless @loaded
+        @zip_available == true
       end
 
       # バージョン取得
@@ -121,6 +128,21 @@ module Rufio
       rescue Fiddle::DLError => e
         warn "Zig content search unavailable: #{e.message}" if ENV['RUFIO_DEBUG']
         @search_available = false
+      end
+
+      def load_zip_functions!
+        extern 'uint64_t core_zip_extract_create(const char*, size_t, const char*, size_t, uint32_t)'
+        extern 'uint64_t core_zip_deflate_create(const char*, size_t, int32_t, uint32_t)'
+        extern 'uint8_t core_zip_state(uint64_t)'
+        extern 'void core_zip_progress(uint64_t, void*, void*)'
+        extern 'uint8_t core_zip_status(uint64_t, size_t)'
+        extern 'uint8_t core_zip_deflate_result(uint64_t, size_t, void*, void*, void*)'
+        extern 'void core_zip_cancel(uint64_t)'
+        extern 'void core_zip_destroy(uint64_t)'
+        @zip_available = true
+      rescue Fiddle::DLError => e
+        warn "Zig ZIP engine unavailable: #{e.message}" if ENV['RUFIO_DEBUG']
+        @zip_available = false
       end
     end
   end

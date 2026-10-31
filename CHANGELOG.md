@@ -5,6 +5,15 @@ All notable changes to rufio will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - Unreleased
+
+### Added
+- Preview ZIP archives as an entry list (size, method, modified time, name), including ZIP64, UTF-8 / CP932 file names, and the Info-ZIP Unicode Path extra field. The list is read from the central directory without extracting files
+- Press `z` with items selected in Files mode to extract them when every selected item is a `.zip` file (each into `<name>/`, numbered if the name is taken) or otherwise compress them into one `.zip` in the current directory. The work runs as a background job with progress in Jobs mode, can be cancelled, removes a partially extracted folder on failure, and refreshes the file list when done. Encrypted entries are skipped. Without a selection, `z` still opens zoxide history
+- The bundled Zig library adds a ZIP engine that decompresses entries and compresses files of 1 MiB or more in parallel outside the GVL, rebuilt for all eight bundled platforms. Ruby still validates archives, chooses paths, and renames files, so the safety checks are shared. On 8 × 64 MB text files with 4 CPUs it compressed about 4.6x and extracted about 3.2x faster than the Ruby implementation. `RUFIO_NATIVE_ZIP=0` disables it, and older libraries without the ZIP functions fall back to Ruby
+- `Rufio::ZipExtractor` extracts Stored and Deflate entries after validating the whole archive first: it rejects path traversal, absolute paths, overlapping entries, and archives over size, entry count, or compression ratio limits, skips symlink and encrypted entries, never follows existing symlinks, verifies CRC-32, refuses to overwrite files unless asked, and leaves no partial files
+- `Rufio::ZipWriter` creates ZIP archives with UTF-8 names, falls back to Stored for incompressible files, uses ZIP64 for large files and more than 65,535 entries, skips symlinks, and writes through a temporary file
+
 ## [Unreleased]
 
 ### Added

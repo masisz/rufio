@@ -353,6 +353,7 @@ module Rufio
         needs_redraw = true if @background_status.update(@background_executor, now: start)
 
         needs_redraw = true if @global_search.poll
+        needs_redraw = true if @keybind_handler&.poll_archive_jobs
 
         # 非同期シンタックスハイライト完了チェック（UIRenderer側のフラグを参照）
         if @ui_renderer.highlight_updated?

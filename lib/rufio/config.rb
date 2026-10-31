@@ -33,6 +33,7 @@ module Rufio
       'file.binary_file' => 'Binary file',
       'file.cannot_preview' => 'Cannot preview',
       'file.encoding_error' => 'Character encoding error - cannot read file',
+      'file.invalid_archive' => 'Invalid ZIP archive',
       'file.preview_error' => 'Preview error',
       'file.error_prefix' => 'Error',
 

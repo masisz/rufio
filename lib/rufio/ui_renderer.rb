@@ -228,7 +228,7 @@ module Rufio
     # FilePreview の結果ハッシュからプレーンテキスト行を抽出する
     def extract_preview_lines(preview)
       case preview[:type]
-      when 'text', 'code'
+      when 'text', 'code', 'archive'
         preview[:lines]
       when 'binary'
         ["(#{ConfigLoader.message('file.binary_file')})", ConfigLoader.message('file.cannot_preview')]
