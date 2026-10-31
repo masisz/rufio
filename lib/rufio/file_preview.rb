@@ -13,6 +13,9 @@ module Rufio
     CONTROL_CHAR_NEWLINE = 10
     CONTROL_CHAR_CARRIAGE_RETURN = 13
 
+    # ZIPプレビューで一覧表示するエントリ数の上限
+    ARCHIVE_PREVIEW_ENTRIES = 200
+
     def initialize
       # future: hold syntax highlight settings etc.
     end
@@ -25,6 +28,8 @@ module Rufio
       return empty_response if file_size == 0
 
       begin
+        return archive_response(file_path, max_lines) if zip_archive?(file_path)
+
         # binary file detection
         sample = File.binread(file_path, [file_size, BINARY_SAMPLE_SIZE].min)
         return binary_response(file_path) if binary_file?(sample)
@@ -48,6 +53,45 @@ module Rufio
     end
 
     private
+
+    def zip_archive?(file_path)
+      File.extname(file_path).casecmp?('.zip') || ZipArchive.zip_signature?(file_path)
+    end
+
+    # unzip -l 相当のエントリ一覧をプレビュー行として返す
+    def archive_response(file_path, max_lines)
+      limit = [max_lines, ARCHIVE_PREVIEW_ENTRIES].max
+      listing = ZipArchive.list(file_path, limit: limit)
+      total_size = listing.entries.sum(&:size)
+
+      lines = ["ZIP archive: #{listing.total_entries} entries#{' (ZIP64)' if listing.zip64?}", '']
+      lines << format('%12s  %-8s  %-16s  %s', 'Length', 'Method', 'Modified', 'Name')
+      lines << format('%12s  %-8s  %-16s  %s', '-' * 10, '-' * 8, '-' * 16, '-' * 4)
+      listing.entries.each do |entry|
+        modified = entry.mtime ? entry.mtime.strftime('%Y-%m-%d %H:%M') : '-'
+        method = entry.encrypted? ? "#{ZipArchive.method_name(entry.method)}*" : ZipArchive.method_name(entry.method)
+        lines << format('%12d  %-8s  %-16s  %s', entry.size, method, modified, entry.name)
+      end
+      lines << format('%12s', '-' * 10)
+      if listing.truncated?
+        lines << "... #{listing.total_entries - listing.entries.length} more entries"
+      else
+        lines << format('%12d  %d files', total_size, listing.entries.length)
+      end
+      lines << "Comment: #{listing.comment}" unless listing.comment.empty?
+
+      {
+        type: "archive",
+        language: nil,
+        lines: lines,
+        truncated: listing.truncated?,
+        size: File.size(file_path),
+        modified: File.mtime(file_path),
+        encoding: "UTF-8"
+      }
+    rescue ZipArchive::FormatError => e
+      error_response("#{ConfigLoader.message('file.invalid_archive')}: #{e.message}")
+    end
 
     def binary_file?(sample)
       return false if sample.empty?
