@@ -4,41 +4,9 @@ require_relative 'test_helper'
 require 'minitest/autorun'
 require 'open3'
 require 'zlib'
+require_relative 'support/zip_fixture'
 
 class TestZipArchive < Minitest::Test
-  # テスト用の最小ZIPライタ（外部コマンドに依存せずフィクスチャを生成する）
-  class ZipFixture
-    def initialize
-      @locals = []
-      @centrals = []
-      @offset = 0
-    end
-
-    def add(raw_name, data, deflate: false, flags: 0, extra: ''.b, time: Time.new(2026, 10, 31, 12, 34, 56))
-      raw_name = raw_name.b
-      payload = deflate ? Zlib::Deflate.new(Zlib::DEFAULT_COMPRESSION, -Zlib::MAX_WBITS).then { |z| z.deflate(data, Zlib::FINISH) } : data.b
-      method = deflate ? 8 : 0
-      crc = Zlib.crc32(data)
-      dos_time = (time.hour << 11) | (time.min << 5) | (time.sec / 2)
-      dos_date = ((time.year - 1980) << 9) | (time.month << 5) | time.day
-
-      local = [0x04034b50, 20, flags, method, dos_time, dos_date, crc, payload.bytesize, data.bytesize,
-               raw_name.bytesize, 0].pack('VvvvvvVVVvv') + raw_name + payload
-      central = [0x02014b50, 20, 20, flags, method, dos_time, dos_date, crc, payload.bytesize, data.bytesize,
-                 raw_name.bytesize, extra.bytesize, 0, 0, 0, 0, @offset].pack('VvvvvvvVVVvvvvvVV') + raw_name + extra
-      @locals << local
-      @centrals << central
-      @offset += local.bytesize
-      self
-    end
-
-    def to_s(comment: '')
-      cd = @centrals.join
-      eocd = [0x06054b50, 0, 0, @centrals.size, @centrals.size, cd.bytesize, @offset, comment.bytesize].pack('VvvvvVVv')
-      (@locals.join + cd + eocd + comment.b)
-    end
-  end
-
   def setup
     @dir = Dir.mktmpdir('rufio-zip')
   end

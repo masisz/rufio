@@ -14,13 +14,27 @@ module Rufio
     Entry = Struct.new(
       :name, :compressed_size, :size, :method, :crc32, :mtime,
       :local_header_offset, :flags, :directory, :encrypted,
+      :version_made_by, :external_attributes,
       keyword_init: true
     ) do
       alias_method :directory?, :directory
       alias_method :encrypted?, :encrypted
+
+      # Unix 系で作られたエントリのファイルモード（それ以外は nil）
+      def unix_mode
+        return nil unless (version_made_by >> 8) == HOST_UNIX
+
+        mode = external_attributes >> 16
+        mode.zero? ? nil : mode
+      end
+
+      def symlink?
+        mode = unix_mode
+        !mode.nil? && (mode & S_IFMT) == S_IFLNK
+      end
     end
 
-    Listing = Struct.new(:entries, :total_entries, :comment, :zip64, keyword_init: true) do
+    Listing = Struct.new(:entries, :total_entries, :comment, :zip64, :central_directory_offset, keyword_init: true) do
       alias_method :zip64?, :zip64
 
       def truncated?
@@ -44,6 +58,12 @@ module Rufio
 
     FLAG_ENCRYPTED = 0x0001
     FLAG_UTF8 = 0x0800
+
+    HOST_UNIX = 3
+    S_IFMT = 0o170000
+    S_IFLNK = 0o120000
+    S_IFDIR = 0o040000
+    S_IFREG = 0o100000
 
     METHOD_NAMES = {
       0 => 'Stored',
@@ -90,7 +110,8 @@ module Rufio
           entries: entries,
           total_entries: eocd[:total_entries],
           comment: eocd[:comment],
-          zip64: eocd[:zip64]
+          zip64: eocd[:zip64],
+          central_directory_offset: eocd[:cd_offset]
         )
       end
     end
@@ -189,8 +210,8 @@ module Rufio
 
     def read_central_header(io, offset, cd_end)
       header = read_at(io, offset, CENTRAL_HEADER_SIZE)
-      sig, _made, _needed, flags, method, dos_time, dos_date, crc32, compressed_size, size,
-        name_length, extra_length, comment_length, _disk, _int_attr, _ext_attr, local_offset =
+      sig, made_by, _needed, flags, method, dos_time, dos_date, crc32, compressed_size, size,
+        name_length, extra_length, comment_length, _disk, _int_attr, ext_attr, local_offset =
         header.unpack('VvvvvvvVVVvvvvvVV')
       raise FormatError, "Invalid central directory header at offset #{offset}" unless sig == CENTRAL_HEADER_SIGNATURE
 
@@ -218,7 +239,9 @@ module Rufio
         local_header_offset: sizes[:local_header_offset],
         flags: flags,
         directory: name.end_with?('/'),
-        encrypted: (flags & FLAG_ENCRYPTED) != 0
+        encrypted: (flags & FLAG_ENCRYPTED) != 0,
+        version_made_by: made_by,
+        external_attributes: ext_attr
       )
       [entry, next_offset]
     end

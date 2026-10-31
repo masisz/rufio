@@ -1,21 +1,27 @@
 # FastZip 実装検討（rufio 1.3）
 
 ブランチ: `v1.3.0`
-ステータス: 検討中（Phase 1 のみ実装済み）
+ステータス: Phase 1・2（Pure Ruby の一覧・展開・作成）実装済み / Phase 3（Zig）未着手
 
 「FastZip 開発構想メモ（Ruby × Zig ネイティブ拡張アーカイバ）」を rufio 1.3 の機能として取り込む前提で、既存コードとの整合と実装方針を整理する。
 
 ---
 
-## 1. 結論（提案）
+## 1. 結論
 
-| 項目 | 構想メモ | 本検討での提案 |
+| 項目 | 構想メモ | 本検討での方針 |
 |------|----------|----------------|
 | 置き場所 | 独立Gem `fast_zip` | まず rufio 内の機能として実装。ABIが Ruby 非依存なので、後から Gem に切り出せる |
 | Ruby との接続 | C拡張（`Init_fast_zip` + `rb_thread_call_without_gvl`） | **既存の流儀に合わせて Fiddle + Ruby ABI 非依存の C 関数** |
 | GVL 解放 | 自前で `rb_thread_call_without_gvl` | Fiddle が既定で解放する（下記 2.3）。長時間処理は既存スキャナと同じ「ハンドル＋ポーリング」型にしてキャンセル可能にする |
 | ネイティブ非搭載環境 | 記載なし | **Pure Ruby 実装を必須のフォールバック兼リファレンス**とする（Phase 1 で実装済み） |
 | 最初のユーザー価値 | — | `.zip` をプレビューペインで一覧表示（`unzip -l` 相当）※実装済み |
+
+### 1.1 決定事項（2026-10-31）
+- C 拡張にはしない。既存の Zig 連携（Fiddle + Ruby ABI 非依存の C 関数）で実装する
+- Pure Ruby 版は残す（ネイティブ非搭載環境のフォールバック兼、互換性の基準）
+- 展開時の安全対策を入れる（4.2）
+- ネイティブバイナリはビルド済みのものを Gem に同梱して配る（1.2 の `make dist` の 8 プラットフォーム）
 
 ---
 
@@ -25,12 +31,12 @@
 - `FilePreview#determine_file_type` は `.zip` 等を `archive` と判定するが、実際はバイナリ判定が先に走り「Binary file / Cannot preview」と表示されていた。
 - 圧縮・展開機能はない。
 
-### 2.2 既存の Zig ネイティブ拡張
-- ソース: `lib_zig/rufio_native/src/main.zig`。Ruby ヘッダを include せず、`core_async_*` という **Ruby ABI 非依存の C 関数**をエクスポートしている。
-- Ruby 側: `lib/rufio/native_scanner_zig.rb` が `Fiddle::Importer` でロード。「ハンドル（u64）を返す → 非同期実行 → 10ms ポーリング → 結果取得 → destroy」の設計。
-- 同梱バイナリ `lib/rufio/native/rufio_zig.bundle` は **Mach-O arm64 のみ**（`file` コマンドで確認）。Linux / Windows / Intel Mac では Zig 拡張は使われず Ruby 実装にフォールバックしている。
-- `build.zig` は `linkSystemLibrary("ruby.3.4")` しているが、`main.zig` は Ruby API を使っていない。ZIP 用に作り直すなら Ruby へのリンクは不要にできる。
-- `Makefile` は `librufio_zig.dylib` を出力し `.bundle` にコピーする macOS 前提の手順。
+### 2.2 既存の Zig ネイティブ拡張（1.2.0 時点）
+- ソース: `lib_zig/rufio_native/src/`（`main.zig` がエクスポート、`search.zig` がコンテンツ検索、`os.zig` が OS 差分の吸収）。Ruby ヘッダは include せず、`core_async_*` / `core_search_*` / `core_cache_*` という **Ruby ABI 非依存の C 関数**をエクスポートしている。
+- Ruby 側: `lib/rufio/native_scanner_zig.rb` が `Fiddle::Importer` でロード。関数グループごとに `search_available?` のような判定があり、古いバイナリでも Ruby 実装に切り替わる。
+- ビルド: Zig 0.17。`make -C lib_zig/rufio_native dist` で macOS（arm64/x86_64）・Linux（x86_64/aarch64、glibc 2.17+ と musl）・Windows（x64/arm64）の 8 種類をクロスコンパイルし、`lib/rufio/native/<platform>/` に同梱する。
+- `test/test_native_platform_binaries.rb` が各バイナリの形式・CPU・必須エクスポート（`REQUIRED_EXPORTS`）を検証している。
+- 1.2.0 で `rubyzip`（`>= 2.4, < 3.0`）が G モードの `.pptx` 読み取り用に依存関係に入った。ただし rubyzip 2.4 はファイル名を ASCII-8BIT で保持し、UTF-8 文字列で引けない（このブランチのテストで確認）。プレビュー・展開・作成は本実装を使い、rubyzip は相互運用テストの相手として使う。
 
 ### 2.3 Fiddle と GVL
 - 本環境の fiddle 1.1.8 の `ext/fiddle/function.c` では、`need_gvl` の既定値が `Qfalse` で、その場合 `rb_thread_call_without_gvl` 経由で関数を呼ぶ。`Fiddle::Importer#extern` は `need_gvl` を指定しないので、**既存の Zig 関数呼び出しは GVL を解放して実行されている**。
@@ -43,7 +49,7 @@
 
 ---
 
-## 3. Phase 1 実装内容（このブランチ）
+## 3. 実装内容（このブランチ）
 
 ### 3.1 `Rufio::ZipArchive`（`lib/rufio/zip_archive.rb`）
 読み取り専用。ファイル本体は読まず、末尾と Central Directory だけを読む。
@@ -78,30 +84,36 @@
 
 ---
 
-## 4. Phase 2 以降の計画
+### 3.5 Phase 2: 展開・作成（Pure Ruby）
+- `Rufio::ZipExtractor`（`lib/rufio/zip_extractor.rb`）: Stored / Deflate の展開。安全対策は 4.2 をすべて実装。書き込み前に全エントリを検証し、危険なエントリが 1 件でもあれば何も書かない。進捗コールバックとキャンセルに対応。
+- `Rufio::ZipWriter`（`lib/rufio/zip_writer.rb`）: ファイル・ディレクトリから ZIP を作成。UTF-8 名、縮まないファイルは Stored、ZIP64（4GiB 超・65535 件超）、シンボリックリンクと出力先自身はスキップ、一時ファイル経由で失敗時に残骸を残さない。
+- テスト: `test/test_zip_extractor.rb` / `test/test_zip_writer.rb`。`zip` コマンド製（データディスクリプタ付きを含む）の展開、作成物の `unzip -t` 通過、rubyzip での読み取り、70,000 件での ZIP64 を確認。
+
+## 4. 計画
 
 | Phase | 内容 | 実装 | 備考 |
 |-------|------|------|------|
-| 2 | Store / Deflate の展開・作成 | Pure Ruby + zlib | 機能を先に完成させ、ネイティブ版のテストオラクルにする |
+| 2 | Store / Deflate の展開・作成 | Pure Ruby + zlib | **実装済み**。ネイティブ版のテストオラクルにする |
 | 3 | Zig コア（一覧・展開） | Zig + Fiddle | Ruby 実装と同じ結果を返すことを互換条件に、同じテストを両実装で回す |
 | 4 | 並列展開・並列圧縮 | Zig（`std.Thread.Pool`） | ZIP はエントリ単位で独立して圧縮されているため分割しやすい |
-| 5 | 配布・ベンチマーク | — | 下記「要判断事項」の配布方式次第 |
+| 5 | 配布・ベンチマーク | — | `make dist` で 8 プラットフォーム分を同梱、`REQUIRED_EXPORTS` に `zip_*` を追加 |
 
 ### 4.1 TUI への組み込み（案）
 - 展開・圧縮は `JobManager` / Jobs モードのジョブとして実行し、進捗とキャンセルを既存 UI に載せる。
 - 現状の `JobManager#add_job` は外部コマンド実行前提（`command:`）なので、Ruby / ネイティブ処理をジョブ化するためのインタフェース追加が必要。
 - キー割り当ては未決定（既存キーとの衝突確認が必要）。
 
-### 4.2 安全性要件（展開を実装する前に必須）
+### 4.2 安全性要件（Pure Ruby 版は実装済み。Zig 版も同じテストで確認する）
 - **Zip Slip**: `..`、絶対パス、Windows のドライブレター・`\` 区切りを含むエントリを拒否し、展開先ディレクトリ外に書かない
-- **シンボリックリンク**: 外部属性で symlink を示すエントリは既定で展開しない（リンク経由で展開先外へ書き込まれるのを防ぐ）
+- **シンボリックリンク**: 外部属性で symlink を示すエントリは展開しない。展開先に既にあるシンボリックリンクも辿らない
 - **ZIP 爆弾**: 展開後合計サイズ・圧縮率・エントリ数の上限。Central Directory 上のサイズを信用せず、実際に書いたバイト数で打ち切る。Local Header の範囲が重なるエントリ（重複参照型の爆弾）を拒否
 - **CRC-32 検証**: 不一致なら展開したファイルを削除してエラー
-- **既存ファイルの上書き**: 既定は確認ダイアログ
+- **既存ファイルの上書き**: 既定は拒否（`overwrite: true` で上書き）。UI では確認ダイアログを出す想定
+- **ファイルモード**: 実行権限だけを引き継ぎ、setuid / setgid / sticky と他者書き込み権限は付けない
 - 暗号化エントリ（ZipCrypto / AES）は初期は非対応としてスキップ
 
 ### 4.3 Zig ABI 案（未ビルド・スケッチ）
-既存 `core_async_*` と同じ形に揃える。**この環境では Zig を実行できなかったため、以下はコンパイル未確認の設計案である。**
+既存 `core_async_*` / `core_search_*` と同じ形に揃え、Ruby 側は `zip_available?` で関数グループの有無を判定する。**まだビルドしていない設計案である。**
 
 ```zig
 // 一覧（同期・軽量）
@@ -136,15 +148,11 @@ export fn zip_cancel(h: u64) void;
 ---
 
 ## 6. 要判断事項
-
-1. **ネイティブバイナリの配布方式**
-   - (a) 現状どおりビルド済みバイナリを同梱（現状は macOS arm64 のみ）
-   - (b) プラットフォーム別のビルド済み Gem を CI で作る
-   - (c) `gem install` 時に Zig でビルド（利用者に Zig が必要）
-2. **独立 Gem 化のタイミング**: rufio 内で安定させてからか、最初から `fast_zip` として切り出すか
-3. **展開・圧縮のキー割り当てと UI**（プレビュー以外の操作をどこまで 1.3 に入れるか）
-4. **対応範囲**: 暗号化 ZIP、Deflate64 / Zstd 等の非標準メソッドを扱うか
+1. **独立 Gem 化のタイミング**: rufio 内で安定させてからか、最初から `fast_zip` として切り出すか
+2. **展開・圧縮のキー割り当てと UI**（Jobs モードでの進捗表示を含む）
+3. **対応範囲**: 暗号化 ZIP、Deflate64 / Zstd 等の非標準メソッドを扱うか
+4. **展開上限の既定値**: 合計 16GiB / 10 万エントリ / 1MiB 超のエントリで圧縮率 1000:1（現在の暫定値）
 
 ## 7. 未確認事項
-- Zig ツールチェーンはこの環境で実行が許可されなかったため、Zig コードのビルド・計測は一切行っていない。
-- 構想メモにある「libdeflate / SIMD による圧倒的高速化」の度合いは、本検討では計測していない。
+- Zig 0.17 は PyPI（`ziglang`）から入手できることを確認したが、この環境での実行は許可されておらず、Zig コードのビルド・計測はしていない。
+- 構想メモにある「libdeflate / SIMD による圧倒的高速化」の度合いは計測していない。
