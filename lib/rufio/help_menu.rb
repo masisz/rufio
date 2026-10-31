@@ -62,6 +62,7 @@ module Rufio
           '', 'Selection and file operations',
           "#{key(:select)}: Select / unselect file",
           "#{key(:copy_selected)}/#{key(:move_selected)}/#{key(:delete_selected)}: Copy / move / delete selected files",
+          "#{key(:zoxide)}: Extract selected .zip files / compress selected items",
           "#{key(:rename)}/#{key(:delete)}: Rename / delete current file",
           "#{key(:create_file)}/#{key(:create_dir)}: Create file / directory",
           '', 'Search and bookmarks',
@@ -72,7 +73,7 @@ module Rufio
           "#{key(:add_bookmark)}/#{key(:bookmark_menu)}: Add / manage bookmarks",
           'Tab / Shift+Tab: Next / previous bookmark',
           "1-9: Jump to bookmark | #{key(:start_dir)}: Start directory",
-          "#{key(:zoxide)}: Directory history (zoxide)",
+          "#{key(:zoxide)}: Directory history (zoxide, when nothing is selected)",
           "#{key(:quit)}: Quit (with confirmation)",
           "#{key(:quit_cd)}: Quit and cd to the current directory (rufio --shell-init)"
         ]

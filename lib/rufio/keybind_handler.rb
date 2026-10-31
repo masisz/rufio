@@ -13,6 +13,7 @@ require_relative 'selection_manager'
 require_relative 'file_operations'
 require_relative 'bookmark_manager'
 require_relative 'zoxide_integration'
+require_relative 'archive_controller'
 require_relative 'dialog_renderer'
 require_relative 'logger'
 
@@ -131,6 +132,11 @@ module Rufio
         @script_path_manager, @notification_manager, @zoxide_integration
       )
 
+      # ArchiveController（選択アイテムの ZIP 圧縮・展開を担当）
+      @archive_controller = ArchiveController.new(
+        nil, @dialog_renderer, @selection_manager, @job_manager, @notification_manager
+      )
+
       # SearchController（fzf・rga検索を担当）
       @search_controller = SearchController.new(nil, @file_opener)
 
@@ -153,12 +159,14 @@ module Rufio
       @file_op_controller.set_directory_listing(directory_listing)
       @bookmark_controller.set_directory_listing(directory_listing)
       @search_controller.set_directory_listing(directory_listing)
+      @archive_controller.set_directory_listing(directory_listing)
     end
 
     def set_terminal_ui(terminal_ui)
       @terminal_ui = terminal_ui
       @nav_controller.set_terminal_ui(terminal_ui)
       @file_op_controller.set_terminal_ui(terminal_ui)
+      @archive_controller.set_terminal_ui(terminal_ui)
       @bookmark_controller.set_terminal_ui(terminal_ui)
       # terminal_ui が設定されたら、bookmark_manager と zoxide_integration にも渡す
       @bookmark_manager.set_terminal_ui(terminal_ui)
@@ -488,7 +496,7 @@ module Rufio
       when :rga_search      then rga_search
       when :add_bookmark    then add_bookmark
       when :bookmark_menu   then show_bookmark_menu
-      when :zoxide          then show_zoxide_menu
+      when :zoxide          then archive_or_zoxide
       when :start_dir       then goto_start_directory
       when :job_mode        then enter_job_mode
       when :help            then show_help_dialog
@@ -571,6 +579,13 @@ module Rufio
     # スクリプトパス管理UIを表示
     def show_script_paths_manager
       @bookmark_controller.show_script_paths_manager
+    end
+
+    # 選択中のアイテムがあれば ZIP 圧縮・展開、なければ zoxide
+    def archive_or_zoxide
+      return @archive_controller.archive_selected if @selection_manager.any? && !@in_help_mode && !@in_log_viewer_mode
+
+      show_zoxide_menu
     end
 
     # zoxide 機能
@@ -683,6 +698,11 @@ module Rufio
     end
 
     # ジョブがあるかどうか
+    # バックグラウンドの圧縮・展開ジョブの進捗・完了を反映する（メインループから呼ぶ）
+    def poll_archive_jobs
+      @archive_controller.poll
+    end
+
     def has_jobs?
       @job_manager.has_jobs?
     end

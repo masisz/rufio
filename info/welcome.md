@@ -24,7 +24,7 @@ A TUI file manager that executes and coordinates tools and scripts from files.
 | `s` | Search with fzf |
 | `b` | Add bookmark |
 | `B` | Bookmark menu |
-| `z` | zoxide history |
+| `z` | zoxide history / extract or compress selected items |
 | `:` | Command mode |
 | `J` | Job mode |
 | `?` | Help mode |

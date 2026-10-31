@@ -99,6 +99,7 @@ rufio /path/to  # Launch in specified directory
 | `r` | Rename |
 | `d` | Delete |
 | `m/c/x` | Move/copy/delete (selected) |
+| `z` | Extract selected `.zip` files / compress selected items (selected) |
 
 ### Search & Filter
 
@@ -117,7 +118,7 @@ rufio /path/to  # Launch in specified directory
 | `0` | Return to startup directory |
 | `1-9` | Jump to bookmark |
 | `Tab` | Cycle to next bookmark (Files mode only) |
-| `z` | zoxide history |
+| `z` | zoxide history (when nothing is selected) |
 
 ### Tool Runtime
 

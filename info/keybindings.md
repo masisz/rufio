@@ -33,6 +33,7 @@ Complete reference of all keyboard shortcuts in **rufio**.
 | `m` | Move selected items to current directory |
 | `c` | Copy selected items to current directory |
 | `x` | Delete selected items |
+| `z` | Extract selected `.zip` files / compress selected items into a `.zip` |
 
 ## Filtering & Search
 
@@ -50,7 +51,7 @@ Complete reference of all keyboard shortcuts in **rufio**.
 | `B` | Bookmark menu (view/add/remove/script paths) |
 | `0` | Jump to startup directory |
 | `1-9` | Jump to bookmark 1-9 |
-| `z` | Navigate using zoxide history |
+| `z` | Navigate using zoxide history (when nothing is selected) |
 
 ## Command Mode & Tool Runtime
 
