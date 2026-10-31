@@ -1,7 +1,7 @@
 # FastZip 実装検討（rufio 1.3）
 
 ブランチ: `v1.3.0`
-ステータス: Phase 1・2（Pure Ruby の一覧・展開・作成）実装済み / Phase 3（Zig）未着手
+ステータス: Phase 1〜5 実装済み（Pure Ruby の一覧・展開・作成、`z` キー、Zig エンジンの並列展開・圧縮、8 プラットフォームのバイナリ同梱）
 
 「FastZip 開発構想メモ（Ruby × Zig ネイティブ拡張アーカイバ）」を rufio 1.3 の機能として取り込む前提で、既存コードとの整合と実装方針を整理する。
 
@@ -23,6 +23,7 @@
 - 展開時の安全対策を入れる（4.2）
 - ネイティブバイナリはビルド済みのものを Gem に同梱して配る（1.2 の `make dist` の 8 プラットフォーム）
 - 操作は Files モードで選択後に `z`（すべて .zip なら展開、それ以外は圧縮）。暗号化エントリはスキップのまま
+- 展開上限は現在の値（合計 16GiB / 10 万エントリ / 1MiB 超で 1000:1）で確定。対応方式は Stored と Deflate のみ
 
 ---
 
@@ -95,9 +96,9 @@
 | Phase | 内容 | 実装 | 備考 |
 |-------|------|------|------|
 | 2 | Store / Deflate の展開・作成 | Pure Ruby + zlib | **実装済み**。ネイティブ版のテストオラクルにする |
-| 3 | Zig コア（一覧・展開） | Zig + Fiddle | Ruby 実装と同じ結果を返すことを互換条件に、同じテストを両実装で回す |
-| 4 | 並列展開・並列圧縮 | Zig（`std.Thread.Pool`） | ZIP はエントリ単位で独立して圧縮されているため分割しやすい |
-| 5 | 配布・ベンチマーク | — | `make dist` で 8 プラットフォーム分を同梱、`REQUIRED_EXPORTS` に `zip_*` を追加 |
+| 3 | Zig コア（展開・圧縮のデータ処理） | Zig + Fiddle | **実装済み**。同じテストを両実装で回す |
+| 4 | 並列展開・並列圧縮 | Zig（ワーカースレッド） | **実装済み**。最大 16 スレッド、既定は CPU 数 |
+| 5 | 配布・ベンチマーク | — | **実装済み**。`make dist` で 8 プラットフォーム分を同梱、`REQUIRED_EXPORTS` に `core_zip_*` を追加 |
 
 ### 4.1 TUI への組み込み（実装済み）
 - Files モードで `Space` で選択してから `z`。選択がすべて `.zip` なら展開、それ以外は圧縮（`lib/rufio/archive_controller.rb`）
@@ -108,7 +109,7 @@
 - 処理は `JobManager` のジョブとしてバックグラウンドスレッドで実行。ジョブ名に 5% 刻みで進捗を表示し、Jobs モードのキャンセルで中断できる。完了時に通知し、表示中のディレクトリなら一覧を再読み込みする
 - 暗号化エントリはスキップ（決定事項）
 
-### 4.2 安全性要件（Pure Ruby 版は実装済み。Zig 版も同じテストで確認する）
+### 4.2 安全性要件（実装済み。Ruby と Zig で共通）
 - **Zip Slip**: `..`、絶対パス、Windows のドライブレター・`\` 区切りを含むエントリを拒否し、展開先ディレクトリ外に書かない
 - **シンボリックリンク**: 外部属性で symlink を示すエントリは展開しない。展開先に既にあるシンボリックリンクも辿らない
 - **ZIP 爆弾**: 展開後合計サイズ・圧縮率・エントリ数の上限。Central Directory 上のサイズを信用せず、実際に書いたバイト数で打ち切る。Local Header の範囲が重なるエントリ（重複参照型の爆弾）を拒否
@@ -117,30 +118,36 @@
 - **ファイルモード**: 実行権限だけを引き継ぎ、setuid / setgid / sticky と他者書き込み権限は付けない
 - 暗号化エントリ（ZipCrypto / AES）は初期は非対応としてスキップ
 
-### 4.3 Zig ABI 案（未ビルド・スケッチ）
-既存 `core_async_*` / `core_search_*` と同じ形に揃え、Ruby 側は `zip_available?` で関数グループの有無を判定する。**まだビルドしていない設計案である。**
+### 4.3 Zig エンジン（実装済み）
+`lib_zig/rufio_native/src/zip.zig`。役割分担は次のとおりで、安全性の検証は Ruby 実装と共通にした。
 
-```zig
-// 一覧（同期・軽量）
-export fn zip_open(path: [*:0]const u8) u64;            // 0 = 失敗
-export fn zip_entry_count(h: u64) u64;
-export fn zip_entry_name(h: u64, i: u64, buf: [*]u8, len: usize) usize;
-export fn zip_entry_attrs(h: u64, i: u64, size: *u64, csize: *u64,
-                          method: *u16, crc: *u32, dos_datetime: *u32) i32;
-export fn zip_last_error(h: u64, buf: [*]u8, len: usize) usize;
-export fn zip_close(h: u64) void;
+| 処理 | 担当 |
+|------|------|
+| Central Directory の解析、パス正規化、上限・重複範囲・シンボリックリンクの検証、ディレクトリ作成 | Ruby |
+| ZIP 内のデータ範囲を読み、伸長し、宣言サイズ超過で打ち切り、CRC-32 を検証して一時ファイルに書く | Zig（エントリ単位で並列） |
+| 一時ファイルの rename、権限・日時の設定、失敗時の一時ファイル削除 | Ruby |
+| ファイルを raw DEFLATE で一時ファイルへ圧縮し、CRC-32 とサイズを返す（1MiB 以上のファイルのみ） | Zig（ファイル単位で並列） |
+| ローカルヘッダ・Central Directory・ZIP64 を書いてアーカイブを組み立てる | Ruby |
 
-// 展開（非同期・キャンセル可能）
-export fn zip_extract_async(h: u64, dest: [*:0]const u8, threads: u32, flags: u32) i32;
-export fn zip_get_state(h: u64) u8;                      // idle/running/done/cancelled/failed
-export fn zip_get_progress(h: u64, done_bytes: *u64, total_bytes: *u64) void;
-export fn zip_cancel(h: u64) void;
-```
+- エクスポート: `core_zip_extract_create` / `core_zip_deflate_create` / `core_zip_state` / `core_zip_progress` / `core_zip_status` / `core_zip_deflate_result` / `core_zip_cancel` / `core_zip_destroy`
+- Ruby 側は `NativeScannerZigFFI.zip_available?` で関数グループの有無を判定し、ない場合（古いバイナリ）や `RUFIO_NATIVE_ZIP=0` では Pure Ruby を使う
+- DEFLATE は Zig 標準ライブラリの `std.compress.flate`、CRC-32 は `std.hash.Crc32`。libdeflate は同梱していない
+- ファイル操作は `os.zig` に追加（Linux は直接システムコール、macOS は libc、Windows は Win32。位置指定読み込み・排他作成・書き込み）
+- `flate.Compress` は約 230KB あり初期化時にスタックへ載るため、ワーカースレッドのスタックは 4MB
+- 1MiB 未満のファイルの圧縮は Ruby の zlib で行う。小さいファイルを Zig に渡すと、一時ファイルの作成・コピー・削除の分だけ遅くなった（2 万ファイルで 0.98 秒 → 5.26 秒）ため
+- テスト: `test/test_zip_extractor.rb` / `test/test_zip_writer.rb` の全テストを `TestZipExtractorNative` / `TestZipWriterNative` で Zig 実装でも実行。Debug ビルド（安全チェック有効）でも全件通過を確認
 
-- ファイル名のエンコーディング変換は Ruby 側に残す（生バイト列を返す）。CP932 変換表を Zig に持ち込まないため。
-- 安全性チェック（4.2）は Zig 側でも必ず実装し、Ruby 実装と同じテストケースで確認する。
+### 4.4 計測（このクラウドコンテナ、4 CPU、Linux x86_64、ReleaseFast、各 3 回の最小値）
 
----
+| データ | 処理 | Ruby | Zig | zip / unzip |
+|--------|------|------|-----|-------------|
+| 8 ファイル × 64MB のテキスト | 圧縮 | 15.36 秒 | 3.34 秒 | 20.20 秒 |
+| 同上 | 展開 | 3.03 秒 | 0.94 秒 | 4.11 秒 |
+| 2 万ファイル・計 79MB | 圧縮 | 0.93 秒 | 0.90 秒 | 0.30 秒 |
+| 同上 | 展開 | 5.82 秒 | 5.00 秒 | 4.62 秒 |
+
+- 圧縮後サイズは Zig の方がやや大きい（512MB → Ruby/zlib 67MB、Zig 71MB）。同じレベル指定でも実装が異なるため
+- 小さいファイル大量の展開はファイル作成が律速で、計測ごとのばらつきが大きい（`sync` を挟まない計測では unzip 1.4〜1.8 秒、Ruby/Zig 3〜6 秒）。ファイルごとの Ruby 側処理（rename・chmod・utime）が残るため、unzip との差は縮め切れていない
 
 ## 5. 技術的な注意点（構想メモへのコメント）
 
@@ -153,10 +160,8 @@ export fn zip_cancel(h: u64) void;
 ---
 
 ## 6. 要判断事項
-1. **独立 Gem 化のタイミング**: rufio 内で安定させてからか、最初から `fast_zip` として切り出すか
-2. **対応範囲**: Deflate64 / Zstd 等の非標準メソッドを扱うか（暗号化はスキップで決定）
-3. **展開上限の既定値**: 合計 16GiB / 10 万エントリ / 1MiB 超のエントリで圧縮率 1000:1（現在の暫定値）
+1. **独立 Gem 化のタイミング**: rufio 内で安定させてからか、`fast_zip` として切り出すか
 
 ## 7. 未確認事項
-- Zig 0.17 は PyPI（`ziglang`）から入手できることを確認したが、この環境での実行は許可されておらず、Zig コードのビルド・計測はしていない。
-- 構想メモにある「libdeflate / SIMD による圧倒的高速化」の度合いは計測していない。
+- Zig 版は Linux x86_64（このコンテナ）でのみ実行・計測した。macOS / Windows / aarch64 向けはクロスコンパイルとバイナリ形式・エクスポートの検証（`rake native:check`）までで、実機では動かしていない。特に Windows のファイル操作（`CreateFileW` / 位置指定 `ReadFile`）は未実行
+- 計測は 1 環境・1 種類のデータのみ。CPU 数やストレージによって倍率は変わる

@@ -3,6 +3,7 @@
 require 'fileutils'
 require 'zlib'
 require_relative 'zip_archive'
+require_relative 'native_zip'
 
 module Rufio
   # ZIPアーカイブの安全な展開（Pure Ruby 実装。ネイティブ実装の互換基準でもある）
@@ -39,9 +40,10 @@ module Rufio
     # @param destination [String] 展開先ディレクトリ（なければ作成する）
     # @param progress [#call, nil] (書き込み済みバイト数, 合計バイト数) を受け取る
     # @param cancelled [#call, nil] true を返したら CancelledError で中止する
+    # @param native [Boolean] Zig 実装でデータを並列に伸長する（検証は常に Ruby 側で行う）
     def initialize(zip_path, destination, overwrite: false,
                    max_total_size: DEFAULT_MAX_TOTAL_SIZE, max_entries: DEFAULT_MAX_ENTRIES,
-                   max_ratio: DEFAULT_MAX_RATIO, progress: nil, cancelled: nil)
+                   max_ratio: DEFAULT_MAX_RATIO, progress: nil, cancelled: nil, native: NativeZip.available?)
       @zip_path = zip_path
       @destination = File.expand_path(destination)
       @overwrite = overwrite
@@ -50,6 +52,7 @@ module Rufio
       @max_ratio = max_ratio
       @progress = progress
       @cancelled = cancelled
+      @native = native
     end
 
     def extract
@@ -61,18 +64,23 @@ module Rufio
         FileUtils.mkdir_p(@destination)
         root = File.realpath(@destination)
         total = plan.sum { |item| item[:entry].size }
-        written = 0
 
+        # 書き込み先をすべて確定させてからデータを書く
         plan.each do |item|
           check_cancel!
-          target = safe_target(root, item[:relative])
-          if item[:entry].directory?
-            make_directory(root, target)
-          else
-            make_directory(root, File.dirname(target))
-            written = write_file(io, item, target, written, total)
-          end
+          item[:target] = safe_target(root, item[:relative])
+          make_directory(root, item[:entry].directory? ? item[:target] : File.dirname(item[:target]))
         end
+
+        files = plan.reject { |item| item[:entry].directory? }
+        written = if @native && !files.empty?
+                    write_files_native(files, total)
+                  else
+                    files.reduce(0) do |sum, item|
+                      check_cancel!
+                      write_file(io, item, sum, total)
+                    end
+                  end
         apply_directory_times(root, plan)
 
         Result.new(extracted: plan.map { |item| item[:relative] }, skipped: skipped, bytes_written: written)
@@ -186,6 +194,7 @@ module Rufio
       current = root
       relative.split('/')[0...-1].each do |part|
         current = File.join(current, part)
+        next if verified_dirs.include?(current)
         raise UnsafeEntryError, "Path goes through a symlink: #{relative}" if File.symlink?(current)
       end
       raise UnsafeEntryError, "Target is a symlink: #{relative}" if File.symlink?(target)
@@ -193,17 +202,29 @@ module Rufio
       target
     end
 
-    def make_directory(root, path)
-      FileUtils.mkdir_p(path)
-      real = File.realpath(path)
-      return if real == root || real.start_with?(root.end_with?('/') ? root : "#{root}/")
-
-      raise UnsafeEntryError, "Directory escapes destination: #{path}"
+    # 作成・検証済みのディレクトリ（同じディレクトリへの多数のファイルで検証を繰り返さない）
+    def verified_dirs
+      @verified_dirs ||= {}
     end
 
-    def write_file(io, item, target, written, total)
+    def make_directory(root, path)
+      return if verified_dirs.include?(path)
+
+      FileUtils.mkdir_p(path)
+      real = File.realpath(path)
+      raise UnsafeEntryError, "Directory escapes destination: #{path}" unless real == root || real.start_with?(root.end_with?('/') ? root : "#{root}/")
+
+      # safe_target で途中にシンボリックリンクがないことを確認済みなので、祖先も検証済みとして扱う
+      current = path
+      until current == root || current.length <= root.length || verified_dirs.include?(current)
+        verified_dirs[current] = true
+        current = File.dirname(current)
+      end
+    end
+
+    def write_file(io, item, written, total)
       entry = item[:entry]
-      temp = "#{target}.rufio-#{Process.pid}-#{rand(1 << 32).to_s(16)}.tmp"
+      temp = temp_path(item[:target])
       crc = 0
       size = 0
 
@@ -223,12 +244,56 @@ module Rufio
       raise CorruptEntryError, "Entry is smaller than declared: #{entry.name}" if size != entry.size
       raise CorruptEntryError, "CRC-32 mismatch: #{entry.name}" if crc != entry.crc32
 
-      apply_mode(temp, entry)
-      File.rename(temp, target)
-      File.utime(entry.mtime, entry.mtime, target) if entry.mtime
+      finish_file(temp, item)
       written
     ensure
       File.unlink(temp) if temp && File.exist?(temp)
+    end
+
+    # Zig 実装で全ファイルを並列に一時ファイルへ伸長し、すべて検証が通ってから rename する
+    def write_files_native(files, total)
+      temps = files.map { |item| temp_path(item[:target]) }
+      tasks = files.each_with_index.map do |item, index|
+        entry = item[:entry]
+        { data_offset: item[:data_offset], compressed_size: entry.compressed_size, size: entry.size,
+          crc32: entry.crc32, method: entry.method, output: temps[index] }
+      end
+
+      job = NativeZip.extract(@zip_path, tasks)
+      begin
+        state = job.wait(progress: @progress && ->(done, _) { @progress.call(done, total) }, cancelled: @cancelled)
+        raise CancelledError, 'Extraction cancelled' if state == NativeZip::STATE_CANCELLED
+
+        files.each_with_index { |item, index| check_native_status(job.status(index), item[:entry]) }
+        files.each_with_index { |item, index| finish_file(temps[index], item) }
+      ensure
+        job.close
+        temps.each { |temp| File.unlink(temp) if File.exist?(temp) }
+      end
+      total
+    end
+
+    def check_native_status(status, entry)
+      case status
+      when NativeZip::STATUS_OK then nil
+      when NativeZip::STATUS_CRC_MISMATCH then raise CorruptEntryError, "CRC-32 mismatch: #{entry.name}"
+      when NativeZip::STATUS_TOO_LARGE then raise CorruptEntryError, "Entry is larger than declared: #{entry.name}"
+      when NativeZip::STATUS_SIZE_MISMATCH then raise CorruptEntryError, "Entry is smaller than declared: #{entry.name}"
+      when NativeZip::STATUS_CORRUPT then raise CorruptEntryError, "Invalid compressed data: #{entry.name}"
+      when NativeZip::STATUS_CANCELLED then raise CancelledError, 'Extraction cancelled'
+      else raise Error, "Failed to write #{entry.name}"
+      end
+    end
+
+    def temp_path(target)
+      "#{target}.rufio-#{Process.pid}-#{rand(1 << 32).to_s(16)}.tmp"
+    end
+
+    def finish_file(temp, item)
+      entry = item[:entry]
+      apply_mode(temp, entry)
+      File.rename(temp, item[:target])
+      File.utime(entry.mtime, entry.mtime, item[:target]) if entry.mtime
     end
 
     def each_chunk(io, item)
@@ -260,9 +325,9 @@ module Rufio
     def apply_mode(path, entry)
       return if Gem.win_platform?
 
+      @umask ||= File.umask
       mode = entry.unix_mode
-      File.chmod(0o666 & ~File.umask, path)
-      File.chmod(0o777 & ~File.umask & ~0o022, path) if mode && (mode & 0o111).nonzero?
+      File.chmod(mode && (mode & 0o111).nonzero? ? 0o777 & ~@umask & ~0o022 : 0o666 & ~@umask, path)
     end
 
     def apply_directory_times(root, plan)

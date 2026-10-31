@@ -21,20 +21,47 @@ class TestZipWriter < Minitest::Test
     FileUtils.rm_rf(@dir)
   end
 
+  # Ruby 実装で実行する。TestZipWriterNative は同じテストを Zig 実装で実行する
+  def native?
+    false
+  end
+
   def create(paths = %w[a.txt 日本語.txt nested], **options)
-    Rufio::ZipWriter.new(@zip, @src, paths, **options).write
+    Rufio::ZipWriter.new(@zip, @src, paths, native: native?, **options).write
   end
 
   def test_round_trip_through_extractor
     result = create
     dest = File.join(@dir, 'dest')
-    Rufio::ZipExtractor.new(@zip, dest).extract
+    Rufio::ZipExtractor.new(@zip, dest, native: native?).extract
 
     %w[a.txt 日本語.txt nested/random.bin nested/empty.txt].each do |name|
       assert_equal File.binread(File.join(@src, name)), File.binread(File.join(dest, name)), name
     end
     assert Dir.exist?(File.join(dest, 'nested', 'empty'))
     assert_includes result.added, 'nested/empty/'
+  end
+
+  # 1MiB 以上のファイルは Zig 実装が使える環境では並列圧縮の経路を通る
+  def test_round_trip_large_files
+    big = File.join(@src, 'big')
+    FileUtils.mkdir_p(big)
+    File.write(File.join(big, 'text.txt'), "rufio zip engine line\n" * 100_000)
+    File.binwrite(File.join(big, 'random.bin'), Random.new(3).bytes(1_500_000))
+    create(['big'])
+
+    entries = Rufio::ZipArchive.list(@zip).entries.to_h { |e| [e.name, e] }
+    assert_equal 8, entries['big/text.txt'].method
+    assert_equal 0, entries['big/random.bin'].method
+    dest = File.join(@dir, 'dest')
+    Rufio::ZipExtractor.new(@zip, dest, native: native?).extract
+    %w[text.txt random.bin].each do |name|
+      assert_equal File.binread(File.join(big, name)), File.binread(File.join(dest, 'big', name)), name
+    end
+    if system('unzip', '-v', out: File::NULL, err: File::NULL)
+      output, status = Open3.capture2e('unzip', '-t', @zip)
+      assert status.success?, output
+    end
   end
 
   def test_chooses_method_per_file_and_uses_utf8_names
@@ -73,7 +100,7 @@ class TestZipWriter < Minitest::Test
     File.symlink('/etc/passwd', File.join(@src, 'link'))
     zip_inside = File.join(@src, 'self.zip')
     File.write(zip_inside, 'old')
-    result = Rufio::ZipWriter.new(zip_inside, @src, %w[a.txt link self.zip], overwrite: true).write
+    result = Rufio::ZipWriter.new(zip_inside, @src, %w[a.txt link self.zip], overwrite: true, native: native?).write
 
     assert_equal ['a.txt'], result.added
     assert_equal [{ name: 'link', reason: 'symlink' }, { name: 'self.zip', reason: 'output archive' }], result.skipped
@@ -103,5 +130,16 @@ class TestZipWriter < Minitest::Test
     listing = Rufio::ZipArchive.list(@zip, limit: 1)
     assert listing.zip64?
     assert_equal 70_001, listing.total_entries
+  end
+end
+
+class TestZipWriterNative < TestZipWriter
+  def setup
+    skip 'Zig ZIP engine is not available' unless Rufio::NativeZip.available?
+    super
+  end
+
+  def native?
+    true
   end
 end

@@ -410,6 +410,14 @@ apt install fzf bat zoxide
 
 G mode content search uses a bundled Zig engine on macOS (arm64/x86_64), Linux (x86_64/aarch64, glibc 2.17+ or musl), and Windows (x64/arm64). It searches bookmarks in parallel and caches file contents between queries, so retyping a query is about 10x faster than `rg`. Other platforms, and queries containing non-ASCII letters with case, use the Ruby search automatically. Set `RUFIO_NATIVE_SEARCH=0` to disable it.
 
+### ZIP Archives
+
+Select items in Files mode with `Space` and press `z`: when every selected item is a `.zip` file, each is extracted into `<name>/` in the current directory; otherwise the selection is compressed into one `.zip`. The work runs as a job (progress and cancel in Jobs mode). `.zip` files also show their entry list in the preview.
+
+Extraction validates the whole archive before writing anything: it rejects path traversal and absolute paths, overlapping entries, and archives over 16 GiB in total, 100,000 entries, or a 1000:1 compression ratio (for entries over 1 MiB); it skips symlink and encrypted entries, verifies CRC-32, and never overwrites existing files. Only Stored and Deflate entries are supported.
+
+On the same platforms as content search, the bundled Zig engine decompresses entries and compresses files of 1 MiB or more in parallel (in our measurements on 8 × 64 MB text files with 4 CPUs, about 4.6x faster to compress and 3.2x faster to extract than the Ruby implementation). Validation stays in Ruby either way. Set `RUFIO_NATIVE_ZIP=0` to use the Ruby implementation only.
+
 To rebuild the bundled binaries (requires Zig 0.17):
 
 ```bash

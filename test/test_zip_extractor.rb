@@ -24,8 +24,13 @@ class TestZipExtractor < Minitest::Test
     path
   end
 
+  # Ruby 実装で実行する。TestZipExtractorNative は同じテストを Zig 実装で実行する
+  def native?
+    false
+  end
+
   def extract(zip, **options)
-    Extractor.new(zip, @dest, **options).extract
+    Extractor.new(zip, @dest, native: native?, **options).extract
   end
 
   def assert_nothing_written
@@ -108,6 +113,33 @@ class TestZipExtractor < Minitest::Test
     assert_empty Dir.children(@dest)
   end
 
+  def test_rejects_corrupt_deflate_data
+    payload = "\xFF".b * 64
+    fixture = ZipFixture.new.add('bad.bin', 'x' * 64, deflate: true)
+    bytes = fixture.to_s.b
+    start = 30 + 'bad.bin'.bytesize
+    compressed_size = bytes.byteslice(18, 4).unpack1('V')
+    bytes[start, compressed_size] = payload.byteslice(0, compressed_size)
+    File.binwrite(File.join(@dir, 'bad.zip'), bytes)
+
+    assert_raises(Extractor::CorruptEntryError) { extract(File.join(@dir, 'bad.zip')) }
+    assert_empty Dir.children(@dest)
+  end
+
+  def test_extracts_many_entries_identically
+    fixture = ZipFixture.new
+    random = Random.new(7)
+    contents = 300.times.to_h do |i|
+      data = i.even? ? random.bytes(random.rand(0..5000)) : ("line #{i}\n" * random.rand(1..400))
+      fixture.add("dir#{i % 7}/file#{i}.bin", data, deflate: i % 3 != 0)
+      ["dir#{i % 7}/file#{i}.bin", data]
+    end
+    result = extract(write_zip(fixture))
+
+    assert_equal 300, result.extracted.length
+    contents.each { |name, data| assert_equal data.b, File.binread(File.join(@dest, name)), name }
+  end
+
   def test_enforces_total_size_entry_count_and_ratio_limits
     zip = write_zip(ZipFixture.new.add('a.txt', 'a' * 100).add('b.txt', 'b' * 100))
     assert_raises(Extractor::LimitExceededError) { extract(zip, max_total_size: 150) }
@@ -149,7 +181,9 @@ class TestZipExtractor < Minitest::Test
     zip = write_zip(ZipFixture.new.add('a.txt', 'a' * 10).add('b.txt', 'b' * 10))
     seen = []
     extract(zip, progress: ->(done, total) { seen << [done, total] })
-    assert_equal [[10, 20], [20, 20]], seen
+    assert_equal [20, 20], seen.last
+    assert(seen.each_cons(2).all? { |(a, _), (b, _)| a <= b })
+    assert(seen.all? { |_, total| total == 20 })
 
     FileUtils.rm_rf(@dest)
     calls = 0
@@ -171,5 +205,16 @@ class TestZipExtractor < Minitest::Test
     assert_equal 'alpha' * 2000, File.read(File.join(@dest, 'sub', 'a.txt'))
     extract(File.join(@dir, 's.zip'))
     assert_equal 'streamed' * 100, File.read(File.join(@dest, '-'))
+  end
+end
+
+class TestZipExtractorNative < TestZipExtractor
+  def setup
+    skip 'Zig ZIP engine is not available' unless Rufio::NativeZip.available?
+    super
+  end
+
+  def native?
+    true
   end
 end

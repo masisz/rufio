@@ -52,6 +52,9 @@ pub const Info = struct {
 const win = struct {
     const INVALID_HANDLE: usize = std.math.maxInt(usize);
     const GENERIC_READ: u32 = 0x80000000;
+    const GENERIC_WRITE: u32 = 0x40000000;
+    const CREATE_NEW: u32 = 1;
+    const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
     const FILE_READ_ATTRIBUTES: u32 = 0x80;
     const FILE_SHARE_ALL: u32 = 0x7;
     const OPEN_EXISTING: u32 = 3;
@@ -67,6 +70,14 @@ const win = struct {
     const INFINITE: u32 = 0xFFFFFFFF;
 
     const FILETIME = extern struct { low: u32, high: u32 };
+
+    const OVERLAPPED = extern struct {
+        internal: usize = 0,
+        internal_high: usize = 0,
+        offset: u32,
+        offset_high: u32,
+        event: ?*anyopaque = null,
+    };
 
     const FindData = extern struct {
         attributes: u32,
@@ -103,7 +114,7 @@ const win = struct {
     extern "kernel32" fn FindNextFileW(handle: usize, data: *FindData) callconv(.winapi) c_int;
     extern "kernel32" fn FindClose(handle: usize) callconv(.winapi) c_int;
     extern "kernel32" fn CreateFileW(name: [*:0]const u16, access: u32, share: u32, security: ?*anyopaque, disposition: u32, flags: u32, template: ?*anyopaque) callconv(.winapi) usize;
-    extern "kernel32" fn ReadFile(handle: usize, buf: [*]u8, len: u32, read: *u32, overlapped: ?*anyopaque) callconv(.winapi) c_int;
+    extern "kernel32" fn ReadFile(handle: usize, buf: [*]u8, len: u32, read: *u32, overlapped: ?*OVERLAPPED) callconv(.winapi) c_int;
     extern "kernel32" fn CloseHandle(handle: usize) callconv(.winapi) c_int;
     extern "kernel32" fn GetLastError() callconv(.winapi) u32;
     extern "kernel32" fn GetFileInformationByHandle(handle: usize, info: *ByHandleInfo) callconv(.winapi) c_int;
@@ -613,8 +624,140 @@ pub const Dir = struct {
     }
 };
 
+/// UTF-8 の絶対パスで読み取り用に開く（ZIP データ処理用）
+pub fn openRead(path: [:0]const u8, scratch: *Scratch) ?File {
+    if (is_windows) {
+        const wide = scratch.widePath(path, "") orelse {
+            last_error = 3;
+            return null;
+        };
+        const h = win.CreateFileW(wide, win.GENERIC_READ, win.FILE_SHARE_ALL, null, win.OPEN_EXISTING, win.FILE_FLAG_SEQUENTIAL_SCAN, null);
+        if (h == win.INVALID_HANDLE) {
+            captureError();
+            return null;
+        }
+        return .{ .handle = h };
+    }
+    if (is_linux) {
+        const rc = linux.open(path.ptr, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
+        if (linux.errno(rc) != .SUCCESS) {
+            setPosixError(rc);
+            return null;
+        }
+        return .{ .handle = rc };
+    }
+    const fd = c.open(path.ptr, .{ .ACCMODE = .RDONLY, .CLOEXEC = true });
+    if (fd < 0) {
+        captureError();
+        return null;
+    }
+    return .{ .handle = @intCast(fd) };
+}
+
+/// 新しいファイルを作成する（既に存在すれば失敗。権限は所有者のみ読み書き）
+pub fn createExclusive(path: [:0]const u8, scratch: *Scratch) ?File {
+    if (is_windows) {
+        const wide = scratch.widePath(path, "") orelse {
+            last_error = 3;
+            return null;
+        };
+        const h = win.CreateFileW(wide, win.GENERIC_WRITE, 0, null, win.CREATE_NEW, win.FILE_ATTRIBUTE_NORMAL, null);
+        if (h == win.INVALID_HANDLE) {
+            captureError();
+            return null;
+        }
+        return .{ .handle = h };
+    }
+    if (is_linux) {
+        const rc = linux.open(path.ptr, .{ .ACCMODE = .WRONLY, .CREAT = true, .EXCL = true, .CLOEXEC = true }, 0o600);
+        if (linux.errno(rc) != .SUCCESS) {
+            setPosixError(rc);
+            return null;
+        }
+        return .{ .handle = rc };
+    }
+    const fd = c.open(path.ptr, .{ .ACCMODE = .WRONLY, .CREAT = true, .EXCL = true, .CLOEXEC = true }, @as(c.mode_t, 0o600));
+    if (fd < 0) {
+        captureError();
+        return null;
+    }
+    return .{ .handle = @intCast(fd) };
+}
+
 pub const File = struct {
     handle: usize,
+
+    /// offset の位置から読む（ファイル位置は使わないので複数スレッドから呼べる）。0 は EOF、エラー時は null
+    pub fn pread(self: File, dst: []u8, offset: u64) ?usize {
+        if (is_windows) {
+            var got: u32 = 0;
+            var ov: win.OVERLAPPED = .{ .offset = @truncate(offset), .offset_high = @truncate(offset >> 32) };
+            const len: u32 = @intCast(@min(dst.len, std.math.maxInt(u32)));
+            if (win.ReadFile(self.handle, dst.ptr, len, &got, &ov) == 0) {
+                // ERROR_HANDLE_EOF
+                if (win.GetLastError() == 38) return 0;
+                captureError();
+                return null;
+            }
+            return got;
+        }
+        while (true) {
+            if (is_linux) {
+                const rc = linux.pread(@intCast(self.handle), dst.ptr, dst.len, @intCast(offset));
+                switch (linux.errno(rc)) {
+                    .SUCCESS => return rc,
+                    .INTR => continue,
+                    else => {
+                        setPosixError(rc);
+                        return null;
+                    },
+                }
+            }
+            const n = c.pread(@intCast(self.handle), dst.ptr, dst.len, @intCast(offset));
+            if (n >= 0) return @intCast(n);
+            captureError();
+            if (c.errno(-1) == .INTR) continue;
+            return null;
+        }
+    }
+
+    /// すべて書き込めたら true
+    pub fn writeAll(self: File, bytes: []const u8) bool {
+        var rest = bytes;
+        while (rest.len > 0) {
+            var n: usize = 0;
+            if (is_windows) {
+                var written: u32 = 0;
+                const len: u32 = @intCast(@min(rest.len, 1 << 30));
+                if (win.WriteFile(self.handle, rest.ptr, len, &written, null) == 0) {
+                    captureError();
+                    return false;
+                }
+                n = written;
+            } else if (is_linux) {
+                const rc = linux.write(@intCast(self.handle), rest.ptr, rest.len);
+                switch (linux.errno(rc)) {
+                    .SUCCESS => n = rc,
+                    .INTR => continue,
+                    else => {
+                        setPosixError(rc);
+                        return false;
+                    },
+                }
+            } else {
+                const rc = c.write(@intCast(self.handle), rest.ptr, rest.len);
+                if (rc < 0) {
+                    captureError();
+                    if (c.errno(-1) == .INTR) continue;
+                    return false;
+                }
+                n = @intCast(rc);
+            }
+            if (n == 0) return false;
+            rest = rest[n..];
+        }
+        return true;
+    }
 
     /// 読めたバイト数（0 は EOF）。エラー時は null
     pub fn read(self: File, dst: []u8) ?usize {
