@@ -164,18 +164,28 @@ class TestNativeContentSearch < Minitest::Test
     cache&.close
   end
 
+  # poll だけで回すと GVL を握り続け、結果を送るスレッドが進まない（Windows で顕著）
+  def wait_for_scan(search)
+    Timeout.timeout(10) do
+      while search.scanning?
+        search.poll
+        Thread.pass
+      end
+    end
+  end
+
   def test_global_search_reuses_cache_between_queries
     Rufio::GlobalSearch.native_search = true
     search = Rufio::GlobalSearch.new
     search.open(@bookmarks)
     search.handle_key("\t")
     search.handle_key('world')
-    Timeout.timeout(10) { search.poll while search.scanning? }
+    wait_for_scan(search)
     first = search.results.length
     File.write(File.join(@a, 'extra.txt'), "world\n")
     search.handle_key("\x15")
     search.handle_key('world')
-    Timeout.timeout(10) { search.poll while search.scanning? }
+    wait_for_scan(search)
     assert_equal first + 1, search.results.length
   ensure
     search&.close
