@@ -51,6 +51,7 @@ module Rufio
           refresh:         'R',
           # ファイル操作
           open_file:       'o',
+          preview:         'P',
           rename:          'r',
           delete:          'd',
           create_file:     'a',

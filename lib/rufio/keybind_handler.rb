@@ -228,7 +228,7 @@ module Rufio
 
       entries = get_active_entries
 
-      # Enter キー（特殊処理: プレビューペインフォーカスまたはナビゲーション）
+      # Enter キー（ディレクトリ移動）
       if key == "\r" || key == "\n"
         return @nav_controller.handle_enter_key(current_entry, @in_help_mode, @in_log_viewer_mode)
       end
@@ -476,6 +476,7 @@ module Rufio
       when :top             then @nav_controller.move_to_top
       when :bottom          then @nav_controller.move_to_bottom(entries)
       when :refresh         then @nav_controller.refresh
+      when :preview         then focus_preview_pane
       when :open_file       then @nav_controller.open_current_file(current_entry)
       when :open_explorer   then @nav_controller.open_directory_in_explorer
       when :rename          then @file_op_controller.rename_current_file(current_entry)

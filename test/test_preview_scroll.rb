@@ -38,14 +38,14 @@ module Rufio
       refute @handler.preview_focused?
     end
 
-    def test_enter_key_focuses_preview_pane
+    def test_p_key_focuses_preview_pane
       # ファイルを選択
       entries = @directory_listing.list_entries
       file_index = entries.index { |e| e[:type] == 'file' }
       @handler.select_index(file_index) if file_index
 
-      # Enter キーでプレビューペインにフォーカス
-      result = @handler.focus_preview_pane
+      # P キーでプレビューペインにフォーカス
+      result = @handler.handle_key('P')
 
       # フォーカスが移動したことを確認
       assert result

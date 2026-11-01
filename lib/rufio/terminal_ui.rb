@@ -617,6 +617,8 @@ module Rufio
 
     # マウス左クリックを処理する
     def handle_mouse_left_click(col, row)
+      return if @keybind_handler.preview_focused?
+
       left_width = left_panel_col_width
 
       if col <= left_width
@@ -662,10 +664,8 @@ module Rufio
     end
 
     # マウスホイールスクロールを処理する
-    def handle_mouse_scroll(direction, col, _row)
-      left_width = left_panel_col_width
-
-      if col > left_width && @keybind_handler.preview_focused?
+    def handle_mouse_scroll(direction, _col, _row)
+      if @keybind_handler.preview_focused?
         # プレビューペインのスクロール
         case direction
         when :up   then @keybind_handler.scroll_preview_up

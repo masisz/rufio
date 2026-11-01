@@ -9,7 +9,7 @@ Complete reference of all keyboard shortcuts in **rufio**.
 | `j` / `Down` | Move down |
 | `k` / `Up` | Move up |
 | `h` / `Left` | Go to parent directory |
-| `l` / `Right` / `Enter` | Enter directory or open file |
+| `l` / `Right` / `Enter` | Enter directory |
 | `g` | Jump to top of list |
 | `G` | Jump to bottom of list |
 

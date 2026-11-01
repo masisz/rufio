@@ -147,8 +147,12 @@ module Rufio
         left_width = (@screen_width * @left_panel_ratio).to_i
         right_width = @screen_width - left_width
 
-        draw_directory_list_to_buffer(screen, entries, left_width, content_height)
-        draw_file_preview_to_buffer(screen, selected_entry, right_width, content_height, left_width)
+        if @keybind_handler.preview_focused?
+          draw_file_preview_to_buffer(screen, selected_entry, @screen_width, content_height, 0)
+        else
+          draw_directory_list_to_buffer(screen, entries, left_width, content_height)
+          draw_file_preview_to_buffer(screen, selected_entry, right_width, content_height, left_width)
+        end
 
         draw_mode_tabs_to_buffer(screen, @screen_height - 1, show_path: false)
       end
@@ -314,9 +318,10 @@ module Rufio
 
     def draw_file_preview_to_buffer(screen, selected_entry, width, height, left_offset)
       # 事前計算
+      fullscreen = @keybind_handler&.preview_focused?
       cursor_position = left_offset + CURSOR_OFFSET
       max_chars_from_cursor = @screen_width - cursor_position
-      safe_width = [max_chars_from_cursor - 2, width - 2, 0].max
+      safe_width = fullscreen ? @screen_width : [max_chars_from_cursor - 2, width - 2, 0].max
 
       # プレビューコンテンツをキャッシュから取得
       preview_content = nil
@@ -387,13 +392,13 @@ module Rufio
         end
       end
 
-      content_x = cursor_position + 1
+      content_x = fullscreen ? 0 : cursor_position + 1
 
       (0...height).each do |i|
         line_num = i + CONTENT_START_LINE
 
         # 区切り線
-        screen.put(cursor_position, line_num, '│')
+        screen.put(cursor_position, line_num, '│') unless fullscreen
 
         next if safe_width <= 0
 

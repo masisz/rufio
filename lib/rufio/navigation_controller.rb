@@ -236,18 +236,14 @@ module Rufio
       end
     end
 
-    # Enterキーの処理：ファイルならプレビューフォーカス、ディレクトリならナビゲート
+    # Enterキーの処理：ディレクトリへ移動する
     # @param entry [Hash] 現在選択中のエントリ
     # @param in_help_mode [Boolean]
     # @param in_log_viewer_mode [Boolean]
     def handle_enter_key(entry, in_help_mode, in_log_viewer_mode)
       return false unless entry
 
-      if entry[:type] == 'file'
-        focus_preview_pane(entry)
-      else
-        navigate_enter(entry, in_help_mode, in_log_viewer_mode)
-      end
+      navigate_enter(entry, in_help_mode, in_log_viewer_mode)
     end
 
     private

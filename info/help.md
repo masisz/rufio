@@ -24,7 +24,8 @@
 | `j` or `Down` | Move down one item |
 | `k` or `Up` | Move up one item |
 | `h` or `Left` | Go to parent directory |
-| `l`, `Enter`, or `Right` | Enter directory / Open file |
+| `l`, `Enter`, or `Right` | Enter directory |
+| `P` | Fullscreen file preview (`Esc` returns to the file list) |
 | `g` | Jump to top of list |
 | `G` | Jump to bottom of list |
 

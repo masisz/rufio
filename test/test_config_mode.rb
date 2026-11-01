@@ -37,7 +37,7 @@ class TestConfigMode < Minitest::Test
     assert @handler.config_mode?
     @handler.handle_key('h')
     @handler.select_index(@handler.get_active_entries.index { |entry| entry[:name] == 'config.rb' })
-    @handler.handle_key("\r")
+    @handler.handle_key('P')
     assert @handler.preview_focused?
     @handler.handle_key("\e")
     refute @handler.preview_focused?
@@ -53,7 +53,7 @@ class TestConfigMode < Minitest::Test
     @handler.instance_variable_set(:@log_dir, logs)
     @handler.handle_key('L')
     @handler.select_index(0)
-    @handler.handle_key("\r")
+    @handler.handle_key('P')
     assert @handler.preview_focused?
     @handler.handle_key('C')
     refute @handler.log_viewer_mode?

@@ -72,7 +72,7 @@ class TestHelpMenu < Minitest::Test
       ui = Rufio::TerminalUI.new
       handler.set_terminal_ui(ui)
       handler.select_index(handler.get_active_entries.index { |entry| entry[:name] == 'example.txt' })
-      handler.handle_key("\r")
+      handler.handle_key('P')
       handler.handle_key('?')
       assert ui.help_dialog_active?
       assert handler.preview_focused?
