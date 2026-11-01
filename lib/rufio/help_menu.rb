@@ -161,7 +161,8 @@ module Rufio
       DialogRenderer.new.draw_floating_window_to_overlay(
         screen, (screen.width - width) / 2, (screen.height - height) / 2,
         width, height, TextUtils.truncate_to_width(title, width - 2), visible,
-        border_color: "\e[36m", title_color: "\e[1;36m"
+        border_color: "\e[36m", title_color: "\e[1;36m",
+        scroll_offset: @scroll_offset, total_lines: lines.length, visible_lines: @page_size
       )
     end
 

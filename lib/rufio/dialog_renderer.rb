@@ -19,6 +19,9 @@ module Rufio
     # @option options [String] :border_color Border color ANSI code
     # @option options [String] :title_color Title color ANSI code
     # @option options [String] :content_color Content color ANSI code
+    # @option options [Integer] :scroll_offset First visible content line
+    # @option options [Integer] :total_lines Total scrollable content lines
+    # @option options [Integer] :visible_lines Number of visible scrollable lines
     def draw_floating_window_to_buffer(screen, x, y, width, height, title, content_lines, options = {})
       draw_window_cells(x, y, width, height, title, content_lines, options,
                         put_cell: ->(cx, cy, ch, fg: nil) { screen.put(cx, cy, ch, fg: fg) },
@@ -66,6 +69,9 @@ module Rufio
 
       bottom_y = y + height - 1
       print "\e[#{bottom_y};#{x}H#{border_color}└#{'─' * inner_width}┘#{reset_color}"
+      draw_scroll_indicators(x, y, width, height, options) do |cx, cy, label|
+        print "\e[#{cy};#{cx}H#{border_color}#{label}#{reset_color}"
+      end
     end
 
     # Calculate center position for a window
@@ -217,6 +223,26 @@ module Rufio
 
       bottom_y = y + height - 1
       put_str.call(x, bottom_y, "└#{'─' * inner_width}┘", fg: border_color)
+      draw_scroll_indicators(x, y, width, height, options) do |cx, cy, label|
+        put_str.call(cx, cy, label, fg: border_color)
+      end
+    end
+
+    # 枠内に表示し、本文や操作ガイドの行を消費しない。
+    def draw_scroll_indicators(x, y, width, height, options)
+      total = options[:total_lines]
+      visible = options[:visible_lines]
+      return unless total && visible && total > visible
+      return if width < 3 || height < 2
+
+      offset = [[options.fetch(:scroll_offset, 0), 0].max, total - visible].min
+      [[offset > 0, y, '▲ 上に続く'],
+       [offset + visible < total, y + height - 1, '▼ 下に続く']].each do |shown, row, text|
+        next unless shown
+
+        label = TextUtils.truncate_to_width(text, width - 2)
+        yield x + 1 + (width - 2 - TextUtils.display_width(label)) / 2, row, label
+      end
     end
 
     # ASCII character range constants
