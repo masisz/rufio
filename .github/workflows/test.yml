@@ -69,6 +69,8 @@ jobs:
         env:
           # Windows Console を強制 (ConPTY 経由にならないようにする)
           TERM: xterm-256color
+          # プロセスが出力なしで終了することがあるため、実行中のテスト名をログに残す
+          TESTOPTS: -v
 
       # Windows 専用: ESC キー・マルチバイト入力・マウスシーケンス・IO.select タイムアウトの検証
       - name: Run Windows console input tests
