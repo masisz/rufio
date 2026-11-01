@@ -43,6 +43,20 @@ class TestHelpMenu < Minitest::Test
     assert_includes content, ':hello'
   end
 
+  def test_controls_cover_current_file_mode_keys
+    content = @menu.content.join("\n")
+    assert_includes content, 'e: Open directory in file explorer'
+    assert_includes content, 's or /: Filename search (fzf)'
+    assert_includes content, 'Preview .zip: Entry list (size, method, date, name)'
+    assert_includes content, 'Jobs mode shows progress; x cancels'
+  end
+
+  def test_modes_describe_zip_jobs
+    @menu.handle_key('2')
+    content = @menu.content.join("\n")
+    assert_includes content, 'ZIP extract/compress jobs show progress here.'
+  end
+
   def test_help_key_opens_overlay_without_changing_directory_or_logs
     Dir.mktmpdir do |root|
       handler = Rufio::KeybindHandler.new

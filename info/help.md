@@ -11,7 +11,8 @@
 - [Bookmarks & Navigation](#bookmarks--navigation)
 - [Command Mode](#command-mode)
 - [Tool Runtime](#tool-runtime)
-- [Mode Switching](#mode-switching)
+- [Global Search & Config Mode](#global-search--config-mode)
+- [Modes & Help Menu](#modes--help-menu)
 
 ---
 
@@ -27,19 +28,22 @@
 | `l`, `Enter`, or `Right` | Enter directory |
 | `P` | Fullscreen file preview (`Esc` returns to the file list) |
 | `g` | Jump to top of list |
-| `G` | Jump to bottom of list |
+| `}` | Jump to bottom of list |
 
 ### File Operations
 
 | Key | Action |
 |-----|--------|
 | `o` | Open file with external editor |
-| `e` | Open in file explorer |
+| `e` | Open current directory in file explorer |
 | `R` | Refresh directory contents |
 | `r` | Rename file or directory |
 | `d` | Delete file or directory (with confirmation) |
 | `a` | Create new file |
 | `A` | Create new directory |
+
+In a preview, `j/k` scroll, `Ctrl+D/U` page down/up and `ESC` returns to the file list.
+`.zip` previews list the archive entries (size, method, modified time, name) without extracting them.
 
 ### File Selection & Bulk Operations
 
@@ -51,13 +55,17 @@
 | `x` | Delete selected items |
 | `z` | With selected items: extract when all are `.zip` files (each into `<name>/`), otherwise compress them into one `.zip` (runs as a job). Without a selection, `z` opens zoxide history |
 
+ZIP jobs show progress in Jobs mode (`J`). `x`: Cancel the selected job there; a partially extracted folder is removed.
+
 ### Filtering & Search
 
 | Key | Action |
 |-----|--------|
 | `f` | Start filter mode |
 | `s` | Search file names with fzf |
+| `/` | Search file names with fzf (same as `s`) |
 | `F` | Search file contents with rga (ripgrep-all) |
+| `G` | Global search: file names or contents across all bookmarks |
 
 **Filter Mode:**
 - Type characters to filter files in real-time
@@ -72,7 +80,9 @@
 | `B` | Bookmark menu (view/add/remove/script paths) |
 | `0` | Jump to startup directory |
 | `1-9` | Jump to bookmark 1-9 |
-| `z` | Navigate using zoxide history |
+| `Tab` | Cycle to next bookmark (Files mode) |
+| `Shift+Tab` | Cycle to previous bookmark (Files mode) |
+| `z` | Navigate using zoxide history (when nothing is selected) |
 
 ---
 
@@ -125,25 +135,47 @@ Press `B` then select script path management to:
 
 ---
 
-## Mode Switching
+## Global Search & Config Mode
+
+### Global Search (`G`)
+
+Search file names or text inside every bookmarked directory.
+
+- `Tab`: Switch between file names and content (literal, case insensitive)
+- Content search also reads `.pdf` (page), `.xlsx` (sheet/cell) and `.pptx` (slide)
+- `Up/Down` or `Ctrl+N/P`: Select a result | `Enter`: Go to the file in Files mode
+- `Ctrl+U`: Clear the query | `ESC`: Return to the previous mode
+- Exclude extensions with `GLOBAL_SEARCH_EXCLUDED_EXTENSIONS` in `~/.config/rufio/config.rb`
+
+### Config Mode (`C`)
+
+Opens `~/.config/rufio/` (created if missing) with the same navigation, preview
+and file operations as Files mode. Leaving the directory returns to Files mode.
+
+---
+
+## Modes & Help Menu
 
 | Key | Action |
 |-----|--------|
-| `Tab` | Switch mode: Files -> Logs -> Jobs -> Help |
-| `Shift+Tab` | Switch mode (reverse) |
-| `?` | Enter help mode (this mode) |
+| `G` | Global search mode |
+| `C` | Config mode: open `~/.config/rufio/` |
+| `J` | Job mode |
+| `L` | Execution logs |
+| `?` | Open the floating help menu |
 | `ESC` | Exit current mode |
-| `q` | Quit rufio |
+| `q` | Quit rufio (with confirmation) |
 | `T` | Quit rufio and cd the shell to the current directory (requires `rufio --shell-init`) |
 
-### Help Mode
+In Files mode, `Tab` / `Shift+Tab` cycle bookmarks. In other modes, `Shift+Tab` switches to the previous mode.
 
-You are currently in **Help Mode**. In this mode:
+### Help Menu
 
-- Navigate through help files using normal keys (`j/k/h/l`)
-- Press `l` or `Enter` to view a help file
-- Press `h` to go back (restricted to `info/` directory)
-- Press `ESC` to exit help mode and return to your previous directory
+`?` opens a floating menu over the current screen; your mode and directory are kept.
+
+- `1/2/3` or `Tab/Shift+Tab`: Switch section (Controls / Modes / Scripts)
+- `j/k`: Scroll | `Ctrl+D/U`: Page down/up | `g/G`: Top / bottom
+- `ESC`, `q` or `?`: Close
 
 ---
 
@@ -154,7 +186,8 @@ You are currently in **Help Mode**. In this mode:
 3. **Filter + Search**: Use `f` for real-time filtering, `s` for fuzzy search
 4. **Bookmarks**: Save frequently used directories with `b`, access with `1-9`
 5. **Rake tasks**: If your project has a Rakefile, use `:rake:` with Tab completion
-6. **Background jobs**: Long-running commands execute in background, view with `J`
+6. **Background jobs**: Long-running commands and ZIP jobs execute in background, view with `J`
+7. **Global search**: Press `G` to search names or contents across all bookmarks
 
 ---
 
