@@ -246,16 +246,17 @@ module Rufio
         dest_path = File.join(destination, item_name)
 
         begin
-          if File.exist?(dest_path)
-            error_messages << "#{item_name}: Already exists in destination"
-            next
-          end
-
           case operation
           when :move
+            if File.exist?(dest_path)
+              error_messages << "#{item_name}: Already exists in destination"
+              next
+            end
             FileUtils.mv(source_path, dest_path)
           when :copy
-            if File.directory?(source_path)
+            is_directory = File.directory?(source_path)
+            dest_path = resolve_copy_destination(destination, item_name, is_directory)
+            if is_directory
               FileUtils.cp_r(source_path, dest_path)
             else
               FileUtils.cp(source_path, dest_path)
@@ -279,6 +280,27 @@ module Rufio
         count: success_count,
         errors: error_messages
       )
+    end
+
+    def resolve_copy_destination(destination, item_name, is_directory)
+      dest_path = File.join(destination, item_name)
+      return dest_path unless File.exist?(dest_path)
+
+      if is_directory
+        base = item_name
+        ext = ''
+      else
+        ext = File.extname(item_name)
+        base = File.basename(item_name, ext)
+      end
+
+      index = 1
+      loop do
+        candidate = File.join(destination, "#{base}_#{index}#{ext}")
+        return candidate unless File.exist?(candidate)
+
+        index += 1
+      end
     end
 
     # Build delete operation message

@@ -116,9 +116,58 @@ class TestFileOperationsUnit < Minitest::Test
 
     result = @operations.copy(['test.txt'], @test_dir, @dest_dir)
 
-    refute result.success
-    assert_equal 0, result.count
-    assert result.errors.any? { |e| e.include?('Already exists') }
+    assert result.success
+    assert_equal 1, result.count
+    assert_equal 'existing content', File.read(dest_file)
+    copied_file = File.join(@dest_dir, 'test_1.txt')
+    assert File.exist?(copied_file)
+    assert_equal 'test content', File.read(copied_file)
+  end
+
+  def test_copy_file_increments_suffix_when_numbered_files_exist
+    test_file = File.join(@test_dir, 'test.txt')
+    File.write(test_file, 'new content')
+    File.write(File.join(@dest_dir, 'test.txt'), 'original')
+    File.write(File.join(@dest_dir, 'test_1.txt'), 'copy 1')
+    File.write(File.join(@dest_dir, 'test_2.txt'), 'copy 2')
+
+    result = @operations.copy(['test.txt'], @test_dir, @dest_dir)
+
+    assert result.success
+    assert_equal 1, result.count
+    copied_file = File.join(@dest_dir, 'test_3.txt')
+    assert File.exist?(copied_file)
+    assert_equal 'new content', File.read(copied_file)
+  end
+
+  def test_copy_directory_already_exists_in_destination
+    test_subdir = File.join(@test_dir, 'subdir')
+    Dir.mkdir(test_subdir)
+    File.write(File.join(test_subdir, 'file.txt'), 'new dir content')
+
+    existing_subdir = File.join(@dest_dir, 'subdir')
+    Dir.mkdir(existing_subdir)
+    File.write(File.join(existing_subdir, 'file.txt'), 'existing dir content')
+
+    result = @operations.copy(['subdir'], @test_dir, @dest_dir)
+
+    assert result.success
+    assert_equal 1, result.count
+    assert Dir.exist?(File.join(@dest_dir, 'subdir_1'))
+    assert_equal 'new dir content', File.read(File.join(@dest_dir, 'subdir_1', 'file.txt'))
+    assert_equal 'existing dir content', File.read(File.join(existing_subdir, 'file.txt'))
+  end
+
+  def test_copy_in_same_directory_adds_numbered_suffix
+    test_file = File.join(@test_dir, 'note.md')
+    File.write(test_file, 'hello')
+
+    result = @operations.copy(['note.md'], @test_dir, @test_dir)
+
+    assert result.success
+    assert_equal 1, result.count
+    assert File.exist?(File.join(@test_dir, 'note_1.md'))
+    assert_equal 'hello', File.read(File.join(@test_dir, 'note_1.md'))
   end
 
   # Delete operation tests
