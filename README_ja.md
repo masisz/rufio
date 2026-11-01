@@ -221,6 +221,17 @@ Invoke-Expression (& rufio --shell-init powershell | Out-String)
 :@deploy.rb       # 登録済みスクリプトを実行
 ```
 
+### パスへ移動
+
+```
+:cd ~/projects/app        # コピーしたパスを貼り付けて Enter
+:cd '/path/with space/a.txt'  # ファイルのパスならフォルダへ移動してそのファイルを選択
+:cd -                     # 直前のディレクトリへ戻る
+```
+
+相対パスは現在のディレクトリが基準で、`Tab` でディレクトリ名を補完できます。
+コピー時に付く両端の引用符・`\ ` エスケープ・`file://` URL もそのまま受け付けます。
+
 ### シェルコマンド
 
 ```

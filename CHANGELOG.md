@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `:cd <path>` in command mode goes to a pasted path. A file path opens its folder and selects the file, relative paths start from the current directory, `cd -` returns to the previous directory, and `Tab` completes directory names. Surrounding quotes, a trailing newline, `\ ` escapes and `file://` URLs from copied paths are accepted
+
 ## [1.3.0] - 2026-11-01
 
 ### Added

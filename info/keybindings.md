@@ -102,6 +102,7 @@ ZIP extraction and compression run as background jobs. Check progress in Jobs mo
 - `@script` - Execute a registered or local script
 - `rake:task` - Execute a Rakefile task
 - `!command` - Execute a shell command
+- `cd <path>` - Go to a directory (paste a path; a file path selects the file, `cd -` goes back, `Tab` completes directories)
 - `command` - Execute a built-in or plugin command
 
 ### Global Search (G)

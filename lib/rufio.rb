@@ -40,6 +40,7 @@ require_relative 'rufio/script_executor'
 require_relative 'rufio/dsl_command_loader'
 require_relative 'rufio/builtin_commands'
 
+require_relative 'rufio/path_jump'
 require_relative 'rufio/command_mode'
 require_relative 'rufio/command_mode_ui'
 require_relative 'rufio/command_history'

@@ -790,6 +790,9 @@ module Rufio
 
       result = @command_mode.execute(command_string, working_dir: working_dir)
 
+      # :cd はディレクトリを移動してコマンドモードを閉じる
+      return change_directory(result[:cd]) if result.is_a?(Hash) && result.key?(:cd)
+
       # バックグラウンドコマンドの場合は結果表示をスキップ
       # (完了通知は別途メインループで表示される)
       if result && !result.to_s.include?("🔄 Running in background")
@@ -800,6 +803,28 @@ module Rufio
       # メインループの次フレームで再描画される（draw_screenは使わない）
       # draw_screen（レガシー直接出力）はバッファベースのオーバーレイと座標系が異なるため、
       # 使用するとコマンドプロンプトの枠線が残る不具合が発生する
+    end
+
+    # :cd の移動先へ移動する。ファイルが指定されていればそのファイルを選択する
+    # @param target [Hash, Symbol] { directory:, file: } または :previous（cd -）
+    def change_directory(target)
+      if target == :previous
+        return @command_mode_ui.show_result('⚠️  No previous directory') unless @previous_directory
+
+        target = { directory: @previous_directory, file: nil }
+      end
+
+      origin = @directory_listing&.current_path
+      unless @keybind_handler.navigate_to_directory(target[:directory])
+        return @command_mode_ui.show_result("⚠️  Cannot open directory: #{target[:directory]}")
+      end
+
+      @previous_directory = origin
+      index = target[:file] && @keybind_handler.get_active_entries.index { |entry| entry[:path] == target[:file] }
+      @keybind_handler.select_index(index || 0)
+      @keybind_handler.unfocus_preview_pane
+      @tab_mode_manager&.switch_to(@keybind_handler.config_mode? ? :config : :files)
+      deactivate_command_mode
     end
 
     # Tab補完を処理

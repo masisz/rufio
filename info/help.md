@@ -95,6 +95,7 @@ Press `:` to enter command mode. Available prefixes:
 | `@` | Execute script | `:@build.sh` |
 | `rake:` | Execute rake task | `:rake:test` |
 | `!` | Shell command | `:!git status` |
+| `cd` | Go to a pasted path (file paths select the file, `cd -` goes back) | `:cd ~/projects/app` |
 | (none) | Built-in command | `:hello` |
 
 ### Features

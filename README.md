@@ -240,6 +240,17 @@ Rakefile in the current directory is automatically parsed. Supports `Rakefile`, 
 :!ls -la          # Execute in background
 ```
 
+### Go to a Path
+
+```
+:cd ~/projects/app        # Paste any path and press Enter
+:cd '/path/with space/a.txt'  # A file path opens its folder and selects the file
+:cd -                     # Back to the previous directory
+```
+
+Relative paths start from the current directory, and `Tab` completes directory names.
+Surrounding quotes, `\ ` escapes and `file://` URLs from copied paths are accepted.
+
 ### Built-in Commands
 
 ```

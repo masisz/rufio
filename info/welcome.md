@@ -44,6 +44,7 @@ Press `:` to enter command mode:
 - `@script.sh` - Execute a script
 - `rake:test` - Execute a rake task
 - `!git status` - Run a shell command
+- `cd ~/projects` - Go to a pasted path
 - `Tab` - Auto-complete commands
 
 ## Getting Help

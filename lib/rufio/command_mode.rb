@@ -45,6 +45,7 @@ module Rufio
     # 閲覧中ディレクトリを更新
     # @param directory [String] 現在の閲覧ディレクトリ
     def update_browsing_directory(directory)
+      @browsing_directory = directory
       @local_script_scanner.update_directory(directory)
       @rakefile_parser.update_directory(directory)
     end
@@ -55,6 +56,11 @@ module Rufio
     def execute(command_string, working_dir: nil)
       # 空のコマンドは無視
       return nil if command_string.nil? || command_string.strip.empty?
+
+      # ディレクトリ移動 (cd <path>)。実際の移動は TerminalUI が行う
+      if (match = command_string.strip.match(/\Acd(?:\s+(.*))?\z/m))
+        return resolve_cd(match[1].to_s, working_dir)
+      end
 
       # スクリプト実行 (@ で始まる場合)
       if command_string.strip.start_with?('@')
@@ -102,6 +108,9 @@ module Rufio
 
       "⚠️  コマンドが見つかりません: #{command_name}"
     end
+
+    # 閲覧中ディレクトリ（:cd の補完基準）
+    attr_reader :browsing_directory
 
     # 利用可能なコマンドのリストを取得
     def available_commands
@@ -185,6 +194,17 @@ module Rufio
     # @param command_name [Symbol] コマンド名
     # @param command [Hash] コマンド情報 { command: DslCommand, source: String }
     # @return [Hash] 実行結果
+    # :cd の引数を移動先に解決する
+    # @return [Hash] { cd: { directory:, file: } } / { cd: :previous }、失敗時はエラーメッセージ
+    def resolve_cd(argument, working_dir)
+      return { cd: :previous } if argument.strip == '-'
+
+      result = PathJump.resolve(argument, working_dir || @browsing_directory || Dir.pwd)
+      return "⚠️  #{result[:error]}" unless result[:directory]
+
+      { cd: { directory: result[:directory], file: result[:file] } }
+    end
+
     def execute_unified_command(command_name, command)
       dsl_cmd = command[:command]
 

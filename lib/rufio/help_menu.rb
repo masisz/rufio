@@ -119,6 +119,7 @@ module Rufio
           'Type a command, then Enter to run it.',
           'Tab: Complete | Up/Down: History | ESC: Cancel',
           ':!git status: Run a shell command',
+          ':cd <path>: Go to a pasted path (file: select it, cd -: back)',
           ':@hello.rb: Run a script in the current directory'
         ]
       when 'Scripts'

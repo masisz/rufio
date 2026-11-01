@@ -3,6 +3,9 @@
 module Rufio
   # コマンド補完機能を提供するクラス
   class CommandCompletion
+    # CommandMode が直接処理する（DSL コマンドではない）コマンド
+    NAVIGATION_COMMANDS = %w[cd].freeze
+
     # 初期化
     # @param history [CommandHistory, CommandMode, nil] 履歴、または単独で渡すコマンドモード
     # @param command_mode [CommandMode, nil] コマンドモード（スクリプト補完に使用）
@@ -28,6 +31,11 @@ module Rufio
                rake_candidates('')
       end
 
+      # ディレクトリ補完（cd で始まる場合）
+      if (match = input.match(/\A\s*cd\s+(.*)\z/))
+        return complete_cd(match[1])
+      end
+
       # シェルコマンド補完（!で始まる場合）
       if input.strip.start_with?('!')
         return complete_shell_command(input.strip)
@@ -45,7 +53,7 @@ module Rufio
       end
 
       # 通常のコマンド補完（内部コマンド + rakeタスク）
-      available_commands = @command_mode.available_commands.map(&:to_s)
+      available_commands = @command_mode.available_commands.map(&:to_s) + NAVIGATION_COMMANDS
       input_lower = input.downcase
       candidates = available_commands.select do |command|
         command.downcase.start_with?(input_lower)
@@ -87,6 +95,19 @@ module Rufio
     # スクリプト候補を取得（ScriptRunner + ローカルスクリプト）
     # @param prefix [String] 入力中の文字列
     # @return [Array<String>] スクリプト候補（@付き）
+    # :cd のディレクトリ補完。相対パスは閲覧中ディレクトリを基準にする
+    def complete_cd(argument)
+      if argument.start_with?('~', '/') || File.absolute_path?(argument)
+        candidates = @shell_completion.complete_path(argument, directories_only: true)
+      else
+        base = @command_mode.browsing_directory || Dir.pwd
+        prefix = File.join(base, '')
+        candidates = @shell_completion.complete_path(File.join(base, argument), directories_only: true)
+                                      .map { |path| path.delete_prefix(prefix) }
+      end
+      candidates.map { |path| "cd #{path}/" }
+    end
+
     def script_candidates(prefix)
       @command_mode.complete_script("@#{prefix}")
     end
