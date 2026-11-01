@@ -56,11 +56,13 @@ class TestTaskStatus < Minitest::Test
   end
 
   def test_duration_returns_elapsed_time_while_running
+    before = Time.now
     @task.start
     sleep 0.1
     duration = @task.duration
-    assert duration >= 0.1
-    assert duration < 0.2
+    # CI の負荷で sleep が延びても落ちないよう、上限は実際の経過時間で確かめる
+    assert_operator duration, :>=, 0.1
+    assert_operator duration, :<=, Time.now - before
   end
 
   def test_duration_returns_total_time_after_completion

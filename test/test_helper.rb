@@ -7,6 +7,10 @@ require "minitest"
 require "fileutils"
 require "tmpdir"
 
+# テストプロセスが異常終了しても、直前までの出力（TESTOPTS=-v のテスト名）がログに残るようにする
+$stdout.sync = true
+$stderr.sync = true
+
 # minitestのプラグインを無効化してRailsとの競合を回避
 ENV['MT_PLUGINS'] = ""
 ENV['NO_PLUGINS'] = "true"
