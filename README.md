@@ -32,8 +32,10 @@ rufio brings finding files, running scripts, and checking results together in on
 ### As a File Manager
 
 - **Vim-like Key Bindings**: Intuitive navigation
-- **Real-time Preview**: Instantly display file contents with syntax highlighting (via `bat`)
-- **Fast Search**: Integration with fzf/rga
+- **Real-time Preview**: Instantly display file contents with syntax highlighting (via `bat`), including `.zip` entry lists
+- **Fast Search**: Integration with fzf/rga, plus built-in search across all bookmarks that also reads PDF, Excel and PowerPoint
+- **ZIP Archives**: Extract or compress selected items as a background job
+- **Jump to a Path**: Paste any path into `:cd`
 - **Bookmarks**: Quick access to frequently used directories
 - **zoxide Integration**: Smart directory history
 
@@ -78,393 +80,36 @@ rufio /path/to  # Launch in specified directory
 
 ## Key Bindings
 
-### Basic Operations
+The most used keys. See the **[User Guide](./docs/guide.md)** for every key and mode, or press `?` inside rufio.
 
-| Key | Function |
-|-----|----------|
-| `j/k` | Move up/down |
-| `h/l` | Parent/child directory |
-| `g/}` | Top/bottom |
-| `Enter` | Enter directory/open file |
-| `q` | Quit |
-| `T` | Quit and cd to the current directory ([Shell Integration](#shell-integration)) |
-
-### File Operations
-
-| Key | Function |
-|-----|----------|
-| `Space` | Select/deselect |
-| `o` | Open with external editor |
-| `a/A` | Create file/directory |
-| `r` | Rename |
-| `d` | Delete |
-| `m/c/x` | Move/copy/delete (selected) |
-| `z` | Extract selected `.zip` files / compress selected items (selected) |
-
-### Search & Filter
-
-| Key | Function |
-|-----|----------|
-| `f` | Filter mode |
-| `s` | Search files with fzf |
-| `F` | Search file contents with rga |
-
-### Navigation
-
-| Key | Function |
-|-----|----------|
-| `b` | Add bookmark |
-| `B` | Bookmark menu |
-| `0` | Return to startup directory |
-| `1-9` | Jump to bookmark |
-| `Tab` | Cycle to next bookmark (Files mode only) |
-| `z` | zoxide history (when nothing is selected) |
-
-### Tool Runtime
-
-| Key | Function |
-|-----|----------|
-| `:` | Command mode |
-| `G` | Search file names or contents across all bookmarked directories |
-| `C` | Open ~/.config/rufio/ in Config mode (same controls as Files) |
-| `J` | Job mode |
-| `L` | View execution logs |
+| Key | Action |
+|-----|--------|
+| `j/k`, `h/l` | Move / parent directory / enter directory |
+| `g/}` | First / last entry |
+| `P` | Fullscreen preview |
+| `Space` | Select |
+| `m/c/x` | Move / copy / delete selected items |
+| `z` | Extract or compress selected items (`.zip`); zoxide history when nothing is selected |
+| `a/A`, `r`, `d` | Create file / directory, rename, delete |
+| `f`, `s`, `F` | Filter, fzf file name search, rga content search |
+| `G` | Search names or contents (PDF, Excel, PowerPoint too) across all bookmarks |
+| `b`, `B`, `1-9`, `Tab` | Add bookmark, bookmark menu, jump, next bookmark |
+| `:` | Command mode (`@script`, `rake:task`, `!shell`, `cd <path>`) |
+| `J`, `L`, `C` | Jobs, logs, config directory |
 | `?` | Help |
-| `Shift+Tab` | Switch mode (reverse) |
+| `q`, `T` | Quit, quit and cd the shell to the current directory |
 
-### Global Search (G mode)
+## Documentation
 
-Press `G` to search recursively across all bookmarked directories. `Tab`
-switches between **File names** and **Content**. Type a literal string to
-search (case insensitive); content results include the file, line number,
-and matching text. Plain text is read as UTF-8; other unsupported files containing
-NUL bytes in the first 8 KB are skipped as binary. Use Up/Down or Ctrl+N/P to select a
-result, and press Enter to jump to that file in Files mode. `Ctrl+U` clears
-the query; `Esc` cancels and returns to your previous view. Scanning runs in
-the background and skips inaccessible directories and directory symlinks.
-Add bookmarks with `b` before searching. G mode needs no external search tools.
-While scanning, a yellow `Searching...` indicator animates even before matches
-arrive. It turns green and displays `Search complete` when the scan finishes.
-
-To exclude extensions from both file name and content searches, add this to
-`~/.config/rufio/config.rb` and restart Rufio:
-
-```ruby
-GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.png .jpg .zip .tar.gz .log].freeze
-```
-
-Extensions are case insensitive and the leading dot is optional. The default
-is `[]` (no extension exclusions). Directory names are unaffected.
-
-#### PDF, Excel and PowerPoint content search (v1.2.0)
-
-Content mode also extracts text from documents using Ruby gems; Python,
-Microsoft Office and external conversion tools are not required.
-
-| File | Searchable content | Result location |
-|------|--------------------|-----------------|
-| `.pdf` | Extractable text | Page number |
-| `.xlsx` | Cell text and values | Sheet name and cell address |
-| `.pptx` | Text in slide shapes and tables | Slide number |
-
-Search remains literal and case insensitive. Split text runs in a PowerPoint
-paragraph are joined, and slides follow the presentation's display order.
-Excel formulas use the values saved in the workbook; Rufio does not recalculate them.
-Enter locates the original document in Files mode; it does not open Office at a cell or slide.
-
-Extracted text is cached in memory across searches within the running app.
-The cache keeps up to 64 documents and approximately 16 MiB of text and metadata;
-larger extracted documents remain searchable without being cached. Updated or
-replaced files are re-extracted. No document text cache is written to disk.
-
-Extension exclusions apply to documents too. Damaged, unsupported or encrypted
-documents may report errors while other files continue to be searched.
-Scanned images need OCR, which is not included. Legacy `.xls`/`.ppt`, slide notes,
-and text embedded only in images or charts are not supported by this implementation.
-PDF text extraction depends on the document's font and character mappings.
-
-### Config Mode (C)
-
-Press `C` to open `~/.config/rufio/`, creating it if needed. Navigation, previews,
-and file operations work as in Files mode. Browse settings and scripts directly;
-leaving the config directory returns the mode display to Files.
-
-### Shell Integration
-
-`rufio --shell-init` prints a shell function named `rf` for your OS: PowerShell on
-Windows, and your login shell (`bash`, `zsh` or `fish`) elsewhere. Pass the shell name to
-choose explicitly. Launch rufio with `rf` and press `T` to quit and move the shell to the
-directory you were viewing; `q` quits without moving.
-
-```bash
-# bash / zsh (~/.bashrc or ~/.zshrc)
-eval "$(rufio --shell-init)"
-
-# fish (~/.config/fish/config.fish)
-rufio --shell-init fish | source
-```
-
-```powershell
-# PowerShell ($PROFILE)
-Invoke-Expression (& rufio --shell-init powershell | Out-String)
-```
-
-To avoid starting Ruby with every shell, append the output once instead, for example
-`rufio --shell-init >> ~/.bashrc`.
-
-## Command Mode
-
-Press `:` to enter command mode and execute various commands.
-
-### Script Execution
-
-```
-:@build           # @ prefix triggers script completion
-:@deploy.rb       # Execute registered script
-:@local.sh        # Scripts in current directory are also available
-```
-
-### Rake Task Execution
-
-```
-:rake:test        # Execute rake task
-:rake:build       # Tab completion supported
-```
-
-Rakefile in the current directory is automatically parsed. Supports `Rakefile`, `rakefile`, `Rakefile.rb`.
-
-### Shell Commands
-
-```
-:!git status      # ! prefix for shell commands
-:!ls -la          # Execute in background
-```
-
-### Go to a Path
-
-```
-:cd ~/projects/app        # Paste any path and press Enter
-:cd '/path/with space/a.txt'  # A file path opens its folder and selects the file
-:cd -                     # Back to the previous directory
-```
-
-Relative paths start from the current directory, and `Tab` completes directory names.
-Surrounding quotes, `\ ` escapes and `file://` URLs from copied paths are accepted.
-
-### Built-in Commands
-
-```
-:hello            # Greeting message
-:stop             # Quit rufio
-```
-
-## Script Path
-
-### What is Script Path?
-
-A feature to register directories containing script files. Scripts in registered directories can be executed using the `@` prefix in command mode.
-
-### Management
-
-Press `B` → `3` to open the script path management menu:
-
-- View registered paths
-- `d`: Remove path
-- `Enter`: Jump to directory
-- `ESC`: Close menu
-
-### Supported Scripts
-
-| Extension | Language |
-|-----------|----------|
-| `.rb` | Ruby |
-| `.py` | Python |
-| `.sh` | Shell (bash/zsh) |
-| `.js` | JavaScript (Node.js) |
-| `.ts` | TypeScript (ts-node/deno) |
-| `.pl` | Perl |
-| `.ps1` | PowerShell |
-
-## DSL Commands
-
-Define custom commands in `~/.config/rufio/commands.rb`:
-
-```ruby
-command "hello" do
-  ruby { "Hello from rufio!" }
-  description "Greeting command"
-end
-
-command "status" do
-  shell "git status"
-  description "Git status"
-end
-
-command "build" do
-  script "~/.config/rufio/scripts/build.rb"
-  description "Run build"
-end
-```
-
-## Configuration
-
-### Configuration File Structure
-
-```
-~/.config/rufio/
-├── config.rb          # DSL-style main configuration
-├── script_paths.yml   # Script directories (list format)
-├── bookmarks.yml      # Bookmarks (list format)
-├── commands.rb        # DSL command definitions
-├── scripts/           # Script files
-└── logs/              # Execution logs
-```
-
-### config.rb (DSL Configuration)
-
-```ruby
-# ~/.config/rufio/config.rb
-
-# Language setting: 'en' or 'ja'
-LANGUAGE = 'ja'
-
-# Color settings (HSL format)
-COLORS = {
-  directory: { hsl: [220, 80, 60] },
-  file: { hsl: [0, 0, 90] },
-  executable: { hsl: [120, 70, 50] },
-  selected: { hsl: [50, 90, 70] },
-  preview: { hsl: [180, 60, 65] }
-}.freeze
-
-# Keybind settings
-KEYBINDS = {
-  quit: %w[q ESC],
-  up: %w[k UP],
-  down: %w[j DOWN]
-}.freeze
-```
-
-### script_paths.yml
-
-```yaml
-# ~/.config/rufio/script_paths.yml
-- ~/.config/rufio/scripts
-- ~/bin
-- ~/scripts
-```
-
-### bookmarks.yml
-
-```yaml
-# ~/.config/rufio/bookmarks.yml
-- path: ~/Documents
-  name: Documents
-- path: ~/projects
-  name: Projects
-```
-
-### Local Configuration
-
-Place `rufio.yml` in your project root for project-specific script paths:
-
-```yaml
-# ./rufio.yml (project root)
-script_paths:
-  - ./scripts
-  - ./bin
-```
-
-## External Tool Integration
-
-rufio integrates with the following external tools to extend functionality.
-All tools are **optional** — rufio works without them, falling back to built-in behavior.
-
-| Tool | Purpose | Key | Required? |
-|------|---------|-----|-----------|
-| fzf | File name search | `s` | Optional |
-| rga | File content search | `F` | Optional |
-| zoxide | Directory history | `z` | Optional |
-| bat | Syntax highlighting in preview | — | Optional |
-
-### bat — Syntax Highlighting
-
-When `bat` is installed, code files in the preview pane are displayed with full syntax
-highlighting (Ruby, Python, Go, Rust, TypeScript, and 15+ more languages).
-
-Highlighting is loaded asynchronously — navigation stays fast even on large source trees.
-
-```bash
-# macOS
-brew install bat
-
-# Ubuntu/Debian
-apt install bat
-```
-
-Run `rufio -c` to verify bat is detected correctly.
-
-### Installation (all tools)
-
-```bash
-# macOS
-brew install fzf bat rga zoxide
-
-# Ubuntu/Debian
-apt install fzf bat zoxide
-# rga requires separate installation: https://github.com/phiresky/ripgrep-all
-```
-
-## Advanced Features
-
-### Native Content Search
-
-G mode content search uses a bundled Zig engine on macOS (arm64/x86_64), Linux (x86_64/aarch64, glibc 2.17+ or musl), and Windows (x64/arm64). It searches bookmarks in parallel and caches file contents between queries, so retyping a query is about 10x faster than `rg`. Other platforms, and queries containing non-ASCII letters with case, use the Ruby search automatically. Set `RUFIO_NATIVE_SEARCH=0` to disable it.
-
-### ZIP Archives
-
-Select items in Files mode with `Space` and press `z`: when every selected item is a `.zip` file, each is extracted into `<name>/` in the current directory; otherwise the selection is compressed into one `.zip`. The work runs as a job (progress and cancel in Jobs mode). `.zip` files also show their entry list in the preview.
-
-Extraction validates the whole archive before writing anything: it rejects path traversal and absolute paths, overlapping entries, and archives over 16 GiB in total, 100,000 entries, or a 1000:1 compression ratio (for entries over 1 MiB); it skips symlink and encrypted entries, verifies CRC-32, and never overwrites existing files. Only Stored and Deflate entries are supported.
-
-On the same platforms as content search, the bundled Zig engine decompresses entries and compresses files of 1 MiB or more in parallel (in our measurements on 8 × 64 MB text files with 4 CPUs, about 4.6x faster to compress and 3.2x faster to extract than the Ruby implementation). Validation stays in Ruby either way. Set `RUFIO_NATIVE_ZIP=0` to use the Ruby implementation only.
-
-To rebuild the bundled binaries (requires Zig 0.17):
-
-```bash
-make -C lib_zig/rufio_native dist   # all platforms
-bundle exec rake native:check       # verify bundled binaries
-```
-
-### Native Scanner (Experimental)
-
-Support for native implementation for fast directory scanning:
-
-```bash
-rufio --native        # Auto-detect
-rufio --native=zig    # Zig implementation
-```
-
-### JIT Compiler
-
-```bash
-rufio --yjit   # Ruby 3.1+ YJIT
-rufio --zjit   # Ruby 3.4+ ZJIT
-```
-
-### Health Check
-
-```bash
-rufio -c              # Check system dependencies
-rufio --check-health  # Same as above
-```
+- **[User Guide](./docs/guide.md)**: keys, modes, command mode, scripts, DSL commands, configuration, shell integration and the native engine
+- **[CHANGELOG](./CHANGELOG.md)**: release notes
+- **[SECURITY.md](./SECURITY.md)**: security design
 
 ## Development
 
 ### Requirements
 
 - Ruby 2.7.0 or later
-- io-console, pastel, tty-cursor, tty-screen gems
 
 ### Running Development Version
 
