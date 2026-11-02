@@ -108,7 +108,7 @@ ZIP extraction and compression run as background jobs. Check progress in Jobs mo
 ### Global Search (G)
 - **Type**: Filter results (literal, case insensitive)
 - **Tab**: Switch between file names and content
-- **Up/Down** or **Ctrl+N/P**: Select a result
+- **Up/Down** or **Ctrl+J/K or Ctrl+N/P**: Select a result
 - **Enter**: Go to the selected file in Files mode
 - **Ctrl+U**: Clear the query
 - **ESC**: Return to the previous mode

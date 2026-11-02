@@ -102,7 +102,7 @@ module Rufio
           'GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.zip .log]',
           'Applies to names and contents. Restart Rufio after editing.',
           'Extensions ignore case; leading dots are optional; [] excludes none.',
-          'Type to filter | Up/Down or Ctrl+N/P: Select',
+          'Type to filter | Up/Down or Ctrl+J/K or Ctrl+N/P: Select',
           'Enter: Go to the selected file in Files mode',
           'ESC: Return to the previous mode | Ctrl+U: Clear query',
           '', "[#{key(:log_viewer)}] Logs",

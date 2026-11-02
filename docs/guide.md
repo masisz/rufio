@@ -117,7 +117,7 @@ With nothing selected, `z` opens zoxide history instead.
 |-----|--------|
 | Type | Literal, case-insensitive search |
 | `Tab` | Switch between **File names** and **Content** |
-| `Up` / `Down`, `Ctrl+N` / `Ctrl+P` | Select a result |
+| `Up` / `Down`, `Ctrl+J` / `Ctrl+K`, `Ctrl+N` / `Ctrl+P` | Select a result |
 | `Enter` | Go to the file in Files mode |
 | `Ctrl+U` | Clear the query |
 | `ESC` | Return to the previous mode |

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- G mode supports `Ctrl+J` / `Ctrl+K` to select the next / previous result; Enter (CR) opens the selected result
+
 ## [1.4.0] - 2026-11-02
 
 ### Added

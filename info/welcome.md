@@ -37,6 +37,8 @@ A TUI file manager that executes and coordinates tools and scripts from files.
 | `q` | Quit |
 | `T` | Quit and cd to the current directory |
 
+In G mode, use `Ctrl+J` / `Ctrl+K` to select the next / previous result and `Enter` to open it.
+
 ## Command Mode
 
 Press `:` to enter command mode:

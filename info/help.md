@@ -144,7 +144,7 @@ Search file names or text inside every bookmarked directory.
 
 - `Tab`: Switch between file names and content (literal, case insensitive)
 - Content search also reads `.pdf` (page), `.xlsx` (sheet/cell) and `.pptx` (slide)
-- `Up/Down` or `Ctrl+N/P`: Select a result | `Enter`: Go to the file in Files mode
+- `Up/Down` or `Ctrl+J/K or Ctrl+N/P`: Select a result | `Enter`: Go to the file in Files mode
 - `Ctrl+U`: Clear the query | `ESC`: Return to the previous mode
 - Exclude extensions with `GLOBAL_SEARCH_EXCLUDED_EXTENSIONS` in `~/.config/rufio/config.rb`
 

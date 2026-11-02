@@ -106,11 +106,11 @@ module Rufio
       when "\t"
         @search_type = @search_type == :filename ? :content : :filename
         start_scan
-      when "\r", "\n" then return @results[@selected_index]
+      when "\r" then return @results[@selected_index]
       when :down then @selected_index = [@selected_index + 1, [@results.length - 1, 0].max].min
       when :up then @selected_index = [@selected_index - 1, 0].max
-      when "\x0e" then handle_key(:down) # Ctrl+N
-      when "\x10" then handle_key(:up)   # Ctrl+P
+      when "\x0a", "\x0e" then handle_key(:down) # Ctrl+J / Ctrl+N
+      when "\x0b", "\x10" then handle_key(:up)   # Ctrl+K / Ctrl+P
       when "\x15" then update_query('')  # Ctrl+U
       when "\u007f", "\b" then update_query(@query[0...-1])
       else
@@ -169,7 +169,7 @@ module Rufio
         write_line(screen, 3, message, width)
       end
       write_line(screen, screen.height - 3, @results[@selected_index]&.[](:path) || @errors.first.to_s, width, "\e[90m")
-      write_line(screen, screen.height - 2, 'ESC: Back | Enter: Go to file | Up/Down: Select | Type: Search', width)
+      write_line(screen, screen.height - 2, 'ESC: Back | Enter: Go to file | Up/Down or Ctrl+J/K: Select | Type: Search', width)
     end
 
     private
