@@ -69,6 +69,22 @@ class TestGlobalSearch < Minitest::Test
     refute @search.scanning?
   end
 
+  def test_ctrl_j_and_ctrl_k_select_results_without_changing_query
+    scan([{ name: 'A', path: @a }, { name: 'B', path: @b }])
+    @search.handle_key('re')
+    assert_nil @search.handle_key("\x0a")
+    assert_equal 1, @search.selected_index
+    @search.handle_key("\x0a")
+    assert_equal 1, @search.selected_index
+    @search.handle_key("\x0b")
+    assert_equal 0, @search.selected_index
+    @search.handle_key("\x0b")
+    assert_equal 0, @search.selected_index
+    assert_equal 're', @search.query
+    assert @search.active?
+    assert_equal @search.results.first, @search.handle_key("\r")
+  end
+
   def test_typing_does_not_trigger_navigation_and_arrow_selection_keeps_query
     scan([{ name: 'A', path: @a }, { name: 'B', path: @b }])
     @search.handle_key('r')
