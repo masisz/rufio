@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-02
+
 ### Added
+- `P` opens a fullscreen preview of the selected file that hides the file list; `j` / `k` and `Ctrl+D` / `Ctrl+U` scroll it, the mouse wheel scrolls it, and `ESC` returns to the file list. In Logs mode `P` opens a log the same way
 - `:cd <path>` in command mode goes to a pasted path. A file path opens its folder and selects the file, relative paths start from the current directory, `cd -` returns to the previous directory, and `Tab` completes directory names. Surrounding quotes, a trailing newline, `\ ` escapes and `file://` URLs from copied paths are accepted
+- Floating dialogs show scroll direction indicators when their content is longer than the dialog
+- `docs/guide.md` / `docs/guide_ja.md` collect the full usage guide; the README now keeps only an overview and the main keys
+
+### Changed
+- `Enter` only enters directories; it no longer moves focus to the preview for files (use `P`)
+- Copying an item whose name already exists in the destination creates a numbered copy (`name_1.ext`, `dir_1`, ...) instead of failing. Moving still refuses to overwrite
+- The help menu and info docs list the current keys and modes
 
 ## [1.3.0] - 2026-11-01
 
