@@ -60,6 +60,8 @@ The mouse also works: click to select, and scroll the list or the preview.
 
 ## Preview
 
+Text previews read at most the first 64 KiB. PDF bodies are not previewed, keeping file navigation responsive.
+
 The right pane previews the selected file. Code is highlighted when `bat` is installed. `.zip` files show their entry list (size, method, modified time, name) without extracting them.
 
 | Key | Action |

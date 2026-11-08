@@ -5,6 +5,7 @@ module Rufio
     BINARY_THRESHOLD = 0.3  # treat as binary if 30% or more binary characters
     DEFAULT_MAX_LINES = 50
     MAX_LINE_LENGTH = 500
+    MAX_PREVIEW_BYTES = 64 * 1024
 
     # Binary detection constants
     BINARY_SAMPLE_SIZE = 512
@@ -28,6 +29,9 @@ module Rufio
       return empty_response if file_size == 0
 
       begin
+        # PDF bodies are not displayed; never scan their binary streams as text.
+        return binary_response(file_path) if File.extname(file_path).casecmp?('.pdf')
+
         return archive_response(file_path, max_lines) if zip_archive?(file_path)
 
         # binary file detection
@@ -102,71 +106,30 @@ module Rufio
     end
 
     def read_text_file(file_path, max_lines)
+      # Bound the read before decoding or splitting: a binary stream or minified
+      # file can contain a single line spanning the entire file.
+      content = File.binread(file_path, MAX_PREVIEW_BYTES + 1)
+      truncated = content.bytesize > MAX_PREVIEW_BYTES
+      content = content.byteslice(0, MAX_PREVIEW_BYTES) if truncated
+      content = content.force_encoding('UTF-8').encode(
+        'UTF-8', invalid: :replace, undef: :replace, replace: '?'
+      )
       lines = []
-      truncated = false
-      encoding = "UTF-8"
-
-      # UTF-8で読み込み、不正なバイト列は置換文字に変換
-      File.open(file_path, "r:UTF-8:UTF-8", invalid: :replace, undef: :replace, replace: '�') do |file|
-        file.each_line.with_index do |line, index|
-          break if index >= max_lines
-
-          begin
-            # Ensure line is properly encoded as UTF-8
-            line = line.encode('UTF-8', invalid: :replace, undef: :replace, replace: '?')
-
-            # truncate too long lines
-            if line.length > MAX_LINE_LENGTH
-              line = line[0...MAX_LINE_LENGTH] + "..."
-            end
-
-            lines << line.chomp
-          rescue EncodingError, ArgumentError
-            # If encoding fails, add placeholder
-            lines << "[encoding error in line #{index + 1}]"
-          end
+      content.each_line.with_index do |line, index|
+        if index >= max_lines
+          truncated = true
+          break
         end
 
-        # check if there are more lines to read
-        truncated = !file.eof?
+        line = line[0...MAX_LINE_LENGTH] + '...' if line.length > MAX_LINE_LENGTH
+        lines << line.chomp
       end
 
       {
         content: lines,
         truncated: truncated,
-        encoding: encoding
+        encoding: 'UTF-8'
       }
-    rescue Encoding::InvalidByteSequenceError, Encoding::CompatibilityError
-      # try Shift_JIS if UTF-8 fails
-      begin
-        lines = []
-        File.open(file_path, "r:Shift_JIS:UTF-8", invalid: :replace, undef: :replace, replace: '�') do |file|
-          file.each_line.with_index do |line, index|
-            break if index >= max_lines
-
-            begin
-              # Ensure line is properly encoded as UTF-8
-              line = line.encode('UTF-8', invalid: :replace, undef: :replace, replace: '?')
-              lines << line.chomp
-            rescue EncodingError, ArgumentError
-              # If encoding fails, add placeholder
-              lines << "[encoding error in line #{index + 1}]"
-            end
-          end
-          truncated = !file.eof?
-        end
-        {
-          content: lines,
-          truncated: truncated,
-          encoding: "Shift_JIS"
-        }
-      rescue
-        {
-          content: ["(#{ConfigLoader.message('file.encoding_error')})"],
-          truncated: false,
-          encoding: "unknown"
-        }
-      end
     end
 
     def determine_file_type(file_path)

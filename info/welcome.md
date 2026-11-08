@@ -16,6 +16,8 @@ A TUI file manager that executes and coordinates tools and scripts from files.
 - **Job Management** - Run commands in the background
 - **Plugin System** - Extend functionality with custom plugins
 
+Text previews read at most the first 64 KiB. PDF bodies are not previewed, keeping file navigation responsive.
+
 ## Quick Start
 
 | Key | Action |
