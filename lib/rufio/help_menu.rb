@@ -55,6 +55,7 @@ module Rufio
           "#{key(:move_down)}/#{key(:move_up)} or arrows: Move down/up",
           "#{key(:navigate_parent)}/#{key(:navigate_enter)}: Parent / enter directory",
           "#{key(:preview)}: Fullscreen file preview | ESC: Back to file list",
+          'Text preview: first 64 KiB; PDF bodies are not previewed.',
           'Preview: j/k scroll, Ctrl+D/U page down/up',
           "#{key(:top)}/#{key(:bottom)}: First / last entry",
           "#{key(:open_file)}: Open in external editor",

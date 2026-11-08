@@ -27,6 +27,8 @@ Complete reference of all keyboard shortcuts in **rufio**.
 
 `.zip` previews list the archive entries (size, method, modified time, name) without extracting them.
 
+Text previews read at most the first 64 KiB. PDF bodies are not previewed, keeping file navigation responsive.
+
 ## File Selection
 
 | Key | Action |

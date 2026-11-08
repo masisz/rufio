@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - G mode supports `Ctrl+J` / `Ctrl+K` to select the next / previous result; Enter (CR) opens the selected result
 
+## [1.4.1] - 2026-11-08
+
+### Fixed
+- Skip PDF body reads in file previews so large binary streams do not block file navigation
+- Limit text preview reads to the first 64 KiB before decoding and report omitted lines correctly
+
 ## [1.4.0] - 2026-11-02
 
 ### Added

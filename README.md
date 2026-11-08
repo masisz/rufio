@@ -39,6 +39,8 @@ rufio brings finding files, running scripts, and checking results together in on
 - **Bookmarks**: Quick access to frequently used directories
 - **zoxide Integration**: Smart directory history
 
+Text previews read at most the first 64 KiB. PDF bodies are not previewed, keeping file navigation responsive.
+
 ### Cross-platform
 
 - **macOS**: Native support

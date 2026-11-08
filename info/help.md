@@ -43,6 +43,9 @@
 | `A` | Create new directory |
 
 In a preview, `j/k` scroll, `Ctrl+D/U` page down/up and `ESC` returns to the file list.
+
+Text previews read at most the first 64 KiB. PDF bodies are not previewed, keeping file navigation responsive.
+
 `.zip` previews list the archive entries (size, method, modified time, name) without extracting them.
 
 ### File Selection & Bulk Operations
