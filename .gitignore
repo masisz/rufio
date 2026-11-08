@@ -41,6 +41,7 @@ Gemfile.lock
 # Claude Code 
 CLAUDE.md
 .claude/
+.codex/
 
 # Rust build artifacts
 lib_rust/scanner/target/
