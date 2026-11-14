@@ -357,6 +357,7 @@ class TestFuzzyFileSource < Minitest::Test
 
   def test_invalid_filename_is_scrubbed_only_for_display
     skip 'POSIX raw filenames only' if Gem.win_platform?
+    skip 'macOS filesystems reject invalid UTF-8 filenames' if RUBY_PLATFORM.include?('darwin')
 
     path = File.join(@root, "raw_\xff.rb".b)
     File.write(path, '')
