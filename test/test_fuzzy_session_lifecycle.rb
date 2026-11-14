@@ -52,6 +52,26 @@ class TestFuzzySessionLifecycle < Minitest::Test
     end
   end
 
+  class TwoStepSource < Batches
+    attr_reader :ready, :release
+
+    def initialize(first, second)
+      super(first, second)
+      @ready = Queue.new
+      @release = Queue.new
+    end
+
+    def each_batch(cancelled:, on_error:)
+      @batches.each do |batch|
+        return if cancelled.call
+
+        yield batch
+        @ready << true
+        @release.pop
+      end
+    end
+  end
+
   def test_start_rejected_twice_does_not_close_a_running_session
     search = session(Batches.new(['alpha']))
     settle(search)
@@ -110,5 +130,58 @@ class TestFuzzySessionLifecycle < Minitest::Test
     assert_empty another.results
     assert_equal 2, another.total_matches
     assert_equal 2, another.candidate_count
+  end
+
+  def test_candidate_stream_is_indexed_without_querying_every_batch
+    source = PausedSource.new(['alpha'], Array.new(4096) { |i| "alpha_#{i}" })
+    index = GatedIndex.new(nil)
+    @gates << source
+    search = session(source, index_factory: -> { index }, refresh_interval: 60)
+    Timeout.timeout(3) { source.ready.pop }
+    search.update_query('alp')
+    Timeout.timeout(3) do
+      loop do
+        search.poll
+        break if search.results.length == 1 && !search.searching?
+
+        Thread.pass
+      end
+    end
+    calls_before = index.calls.length
+    source.release << true
+    settle(search)
+    assert_equal 4097, search.candidate_count
+    assert_equal 4097, search.total_matches
+    assert_operator index.calls.length - calls_before, :<=, 1
+  end
+
+  def test_partial_results_refresh_even_when_producer_is_waiting
+    source = TwoStepSource.new(['alpha'], ['abc'])
+    @gates << source
+    search = session(source, refresh_interval: 0.01)
+    Timeout.timeout(3) { source.ready.pop }
+    search.update_query('a')
+    Timeout.timeout(3) do
+      loop do
+        search.poll
+        break if search.results.length == 1 && !search.searching?
+
+        Thread.pass
+      end
+    end
+    source.release << true
+    Timeout.timeout(3) { source.ready.pop }
+    Timeout.timeout(3) do
+      loop do
+        search.poll
+        break if search.results.length == 2 && !search.searching?
+
+        Thread.pass
+      end
+    end
+    assert search.scanning?
+    assert_equal 2, search.total_matches
+    source.release << true
+    settle(search)
   end
 end
