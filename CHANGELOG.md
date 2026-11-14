@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Phase 1 of the internal fuzzy search engine: a persistent Zig candidate index, bounded top-K ranking, UTF-8 match byte offsets, and an equivalent Ruby fallback. Missing or older native libraries and `RUFIO_NATIVE_FUZZY=0` use Ruby. The engine is available through `Rufio::FuzzySearch`; terminal search keys still use the existing fzf integration until the UI phase is implemented
 - Native/Ruby parity tests, allocation-failure checks, a reproducible synthetic benchmark, and the staged implementation plan in `docs/native_fuzzy_search_design_ja.md`. Native binaries will be rebuilt when the terminal integration is ready; Phase 1 native tests use a separate local build
+- Phase 2 adds `Rufio::FuzzySearchSession`: background file listing and index ownership, bounded producer queues, latest-query coalescing, generation-checked immutable results, and nonblocking close with worker-owned cleanup. Candidate-only refreshes are grouped at 50ms intervals; query changes and scan completion bypass the interval
+- `Rufio::FuzzyFileSource` lists hidden files and regular-file symlinks using the existing Zig listing API or a Ruby fallback, skips directory symlinks, and keeps original paths separate from scrubbed UTF-8 labels. A cooperative cancellation callback on `NativeContentSearch#each_batch` stops idle polling as well. Session lifecycle tests and a streaming benchmark cover the new APIs; terminal keys and fzf integration remain unchanged
 
 ## [1.5.0] - 2026-11-14
 

@@ -110,10 +110,12 @@ module Rufio
     end
 
     # 1 回の取り出しごとにイベント配列を返す（UI へまとめて渡すため）
-    def each_batch
-      return enum_for(:each_batch) unless block_given?
+    def each_batch(cancelled: nil)
+      return enum_for(:each_batch, cancelled: cancelled) unless block_given?
 
       loop do
+        break if cancelled && cancelled.call
+
         state = NativeScannerZigFFI.core_search_state(@handle)
         data = drain
         batch = []

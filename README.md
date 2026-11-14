@@ -8,7 +8,8 @@ Add your own actions in Ruby.
 
 [日本語](./README_ja.md) | **English**
 
-Development for 1.6.0 has started with a Zig fuzzy search core and a Ruby fallback.
+Development for 1.6.0 includes a Zig fuzzy search core, a Ruby fallback, and an
+asynchronous search session with input coalescing and safe worker cleanup.
 The terminal integration is planned next; `s` / `/` and `F` still use fzf.
 See the [implementation plan and benchmarks](./docs/native_fuzzy_search_design_ja.md).
 
