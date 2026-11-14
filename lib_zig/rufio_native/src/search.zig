@@ -282,6 +282,7 @@ const Job = struct {
 
 pub const Search = struct {
     matcher: Matcher,
+    files_only: bool = false,
     roots: StringList,
     excluded: StringList,
     documents: StringList,
@@ -313,10 +314,21 @@ pub const Search = struct {
 
     pub fn create(roots: []const u8, query: []const u8, excluded: []const u8, documents: []const u8, threads: usize, cache: ?*Cache) !*Search {
         if (query.len == 0 or query.len > MAX_NEEDLE or roots.len == 0) return error.InvalidArgument;
+        return createInternal(roots, query, excluded, documents, threads, cache, false);
+    }
+
+    /// ファイル一覧列挙モード（fd 互換・ファイル内容は開かずに高速走査）
+    pub fn createFiles(roots: []const u8, excluded: []const u8, threads: usize) !*Search {
+        if (roots.len == 0) return error.InvalidArgument;
+        return createInternal(roots, "", excluded, "", threads, null, true);
+    }
+
+    fn createInternal(roots: []const u8, query: []const u8, excluded: []const u8, documents: []const u8, threads: usize, cache: ?*Cache, files_only: bool) !*Search {
         const self = try std.heap.c_allocator.create(Search);
         errdefer std.heap.c_allocator.destroy(self);
         self.* = .{
             .matcher = Matcher.init(query),
+            .files_only = files_only,
             .roots = try StringList.init(roots),
             .excluded = try StringList.init(excluded),
             .documents = try StringList.init(documents),
@@ -499,7 +511,9 @@ const Worker = struct {
     key: Buf = .{},
 
     fn init(self: *Worker) !void {
-        try self.read.reserve(READ_BUFFER);
+        if (!self.s.files_only) {
+            try self.read.reserve(READ_BUFFER);
+        }
         try self.scratch.init();
         try self.out.reserve(LOCAL_FLUSH * 2);
     }
@@ -520,7 +534,13 @@ const Worker = struct {
     }
 
     fn record(self: *Worker, kind: Kind, root: u32, line: u64, offset: u32, dir: []const u8, name: []const u8, extra: []const u8) void {
-        const path_len = if (name.len == 0) dir.len else dir.len + 1 + name.len;
+        const clean_dir = if (name.len > 0 and std.mem.eql(u8, dir, "."))
+            ""
+        else if (name.len > 0 and std.mem.startsWith(u8, dir, "./"))
+            dir[2..]
+        else
+            dir;
+        const path_len = if (name.len == 0) clean_dir.len else if (clean_dir.len == 0) name.len else clean_dir.len + 1 + name.len;
         self.out.reserve(self.out.len + RECORD_HEADER + path_len + extra.len) catch return;
         var hdr: [RECORD_HEADER]u8 = undefined;
         hdr[0] = @intFromEnum(kind);
@@ -530,9 +550,13 @@ const Worker = struct {
         std.mem.writeInt(u32, hdr[17..21], @intCast(path_len), .little);
         std.mem.writeInt(u32, hdr[21..25], @intCast(extra.len), .little);
         self.out.append(&hdr) catch unreachable;
-        self.out.append(dir) catch unreachable;
+        if (clean_dir.len > 0) {
+            self.out.append(clean_dir) catch unreachable;
+            if (name.len > 0) {
+                self.out.append("/") catch unreachable;
+            }
+        }
         if (name.len > 0) {
-            self.out.append("/") catch unreachable;
             self.out.append(name) catch unreachable;
         }
         self.out.append(extra) catch unreachable;
@@ -542,7 +566,17 @@ const Worker = struct {
         self.record(.err, root, 0, 0, dir, name, os.lastErrorMessage());
     }
 
+    fn isIgnoredDir(self: *Worker, name: []const u8) bool {
+        for (self.s.excluded.items) |ext| {
+            if (ext.len > 1 and ext[0] == '/' and name.len == ext.len - 1 and hasSuffixIgnoreCase(name, ext[1..])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     fn pushSubdir(self: *Worker, job: *Job, name: []const u8) void {
+        if (self.isIgnoredDir(name)) return;
         const sub = Job.create(job.root, job.path(), name) orelse return;
         sub.next = self.subdirs;
         if (self.subdirs == null) self.subdirs_tail = sub;
@@ -586,10 +620,23 @@ const Worker = struct {
 
     fn handleFile(self: *Worker, dir: *os.Dir, job: *Job, name: [:0]const u8, size: ?u64, meta: ?FileMeta) void {
         for (self.s.excluded.items) |ext| {
-            if (ext.len > 0 and hasSuffixIgnoreCase(name, ext)) {
+            if (ext.len == 0) continue;
+            if (ext[0] == '/') {
+                if (name.len == ext.len - 1 and hasSuffixIgnoreCase(name, ext[1..])) {
+                    _ = self.s.skipped.fetchAdd(1, .monotonic);
+                    return;
+                }
+            } else if (hasSuffixIgnoreCase(name, ext)) {
                 _ = self.s.skipped.fetchAdd(1, .monotonic);
                 return;
             }
+        }
+
+        // ファイル一覧モード（fd 互換）: ファイルを開かずにパスのみ記録
+        if (self.s.files_only) {
+            self.record(.match, job.root, 1, 0, job.path(), name, "");
+            if (self.out.len >= LOCAL_FLUSH) self.s.publish(&self.out);
+            return;
         }
         const ext = extname(name);
         if (ext.len > 0) {

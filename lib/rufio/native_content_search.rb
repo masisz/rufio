@@ -50,6 +50,10 @@ module Rufio
       NativeScannerZigFFI.search_available?
     end
 
+    def self.files_available?
+      NativeScannerZigFFI.files_available?
+    end
+
     # Zig 側は ASCII のみ大文字小文字を畳み込むため、大文字小文字を持つ非 ASCII 文字は Ruby 実装に任せる
     def self.supports_query?(query)
       return false if query.empty? || query.bytesize > MAX_QUERY_BYTES
@@ -64,20 +68,33 @@ module Rufio
       line[[match_index - 30, 0].max, 200].to_s.strip
     end
 
-    def initialize(roots:, query:, excluded_extensions: [], document_extensions: [], cache: nil, threads: 0)
-      raise StandardError, 'Zig content search is not available' unless self.class.available?
+    def initialize(roots:, query: nil, excluded_extensions: [], document_extensions: [], cache: nil, threads: 0)
+      @files_only = query.nil?
+      if @files_only
+        raise StandardError, 'Zig file search is not available' unless self.class.files_available?
+      else
+        raise StandardError, 'Zig content search is not available' unless self.class.available?
+      end
 
       @cache = cache
       @path_encoding = Encoding.find('filesystem')
       roots_buf = pack(roots)
-      query_buf = query.b
       excluded_buf = pack(excluded_extensions)
-      documents_buf = pack(document_extensions)
-      @handle = NativeScannerZigFFI.core_search_create(
-        roots_buf, roots_buf.bytesize, query_buf, query_buf.bytesize,
-        excluded_buf, excluded_buf.bytesize, documents_buf, documents_buf.bytesize,
-        threads, cache ? cache.handle : 0
-      )
+      @handle = if @files_only
+                  NativeScannerZigFFI.core_files_create(
+                    roots_buf, roots_buf.bytesize,
+                    excluded_buf, excluded_buf.bytesize,
+                    threads
+                  )
+                else
+                  query_buf = query.b
+                  documents_buf = pack(document_extensions)
+                  NativeScannerZigFFI.core_search_create(
+                    roots_buf, roots_buf.bytesize, query_buf, query_buf.bytesize,
+                    excluded_buf, excluded_buf.bytesize, documents_buf, documents_buf.bytesize,
+                    threads, cache ? cache.handle : 0
+                  )
+                end
       raise StandardError, 'Failed to start native search' if @handle.zero?
 
       @length = Fiddle::Pointer.malloc(8, Fiddle::RUBY_FREE)
@@ -143,7 +160,12 @@ module Rufio
         position += extra_length
 
         case KINDS[kind]
-        when :match then yield [:match, root, path, line, self.class.snippet(extra, offset)]
+        when :match
+          if @files_only
+            yield [:file, root, path]
+          else
+            yield [:match, root, path, line, self.class.snippet(extra, offset)]
+          end
         when :document then yield [:document, root, path]
         when :error then yield [:error, root, "#{path}: #{extra.force_encoding(Encoding::UTF_8).scrub}"]
         end

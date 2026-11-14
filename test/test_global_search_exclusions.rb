@@ -52,9 +52,9 @@ class TestGlobalSearchExclusions < Minitest::Test
   end
 
   def test_invalid_entries_are_ignored_and_extensions_are_normalized
-    config = { global_search_excluded_extensions: [' LOG ', '.ZIP', '', '.', nil, 123, 'log'] }
+    config = { global_search_excluded_extensions: [' LOG ', '.ZIP', '/node_modules', '/', '', '.', nil, 123, 'log'] }
     Rufio::ConfigLoader.stub(:load_config, config) do
-      assert_equal %w[.log .zip], Rufio::ConfigLoader.global_search_excluded_extensions
+      assert_equal %w[.log .zip /node_modules], Rufio::ConfigLoader.global_search_excluded_extensions
     end
     Rufio::ConfigLoader.stub(:load_config, { global_search_excluded_extensions: 123 }) do
       assert_empty Rufio::ConfigLoader.global_search_excluded_extensions

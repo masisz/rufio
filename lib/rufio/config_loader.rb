@@ -110,9 +110,9 @@ module Rufio
 
         values.select { |value| value.is_a?(String) }.map do |value|
           extension = value.strip.downcase
-          next if extension.empty? || extension == '.'
+          next if extension.empty? || extension == '.' || extension == '/'
 
-          extension.start_with?('.') ? extension : ".#{extension}"
+          extension.start_with?('.', '/') ? extension : ".#{extension}"
         end.compact.uniq
       end
 

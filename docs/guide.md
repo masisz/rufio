@@ -140,15 +140,15 @@ Content search also reads documents, without Python, Microsoft Office or convers
 
 Extracted text is cached in memory (up to 64 documents, about 16 MiB) and re-extracted when a file changes. Scanned images need OCR, which is not included. Legacy `.xls` / `.ppt` and slide notes are not supported.
 
-### Excluding Extensions
+### Excluding Extensions and Directories
 
 Add this to `~/.config/rufio/config.rb` and restart rufio. It applies to both file names and contents:
 
 ```ruby
-GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.png .jpg .zip .tar.gz .log].freeze
+GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.png .jpg .zip .tar.gz .log /.git /node_modules /.DS_Store].freeze
 ```
 
-Extensions ignore case, the leading dot is optional, and the default `[]` excludes nothing.
+Extensions ignore case, the leading dot is optional, and the default `[]` excludes nothing. An entry starting with `/` is a name: a directory with that name is skipped with everything under it, and a file with exactly that name is skipped.
 
 ## Bookmarks and History
 
@@ -323,8 +323,8 @@ APPLICATIONS = {
   :default => 'open'
 }.freeze
 
-# Extensions excluded from G mode search
-GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.log].freeze
+# Extensions (and /names of directories or files) excluded from G mode search
+GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.log /node_modules].freeze
 ```
 
 Action names for `KEYBINDS`:

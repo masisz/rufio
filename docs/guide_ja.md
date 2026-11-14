@@ -140,15 +140,15 @@ Python・Microsoft Office・変換ツールなしで文書の中も検索でき�
 
 抽出した文字列はメモリにキャッシュし（最大 64 文書・約 16 MiB）、ファイルが変わると再抽出します。画像だけの PDF には OCR が必要で、これは含みません。旧形式の `.xls` / `.ppt` とスライドノートは対象外です。
 
-### 拡張子の除外
+### 拡張子・ディレクトリの除外
 
 `~/.config/rufio/config.rb` に次を追加して rufio を再起動します。ファイル名・内容の両方に適用されます。
 
 ```ruby
-GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.png .jpg .zip .tar.gz .log].freeze
+GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.png .jpg .zip .tar.gz .log /.git /node_modules /.DS_Store].freeze
 ```
 
-大文字・小文字は区別せず、先頭のドットは省略できます。デフォルトの `[]` は何も除外しません。
+大文字・小文字は区別せず、先頭のドットは省略できます。デフォルトの `[]` は何も除外しません。`/` で始まる要素は名前の指定になり、その名前のディレクトリは配下ごと、名前が完全に一致するファイルは単体で除外します。
 
 ## ブックマークと履歴
 
@@ -323,8 +323,8 @@ APPLICATIONS = {
   :default => 'open'
 }.freeze
 
-# G モードの検索から除外する拡張子
-GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.log].freeze
+# G モードの検索から除外する拡張子（/ 始まりはディレクトリ・ファイル名）
+GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.log /node_modules].freeze
 ```
 
 `KEYBINDS` で使えるアクション名:

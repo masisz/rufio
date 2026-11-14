@@ -101,6 +101,12 @@ module Rufio
         @search_available == true
       end
 
+      # ファイル一覧走査 API（古いライブラリには存在しない）
+      def files_available?
+        load! unless @loaded
+        @files_available == true
+      end
+
       # ZIP データ処理 API（古いライブラリには存在しない）
       def zip_available?
         load! unless @loaded
@@ -125,9 +131,16 @@ module Rufio
         extern 'uint64_t core_cache_bytes(uint64_t)'
         extern 'void core_cache_destroy(uint64_t)'
         @search_available = true
+        begin
+          extern 'uint64_t core_files_create(const char*, size_t, const char*, size_t, uint32_t)'
+          @files_available = true
+        rescue Fiddle::DLError
+          @files_available = false
+        end
       rescue Fiddle::DLError => e
         warn "Zig content search unavailable: #{e.message}" if ENV['RUFIO_DEBUG']
         @search_available = false
+        @files_available = false
       end
 
       def load_zip_functions!

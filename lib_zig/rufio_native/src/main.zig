@@ -373,6 +373,22 @@ export fn core_search_create(
     return @intFromPtr(s);
 }
 
+/// ファイル一覧走査（fd 互換）を開始してハンドルを返す（失敗時は 0）。threads=0 で CPU 数
+export fn core_files_create(
+    roots: [*]const u8,
+    roots_len: usize,
+    excluded: [*]const u8,
+    excluded_len: usize,
+    threads: u32,
+) u64 {
+    const s = search.Search.createFiles(
+        roots[0..roots_len],
+        excluded[0..excluded_len],
+        threads,
+    ) catch return 0;
+    return @intFromPtr(s);
+}
+
 export fn core_search_state(handle: u64) u8 {
     if (handle == 0) return @intFromEnum(search.State.failed);
     const s: *search.Search = @ptrFromInt(handle);
