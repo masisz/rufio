@@ -21,7 +21,7 @@ class TestNativePlatformBinaries < Minitest::Test
     'aarch64-windows' => [:pe, :aarch64]
   }.freeze
 
-  REQUIRED_EXPORTS = %w[core_async_create core_async_get_attrs core_search_create core_search_drain
+  REQUIRED_EXPORTS = %w[core_async_create core_async_get_attrs core_search_create core_files_create core_search_drain
                         core_cache_create core_cache_destroy core_zip_extract_create core_zip_deflate_create
                         core_zip_state core_zip_progress core_zip_status core_zip_deflate_result
                         core_zip_cancel core_zip_destroy].freeze
@@ -78,6 +78,7 @@ class TestNativePlatformBinaries < Minitest::Test
     assert_equal path, FFI.loaded_path
     assert FFI.available?
     assert FFI.search_available?
+    assert FFI.files_available?
     assert FFI.zip_available?
   end
 

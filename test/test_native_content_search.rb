@@ -239,4 +239,32 @@ class TestNativeContentSearch < Minitest::Test
   ensure
     engine&.close
   end
+
+  def run_filename_search(native, query = '', bookmarks = @bookmarks, excluded: ['.png', '/er'])
+    Rufio::GlobalSearch.native_search = native
+    Rufio::ConfigLoader.stub(:global_search_excluded_extensions, excluded) do
+      search = Rufio::GlobalSearch.new
+      search.open(bookmarks)
+      search.handle_key(query) unless query.empty?
+      wait_for_scan(search)
+      search.poll
+      results = search.results.map { |r| [r[:bookmark], r[:relative_path], r[:path]] }.sort
+      [results, search.skipped_files, search.errors.length]
+    ensure
+      search&.close
+    end
+  end
+
+  def test_native_filename_search_matches_ruby_and_supports_dir_exclusions
+    assert Rufio::NativeContentSearch.files_available?
+    expected = run_filename_search(false, 'txt')
+    actual = run_filename_search(true, 'txt')
+    assert_equal expected, actual
+    refute_empty actual.first
+
+    all_expected = run_filename_search(false, '')
+    all_actual = run_filename_search(true, '')
+    assert_equal all_expected, all_actual
+    refute(all_actual.first.any? { |_, rel, _| rel.include?('nested.rb') })
+  end
 end
