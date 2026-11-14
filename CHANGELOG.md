@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-11-15
+
+### Fixed
+- G mode recognizes application cursor arrows (SS3), modified CSI arrows, and extended Ctrl+J/K (CSI u) input used by terminals such as Ghostty. Unknown sequences and key releases no longer close G mode, and Unix input briefly waits for escape-sequence continuation bytes
+
 ## [1.5.0] - 2026-11-14
 
 ### Added
