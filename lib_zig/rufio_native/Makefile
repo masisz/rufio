@@ -15,7 +15,7 @@ ZIG_FLAGS := -O ReleaseFast -dynamic -lc
 TARGET := librufio_zig.dylib
 BENCH := rufio_search
 SRC := src/main.zig
-SOURCES := src/main.zig src/search.zig src/os.zig src/zip.zig
+SOURCES := src/main.zig src/search.zig src/os.zig src/zip.zig src/fuzzy.zig
 NATIVE_DIR := ../../lib/rufio/native
 BUILD_DIR := zig-out/dist
 
@@ -42,6 +42,7 @@ $(BENCH): src/cli.zig src/search.zig src/os.zig
 
 test:
 	$(ZIG) test src/search_test.zig
+	$(ZIG) test src/fuzzy_test.zig
 
 bench: $(BENCH)
 	./bench.sh

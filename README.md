@@ -8,6 +8,10 @@ Add your own actions in Ruby.
 
 [日本語](./README_ja.md) | **English**
 
+Development for 1.6.0 has started with a Zig fuzzy search core and a Ruby fallback.
+The terminal integration is planned next; `s` / `/` and `F` still use fzf.
+See the [implementation plan and benchmarks](./docs/native_fuzzy_search_design_ja.md).
+
 ## What Makes rufio Different
 
 rufio brings finding files, running scripts, and checking results together in one interface.

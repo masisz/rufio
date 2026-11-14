@@ -1,4 +1,7 @@
 const std = @import("std");
+comptime {
+    _ = @import("fuzzy.zig");
+}
 const c = std.c;
 const search = @import("search.zig");
 const os = @import("os.zig");
