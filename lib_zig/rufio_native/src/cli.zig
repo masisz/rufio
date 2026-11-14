@@ -1,7 +1,9 @@
-//! ripgrep と同条件で比較するためのベンチマーク用 CLI。
-//! 使い方: rufio_search [-j N] [-r N] QUERY DIR...
+//! ripgrep / fd と同条件で比較するためのベンチマーク用 CLI。
+//! 使い方:
+//!   rufio_search [-j N] [-r N] QUERY DIR...
+//!   rufio_search --files [-j N] [DIR...]
 //! -r N: キャッシュを使って同じ検索を N 回繰り返し、各回の所要時間を標準エラーに出す（G mode の再検索を再現）
-//! 出力は rg -n と同じ `path:line:text` 形式（text はマッチ周辺の最大 1KB）。
+//! 出力は rg -n と同じ `path:line:text` 形式（--files 時は `path` のみ）。
 const std = @import("std");
 const c = std.c;
 const search = @import("search.zig");
@@ -17,6 +19,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
     _ = args.skip();
     var threads: usize = 0;
     var repeat: usize = 0;
+    var files_only = false;
     var query: ?[]const u8 = null;
     var roots: std.ArrayList(u8) = .empty;
     const alloc = std.heap.c_allocator;
@@ -27,18 +30,24 @@ pub fn main(init: std.process.Init.Minimal) !void {
             threads = try std.fmt.parseInt(usize, args.next() orelse return error.MissingValue, 10);
         } else if (std.mem.eql(u8, arg, "-r")) {
             repeat = try std.fmt.parseInt(usize, args.next() orelse return error.MissingValue, 10);
-        } else if (query == null) {
+        } else if (std.mem.eql(u8, arg, "--files")) {
+            files_only = true;
+        } else if (!files_only and query == null) {
             query = arg;
         } else {
             if (roots.items.len > 0) try roots.append(alloc, 0);
             try roots.appendSlice(alloc, std.mem.trimEnd(u8, arg, "/"));
         }
     }
+    if (roots.items.len == 0) try roots.append(alloc, '.');
+    if (files_only) {
+        _ = try runSearch(roots.items, null, threads, null, true);
+        return;
+    }
     const q = query orelse {
-        writeAll("usage: rufio_search [-j N] [-r N] QUERY DIR...\n");
+        writeAll("usage: rufio_search [--files] [-j N] [-r N] [QUERY] DIR...\n");
         return;
     };
-    if (roots.items.len == 0) try roots.append(alloc, '.');
 
     if (repeat > 0) {
         const cache = try search.Cache.create(256 * 1024 * 1024);
@@ -56,9 +65,12 @@ pub fn main(init: std.process.Init.Minimal) !void {
     _ = try runSearch(roots.items, q, threads, null, true);
 }
 
-fn runSearch(roots: []const u8, q: []const u8, threads: usize, cache: ?*search.Cache, print: bool) !usize {
+fn runSearch(roots: []const u8, q: ?[]const u8, threads: usize, cache: ?*search.Cache, print: bool) !usize {
     const alloc = std.heap.c_allocator;
-    const s = try search.Search.create(roots, q, "", "", threads, cache);
+    const s = if (q) |query_str|
+        try search.Search.create(roots, query_str, "", "", threads, cache)
+    else
+        try search.Search.createFiles(roots, "/.git\x00/node_modules\x00/.ds_store", threads);
     defer s.destroy();
 
     var lines: usize = 0;
@@ -81,8 +93,10 @@ fn runSearch(roots: []const u8, q: []const u8, threads: usize, cache: ?*search.C
             lines += 1;
             if (!print) continue;
             try out.appendSlice(alloc, a);
-            try out.appendSlice(alloc, try std.fmt.bufPrint(&line_buf, ":{d}:", .{line}));
-            try out.appendSlice(alloc, std.mem.trimEnd(u8, b, "\r\n"));
+            if (q != null) {
+                try out.appendSlice(alloc, try std.fmt.bufPrint(&line_buf, ":{d}:", .{line}));
+                try out.appendSlice(alloc, std.mem.trimEnd(u8, b, "\r\n"));
+            }
             try out.append(alloc, '\n');
         }
         if (out.items.len >= 1 << 16) {

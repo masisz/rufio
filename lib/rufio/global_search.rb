@@ -83,7 +83,7 @@ module Rufio
         when :entries
           # Zig 実装の結果はまとめて届くので、1 フレーム 256 件の上限に縛られない
           @entries.concat(value)
-          @results.concat(value)
+          @results.concat(@search_type == :content || @query.empty? ? value : value.select { |entry| matches_query?(entry) })
         when :error then @errors << value
         when :skipped then @skipped_files += value || 1
         when :done then @scanning = false
@@ -190,11 +190,14 @@ module Rufio
       return unless @scanning
 
       roots, events, type, query = @roots, @events, @search_type, @query.downcase
-      native_cache = self.class.native_search? ? (@native_cache ||= NativeContentSearch::Cache.new) : nil
+      native = self.class.native_search?
+      native_cache = native && type == :content ? (@native_cache ||= NativeContentSearch::Cache.new) : nil
       @worker = Thread.new do
         begin
-          if native_cache && type == :content && NativeContentSearch.supports_query?(query)
+          if native && type == :content && NativeContentSearch.supports_query?(query)
             scan_roots_natively(roots, events, query, native_cache)
+          elsif native && type == :filename && NativeContentSearch.files_available?
+            scan_files_natively(roots, events)
           else
             scan_roots(roots, events, type, query)
           end
@@ -223,6 +226,8 @@ module Rufio
 
     def scan_roots(roots, events, type, query)
       visited_dirs = {}
+      excluded_names = @excluded_extensions.select { |e| e.start_with?('/') }.map { |e| e.delete_prefix('/') }
+      excluded_suffixes = @excluded_extensions.reject { |e| e.start_with?('/') }
       roots.each do |name, root|
         begin
           root = File.expand_path(root)
@@ -238,11 +243,12 @@ module Rufio
             begin
               Dir.each_child(directory) do |child|
                 path = File.join(directory, child)
+                folded_child = child.scrub.downcase
                 # ディレクトリシンボリックリンクは追わず、循環・範囲外の走査を防ぐ。
                 if File.directory?(path)
-                  pending << path unless File.symlink?(path)
+                  pending << path unless File.symlink?(path) || excluded_names.include?(folded_child)
                 elsif File.file?(path)
-                  if child.scrub.downcase.end_with?(*@excluded_extensions)
+                  if excluded_names.include?(folded_child) || (!excluded_suffixes.empty? && folded_child.end_with?(*excluded_suffixes))
                     events << [:skipped, nil]
                     next
                   end
@@ -263,6 +269,39 @@ module Rufio
           events << [:error, "#{name}: #{e.message}"]
         end
       end
+    end
+
+    # Zig 実装でブックマーク配下のファイル一覧を並列走査する
+    def scan_files_natively(roots, events)
+      valid_roots = []
+      roots.each do |name, root|
+        root = File.expand_path(root)
+        raise Errno::ENOTDIR, root unless File.directory?(root)
+
+        valid_roots << [name, root]
+      rescue SystemCallError, IOError => e
+        events << [:error, "#{name}: #{e.message}"]
+      end
+      return if valid_roots.empty?
+
+      engine = NativeContentSearch.new(roots: valid_roots.map(&:last), query: nil,
+                                       excluded_extensions: @excluded_extensions)
+      engine.each_batch do |batch|
+        entries = []
+        batch.each do |kind, *args|
+          case kind
+          when :file, :match
+            name, root = valid_roots[args[0]]
+            path = args[1]
+            entries << { path: path, bookmark: name, relative_path: path.delete_prefix(root + File::SEPARATOR) }
+          when :error then events << [:error, args[1]]
+          when :skipped then events << [:skipped, args[0]]
+          end
+        end
+        events << [:entries, entries] unless entries.empty?
+      end
+    ensure
+      engine&.close
     end
 
     # Zig 実装で走査・検索し、PDF などのドキュメントだけ Ruby 側で抽出する
