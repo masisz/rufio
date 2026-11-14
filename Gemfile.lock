@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    rufio (1.4.1)
+    rufio (1.5.0)
       base64 (>= 0.2, < 1.0)
       csv (~> 3.0)
       io-console (~> 0.6)

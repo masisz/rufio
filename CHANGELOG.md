@@ -7,8 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-14
+
 ### Added
 - G mode supports `Ctrl+J` / `Ctrl+K` to select the next / previous result; Enter (CR) opens the selected result
+- `GLOBAL_SEARCH_EXCLUDED_EXTENSIONS` accepts names starting with `/` (for example `/.git`, `/node_modules`, `/.DS_Store`) to skip a directory and everything under it, or files with exactly that name. Names ignore case, and extension entries such as `.png` keep working as before
+- The bundled Zig library adds a file listing mode (`core_files_create`) that walks directories in parallel without opening files, rebuilt for all eight bundled platforms. The `rufio_search` benchmark CLI gains `--files` for comparison with `fd`
+
+### Changed
+- G mode file name search walks bookmarked directories with the parallel Zig engine instead of a single Ruby thread. `RUFIO_NATIVE_SEARCH=0` or an older library without the file listing function falls back to the Ruby walk
 
 ## [1.4.1] - 2026-11-08
 
