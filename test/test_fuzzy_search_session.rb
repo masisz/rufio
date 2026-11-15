@@ -287,6 +287,34 @@ class TestFuzzySearchSession < Minitest::Test
     assert_empty search.errors
     assert_equal [0, 10], search.results.first[:positions]
   end
+  # 凍結済みの候補はコピーせずにそのまま保持する（登録の高速化）。未凍結の候補は従来どおりコピーする
+  class FrozenSource
+    attr_reader :rows
+
+    def initialize
+      @rows = [{ text: 'frozen.rb', path: '/root/frozen.rb' }.freeze].freeze
+    end
+
+    def each_batch(cancelled:, on_error:)
+      yield @rows unless cancelled.call
+    end
+  end
+
+  def test_frozen_candidates_are_reused_without_copying
+    source = FrozenSource.new
+    search = Rufio::FuzzySearchSession.new(source: source, native: false).start
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
+    loop do
+      search.poll
+      state = search.snapshot
+      break unless state.scanning || state.searching
+      flunk 'session did not finish' if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      sleep 0.005
+    end
+    assert_same source.rows.first, search.results.first[:entry]
+  ensure
+    search&.close
+  end
 end
 
 class TestFuzzyFileSource < Minitest::Test
@@ -375,5 +403,19 @@ class TestFuzzyFileSource < Minitest::Test
   def test_native_batch_reader_can_cancel_before_first_native_poll
     reader = Rufio::NativeContentSearch.allocate
     assert_empty reader.each_batch(cancelled: -> { true }).to_a
+  end
+
+  def test_rows_are_frozen_so_sessions_can_reuse_them
+    Dir.mktmpdir('rufio_frozen_rows') do |dir|
+      File.write(File.join(dir, 'a.txt'), 'a')
+      [true, false].each do |native|
+        rows = []
+        Rufio::FuzzyFileSource.new(dir, native: native).each_batch(cancelled: -> { false }, on_error: ->(_) {}) { |batch| rows.concat(batch) }
+        assert_equal 1, rows.length
+        assert rows.first.frozen?, "native=#{native}"
+        assert rows.first[:text].frozen?
+        assert rows.first[:path].frozen?
+      end
+    end
   end
 end

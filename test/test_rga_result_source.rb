@@ -45,6 +45,14 @@ class TestRgaResultSource < Minitest::Test
     ], entries
   end
 
+  def test_rows_are_frozen
+    source = Rufio::RgaResultSource.new('x', @root, command: ruby_command('puts "a.txt:1:x"'))
+    entries, = collect(source)
+    assert entries.first.frozen?
+    assert entries.first[:text].frozen?
+    assert entries.first[:path].frozen?
+  end
+
   def test_strips_dot_slash_and_skips_unparsable_lines
     script = 'puts "./a.txt:1:one"; puts "no line number here"; puts ""'
     source = Rufio::RgaResultSource.new('one', @root, command: ruby_command(script))

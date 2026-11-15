@@ -135,6 +135,16 @@ class TestGlobalSearchFuzzy < Minitest::Test
     refute_includes names, 'skip.log'
   end
 
+  def test_file_name_candidates_are_frozen
+    rows = []
+    source = Rufio::GlobalSearch::FileNameSource.new(@search, [['A', @a]], false)
+    @search.instance_variable_set(:@excluded_extensions, [])
+    source.each_batch(cancelled: -> { false }, on_error: ->(_) {}) { |batch| rows.concat(batch) }
+    refute_empty rows
+    assert rows.all?(&:frozen?)
+    assert rows.all? { |row| row.values.all? { |value| !value.is_a?(String) || value.frozen? } }
+  end
+
   def test_close_releases_the_session
     @search.open(bookmarks)
     session = @search.instance_variable_get(:@session)

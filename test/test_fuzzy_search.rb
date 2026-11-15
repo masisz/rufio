@@ -64,6 +64,34 @@ class TestFuzzySearch < Minitest::Test
     search.close
   end
 
+  # 前回の検索語の続きを入力したときは、前回の一致と追加分だけを照合する（結果は全件照合と同じ）
+  def test_narrowing_matches_fresh_index_and_scans_fewer
+    random = Random.new(42)
+    parts = %w[lib src search controller Screen _ - .rb / 日本 検索 a B ctrl]
+    first = Array.new(800) { Array.new(random.rand(1..8)) { parts.sample(random: random) }.join }
+    second = Array.new(200) { Array.new(random.rand(1..8)) { parts.sample(random: random) }.join }
+    search = build(first)
+    previous = nil
+    %w[s sc sct sctr sctrl].each do |text|
+      result = search.query(text, limit: 50)
+      fresh = build(first)
+      assert_equal fresh.query(text, limit: 50), result, text
+      assert_equal fresh.total_matches, search.total_matches
+      fresh.close
+      assert_equal previous, search.scanned if previous
+      previous = search.total_matches
+    end
+    assert_operator search.scanned, :<, first.length
+    search.add(second)
+    fresh = build(first + second)
+    %w[sctrl sXctrl sc 日検].each do |text|
+      assert_equal fresh.query(text, limit: 50), search.query(text, limit: 50), text
+    end
+    assert_equal first.length + second.length, search.scanned
+    fresh.close
+    search.close
+  end
+
   def test_default_and_disabled_engine_fall_back_when_library_is_missing
     search = Rufio::FuzzySearch.new(library: File.join(__dir__, 'missing-fuzzy-library'))
     refute search.native?
@@ -97,6 +125,22 @@ class TestNativeFuzzySearch < Minitest::Test
         assert_equal @ruby.query(query, limit: limit), @native.query(query, limit: limit), "#{query.inspect} limit=#{limit}"
         assert_equal @ruby.total_matches, @native.total_matches
       end
+    end
+  end
+
+  def test_native_narrowing_parity_while_typing
+    random = Random.new(7)
+    parts = %w[lib src search controller Screen _ - .rb / 日本 検索 😀 a B ctrl]
+    candidates = Array.new(3000) { Array.new(random.rand(1..10)) { parts.sample(random: random) }.join }
+    [@ruby, @native].each { |s| s.add(candidates.first(2000)) }
+    %w[s sc sct sctr sctrl].each do |text|
+      assert_equal @ruby.query(text, limit: 100), @native.query(text, limit: 100), text
+      assert_equal @ruby.scanned, @native.scanned, text
+    end
+    [@ruby, @native].each { |s| s.add(candidates.drop(2000)) }
+    %w[sctrl ctrl 日検 s].each do |text|
+      assert_equal @ruby.query(text, limit: 100), @native.query(text, limit: 100), text
+      assert_equal @ruby.total_matches, @native.total_matches
     end
   end
 
