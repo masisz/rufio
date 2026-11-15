@@ -8,7 +8,8 @@ Add your own actions in Ruby.
 
 [日本語](./README_ja.md) | **English**
 
-Development for 1.6.0 replaces fzf with a built-in fuzzy search screen for `s` / `/` and `F`,
+Development for 1.6.0 replaces fzf with a built-in fuzzy search screen for `s` / `/` and `F`
+(with a file preview and a cached file list for quick reopening),
 backed by a Zig fuzzy search core, a Ruby fallback, and an asynchronous search session.
 See the [implementation plan and benchmarks](./docs/native_fuzzy_search_design_ja.md).
 

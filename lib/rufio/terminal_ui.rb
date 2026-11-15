@@ -1040,10 +1040,12 @@ module Rufio
 
     # s / / / F の内蔵検索画面を開く。Enter で選んだ候補をブロックに渡し、
     # ブロックが :needs_refresh を返したら（外部エディタから戻った後など）全画面を再描画する。
-    def start_fuzzy_finder(session, title:, &on_select)
+    # :missing を返したら画面を閉じずに通知を出す。options は FuzzyFinder#open に渡す
+    # （cached_at: / rescan: / preview:）。
+    def start_fuzzy_finder(session, title:, **options, &on_select)
       @global_search.close
       @fuzzy_finder_on_select = on_select
-      @fuzzy_finder.open(session, title: title)
+      @fuzzy_finder.open(session, title: title, **options)
       # 入力ダイアログ等が直接描いた領域が残らないよう、差分ではなく全画面を描き直す
       render_full_screen
       true
@@ -1062,9 +1064,14 @@ module Rufio
       entry = @fuzzy_finder.handle_key(input)
       return true unless entry
 
-      on_select = @fuzzy_finder_on_select
+      result = @fuzzy_finder_on_select&.call(entry)
+      if result == :missing
+        # キャッシュや rga の結果より後に削除・移動されたファイル
+        @fuzzy_finder.show_notice('File no longer exists')
+        return true
+      end
+
       close_fuzzy_finder
-      result = on_select&.call(entry)
       refresh_display if result == :needs_refresh
       true
     end

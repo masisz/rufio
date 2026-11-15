@@ -121,9 +121,14 @@ With nothing selected, `z` opens zoxide history instead.
 | `Up` / `Down`, `Ctrl+J` / `Ctrl+K`, `Ctrl+N` / `Ctrl+P` | Select a result |
 | `Enter` | Open the file (`F`: at the matching line) |
 | `Ctrl+U` | Clear the query |
+| `Ctrl+R` | Rescan the directory (keeps the query) |
 | `ESC` | Return to the file list |
 
 `F` asks for the text to search, runs rga in the background and streams its `file:line:text` results into this screen; typing then filters those lines. The matching itself uses the bundled Zig library when available and falls back to Ruby otherwise (`RUFIO_NATIVE_FUZZY=0` forces Ruby).
+
+On screens at least 80 columns wide, the right half shows a preview of the selected file, loaded in the background and limited to the first 64 KiB. `F` results scroll the preview to the matching line and highlight it. `preview_enabled: false` in `UI_OPTIONS` hides it.
+
+Reopening `s` in a directory scanned in the last 5 minutes shows the cached list immediately; the title reads `Cached 2m ago | Ctrl+R: Rescan`. The cache keeps up to 4 directories and 200,000 files in total, so new, deleted or changed files may be missing until you press `Ctrl+R`. Selecting a file that no longer exists keeps the screen open and shows `File no longer exists`.
 
 ## Global Search (G mode)
 

@@ -75,6 +75,8 @@ ZIP jobs show progress in Jobs mode (`J`). `x`: Cancel the selected job there; a
 - Type to narrow results with fuzzy (in-order, non-contiguous) matching; matched characters are highlighted
 - `Up/Down` or `Ctrl+J/K or Ctrl+N/P`: Select | `Enter`: Open | `Ctrl+U`: Clear | `ESC`: Back
 - `F` asks for text, runs rga in the background and shows its `file:line:text` results in the same screen. `Enter` opens the file at that line
+- Screens at least 80 columns wide show a preview of the selected file on the right (`F` centers and highlights the matching line). Set `preview_enabled: false` in `UI_OPTIONS` to hide it
+- Reopening `s` in the same directory within 5 minutes shows the cached list (`Cached ... ago` in the title). `Ctrl+R`: Rescan. A file deleted since then shows `File no longer exists`
 
 **Filter Mode:**
 - Type characters to filter files in real-time

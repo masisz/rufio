@@ -73,6 +73,7 @@ module Rufio
           "#{key(:filter)}: Filter | Enter: Apply | ESC: Clear",
           "#{key(:file_search)} or #{key(:file_search_alt)}: Fuzzy file name search",
           "#{key(:rga_search)}: Content search (rga), then pick a result",
+          'In search: Ctrl+R rescans; wide screens show a preview',
           "#{key(:global_search)}: Search file names or contents across all bookmarks",
           "#{key(:add_bookmark)}/#{key(:bookmark_menu)}: Add / manage bookmarks",
           'Tab / Shift+Tab: Next / previous bookmark',
