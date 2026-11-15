@@ -39,7 +39,7 @@ Text previews read at most the first 64 KiB. PDF bodies are not previewed, keepi
 | `q` | Quit |
 | `T` | Quit and cd to the current directory |
 
-In G mode, use `Ctrl+J` / `Ctrl+K` to select the next / previous result and `Enter` to open it.
+In G mode, use `Up` / `Down` or `Ctrl+J` / `Ctrl+K` to select the next / previous result and `Enter` to open it. Application cursor arrows and extended Ctrl-key sequences are supported, including on Ghostty.
 
 ## Command Mode
 
