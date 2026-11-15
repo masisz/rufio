@@ -120,7 +120,7 @@ module Rufio
     end
 
     def draw(screen)
-      screen.clear
+      screen.clear(mark_dirty: true)
       width = screen.width
       type = @search_type == :content ? 'Content' : 'File names'
       write_line(screen, 0, "G mode - #{type} | Tab: Switch name/content search", width, "\e[1;36m")

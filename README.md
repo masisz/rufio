@@ -8,9 +8,8 @@ Add your own actions in Ruby.
 
 [日本語](./README_ja.md) | **English**
 
-Development for 1.6.0 includes a Zig fuzzy search core, a Ruby fallback, and an
-asynchronous search session with input coalescing and safe worker cleanup.
-The terminal integration is planned next; `s` / `/` and `F` still use fzf.
+Development for 1.6.0 replaces fzf with a built-in fuzzy search screen for `s` / `/` and `F`,
+backed by a Zig fuzzy search core, a Ruby fallback, and an asynchronous search session.
 See the [implementation plan and benchmarks](./docs/native_fuzzy_search_design_ja.md).
 
 ## What Makes rufio Different
@@ -20,7 +19,7 @@ rufio brings finding files, running scripts, and checking results together in on
 - **Run scripts where your files are**: Register your script directories, then press `:`, type `@` + part of a script name, press `Tab`, and hit `Enter`. Run Ruby, Python, or PowerShell scripts in the directory you are browsing
 - **Follow jobs and execution logs**: Keep browsing while scripts run in the background. Press `J` to check jobs and `L` to view execution logs
 - **Add your own actions in Ruby**: Define custom commands with a small Ruby DSL in `~/.config/rufio/commands.rb`. `~/.rufio/commands.rb` is also supported
-- **Use installed tools without extra configuration**: Search file names with fzf, search contents with rga, highlight previews with bat, and navigate directory history with zoxide
+- **Use installed tools without extra configuration**: Search contents with rga, highlight previews with bat, and navigate directory history with zoxide
 - **Windows support**: Run PowerShell scripts with keyboard input handling adapted to Windows terminals
 - **Trace behavior in the source**: The implementation is primarily Ruby, so you can inspect and change the parts you need. Security design is documented in [SECURITY.md](./SECURITY.md)
 
@@ -38,7 +37,7 @@ rufio brings finding files, running scripts, and checking results together in on
 
 - **Vim-like Key Bindings**: Intuitive navigation
 - **Real-time Preview**: Instantly display file contents with syntax highlighting (via `bat`), including `.zip` entry lists
-- **Fast Search**: Integration with fzf/rga, plus built-in search across all bookmarks that also reads PDF, Excel and PowerPoint
+- **Fast Search**: Built-in fuzzy file name search, rga content search, plus built-in search across all bookmarks that also reads PDF, Excel and PowerPoint
 - **ZIP Archives**: Extract or compress selected items as a background job
 - **Jump to a Path**: Paste any path into `:cd`
 - **Bookmarks**: Quick access to frequently used directories
@@ -98,7 +97,7 @@ The most used keys. See the **[User Guide](./docs/guide.md)** for every key and 
 | `m/c/x` | Move / copy / delete selected items |
 | `z` | Extract or compress selected items (`.zip`); zoxide history when nothing is selected |
 | `a/A`, `r`, `d` | Create file / directory, rename, delete |
-| `f`, `s`, `F` | Filter, fzf file name search, rga content search |
+| `f`, `s`, `F` | Filter, fuzzy file name search, rga content search |
 | `G` | Search names or contents (PDF, Excel, PowerPoint too) across all bookmarks |
 | `b`, `B`, `1-9`, `Tab` | Add bookmark, bookmark menu, jump, next bookmark |
 | `:` | Command mode (`@script`, `rake:task`, `!shell`, `cd <path>`) |

@@ -40,7 +40,6 @@ module Rufio
       # Keybind messages
       'keybind.invalid_key' => 'invalid key',
       'keybind.search_text' => 'Search text: ',
-      'keybind.no_matches' => 'No matches found.',
       'keybind.press_any_key' => 'Press any key to continue...',
       'keybind.input_filename' => 'Enter filename: ',
       'keybind.input_dirname' => 'Enter directory name: ',
@@ -63,7 +62,6 @@ module Rufio
       'health.title' => 'rufio Health Check',
       'health.ruby_version' => 'Ruby version',
       'health.required_gems' => 'Required gems',
-      'health.fzf' => 'fzf (file search)',
       'health.rga' => 'rga (content search)',
       'health.zoxide' => 'zoxide (directory history)',
       'health.bat' => 'bat (syntax highlight)',

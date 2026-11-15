@@ -4,6 +4,7 @@ require 'io/console'
 require_relative 'text_utils'
 require_relative 'help_menu'
 require_relative 'global_search'
+require_relative 'fuzzy_finder'
 require_relative 'ui_renderer'
 
 module Rufio
@@ -34,6 +35,8 @@ module Rufio
       @command_mode_active = false
       @help_menu = HelpMenu.new
       @global_search = GlobalSearch.new
+      @fuzzy_finder = FuzzyFinder.new
+      @fuzzy_finder_on_select = nil
       @command_input = ""
       @command_mode = CommandMode.new
       @dialog_renderer = DialogRenderer.new
@@ -202,7 +205,7 @@ module Rufio
         # ConPTY ではバイト到着が遅れることがあるため 5ms では ESC 単体と誤判定する。
         # G mode は検索中に全画面を再描画し続けて遅延が大きくなりやすく、
         # しかも ESC 単体で閉じてしまうため、待ち時間を長めに取る。
-        timeout = global_search_active? ? 0.1 : 0.025
+        timeout = search_overlay_active? ? 0.1 : 0.025
         b = windows_queue_pop_with_timeout(timeout)
         b.nil? ? nil : b.chr(Encoding::BINARY)
       else
@@ -237,6 +240,7 @@ module Rufio
 
     def cleanup_terminal
       @global_search.close
+      @fuzzy_finder.close
       # マウスレポートを先に無効化して新しいイベントの流入を止める
       if windows?
         print "\e[?1000l\e[?1006l"
@@ -356,6 +360,7 @@ module Rufio
         needs_redraw = true if @background_status.update(@background_executor, now: start)
 
         needs_redraw = true if @global_search.poll
+        needs_redraw = true if @fuzzy_finder.poll
         needs_redraw = true if @keybind_handler&.poll_archive_jobs
 
         # 非同期シンタックスハイライト完了チェック（UIRenderer側のフラグを参照）
@@ -408,6 +413,12 @@ module Rufio
 
     # UIRenderer に全描画処理を委譲
     def draw_screen_to_buffer(screen, notification_message = nil, fps = nil)
+      if fuzzy_finder_active?
+        @fuzzy_finder.draw(screen)
+        @ui_renderer.draw_mode_tabs_to_buffer(screen, @screen_height - 1)
+        return
+      end
+
       if global_search_active?
         @global_search.draw(screen)
         @ui_renderer.draw_mode_tabs_to_buffer(screen, @screen_height - 1)
@@ -482,19 +493,19 @@ module Rufio
             end
             return true
           end
-          if global_search_active? && !help_dialog_active?
+          if search_overlay_active? && !help_dialog_active?
             input = read_global_search_csi(third_char)
             return true unless input
           else
             input = case third_char
-            when 'A' then global_search_active? && !help_dialog_active? ? :up : 'k'  # Up arrow
-            when 'B' then global_search_active? && !help_dialog_active? ? :down : 'j'  # Down arrow
-            when 'C' then global_search_active? && !help_dialog_active? ? :right : 'l'  # Right arrow
-            when 'D' then global_search_active? && !help_dialog_active? ? :left : 'h'  # Left arrow
+            when 'A' then search_overlay_active? && !help_dialog_active? ? :up : 'k'  # Up arrow
+            when 'B' then search_overlay_active? && !help_dialog_active? ? :down : 'j'  # Down arrow
+            when 'C' then search_overlay_active? && !help_dialog_active? ? :right : 'l'  # Right arrow
+            when 'D' then search_overlay_active? && !help_dialog_active? ? :left : 'h'  # Left arrow
             when 'Z'
               if help_dialog_active?
                 handle_help_input("\e[Z")
-              elsif !global_search_active?
+              elsif !search_overlay_active?
                 handle_shift_tab
               end
               return true  # Shift+Tab
@@ -505,7 +516,7 @@ module Rufio
               "\e"
             end
           end
-        elsif next_char == 'O' && global_search_active? && !help_dialog_active?
+        elsif next_char == 'O' && search_overlay_active? && !help_dialog_active?
           # Application cursor mode (SS3), used by terminals such as Ghostty.
           input = { 'A' => :up, 'B' => :down, 'C' => :right, 'D' => :left }[read_next_input_byte]
           return true unless input
@@ -515,6 +526,7 @@ module Rufio
       end
 
       return handle_help_input(input) if help_dialog_active?
+      return handle_fuzzy_finder_input(input) if fuzzy_finder_active?
       return handle_global_search_input(input) if global_search_active?
 
       # TabキーはFilesモードの時のみブックマーク循環移動（ジョブモード中は無効）
@@ -608,6 +620,12 @@ module Rufio
       if help_dialog_active?
         handle_help_input('k') if btn == 64
         handle_help_input('j') if btn == 65
+        return
+      end
+
+      if fuzzy_finder_active?
+        handle_fuzzy_finder_input(:up) if btn == 64
+        handle_fuzzy_finder_input(:down) if btn == 65
         return
       end
 
@@ -1016,7 +1034,44 @@ module Rufio
     attr_reader :screen, :renderer
 
     def start_global_search(bookmarks)
+      close_fuzzy_finder
       @global_search.open(bookmarks)
+    end
+
+    # s / / / F の内蔵検索画面を開く。Enter で選んだ候補をブロックに渡し、
+    # ブロックが :needs_refresh を返したら（外部エディタから戻った後など）全画面を再描画する。
+    def start_fuzzy_finder(session, title:, &on_select)
+      @global_search.close
+      @fuzzy_finder_on_select = on_select
+      @fuzzy_finder.open(session, title: title)
+      # 入力ダイアログ等が直接描いた領域が残らないよう、差分ではなく全画面を描き直す
+      render_full_screen
+      true
+    end
+
+    def fuzzy_finder_active?
+      @fuzzy_finder.active?
+    end
+
+    def close_fuzzy_finder
+      @fuzzy_finder.close
+      @fuzzy_finder_on_select = nil
+    end
+
+    def handle_fuzzy_finder_input(input)
+      entry = @fuzzy_finder.handle_key(input)
+      return true unless entry
+
+      on_select = @fuzzy_finder_on_select
+      close_fuzzy_finder
+      result = on_select&.call(entry)
+      refresh_display if result == :needs_refresh
+      true
+    end
+
+    # G mode と内蔵検索画面は、どちらも矢印キー等を移動として受け取る
+    def search_overlay_active?
+      global_search_active? || fuzzy_finder_active?
     end
 
     def global_search_active?

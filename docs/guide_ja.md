@@ -107,9 +107,23 @@ Files モードでは、最上段に現在のパス、その下にブックマ�
 | キー | 操作 |
 |------|------|
 | `f` | 入力に合わせて一覧を絞り込む（`Enter` で確定、`ESC` で解除） |
-| `s` または `/` | fzf でファイル名検索 |
-| `F` | rga でファイル内容検索 |
+| `s` または `/` | 現在のディレクトリ配下のファイル名をあいまい検索（外部ツール不要） |
+| `F` | rga でファイル内容を検索し、同じ画面で結果を選択 |
 | `G` | 全ブックマークを横断検索（外部ツール不要） |
+
+### あいまい検索画面（`s`、`/`、`F`）
+
+`s` と `/` は、現在のディレクトリ配下のファイル（隠しファイルと通常ファイルへのリンクを含む）を走査しながら一覧表示します。入力すると、文字が順番どおりに現れれば離れていても一致するあいまい検索で絞り込みます（`sctrl` で `search_controller.rb` が見つかります）。ASCII の英字は大文字小文字を区別せず、日本語はそのまま照合します。最後の `/` 以降・単語の先頭・連続した一致ほど上位に並び、一致した文字はハイライトされます。
+
+| キー | 操作 |
+|------|------|
+| 入力 | 一覧を絞り込む |
+| `↑` / `↓`、`Ctrl+J` / `Ctrl+K`、`Ctrl+N` / `Ctrl+P` | 結果を選択 |
+| `Enter` | ファイルを開く（`F` は一致した行で開く） |
+| `Ctrl+U` | 検索語をクリア |
+| `ESC` | ファイル一覧に戻る |
+
+`F` は検索する文字列を尋ね、rga をバックグラウンドで実行して `ファイル:行:本文` の結果をこの画面へ流し込みます。入力するとその結果の行を絞り込めます。照合には同梱の Zig ライブラリを使い、利用できない場合は Ruby 実装に切り替えます（`RUFIO_NATIVE_FUZZY=0` で Ruby を強制）。
 
 ## 横断検索（G モード）
 
@@ -333,9 +347,11 @@ GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.log /node_modules].freeze
 |------|------------------------------|
 | 移動 | `move_up` (k), `move_down` (j), `navigate_parent` (h), `navigate_enter` (l), `top` (g), `bottom` (}), `refresh` (R) |
 | ファイル | `open_file` (o), `preview` (P), `rename` (r), `delete` (d), `create_file` (a), `create_dir` (A), `move_selected` (m), `copy_selected` (c), `delete_selected` (x), `open_explorer` (e) |
-| 選択・検索 | `select` (Space), `filter` (f), `fzf_search` (s), `fzf_search_alt` (/), `rga_search` (F) |
+| 選択・検索 | `select` (Space), `filter` (f), `file_search` (s), `file_search_alt` (/), `rga_search` (F) |
 | ブックマーク | `add_bookmark` (b), `bookmark_menu` (B), `zoxide` (z), `start_dir` (0) |
 | モード | `job_mode` (J), `global_search` (G), `config_mode` (C), `help` (?), `log_viewer` (L), `command_mode` (:), `quit` (q), `quit_cd` (T) |
+
+以前のアクション名 `fzf_search` / `fzf_search_alt` も `file_search` / `file_search_alt` の別名として引き続き使えます。
 
 ### script_paths.yml と bookmarks.yml
 
@@ -370,17 +386,16 @@ script_paths:
 
 | ツール | 用途 | キー |
 |--------|------|------|
-| fzf | ファイル名検索 | `s`、`/` |
 | rga | ファイル内容検索 | `F` |
 | zoxide | ディレクトリ履歴 | `z` |
 | bat | プレビューのシンタックスハイライト | — |
 
 ```bash
 # macOS
-brew install fzf bat rga zoxide
+brew install bat rga zoxide
 
 # Ubuntu/Debian
-apt install fzf bat zoxide
+apt install bat zoxide
 # rga: https://github.com/phiresky/ripgrep-all
 ```
 

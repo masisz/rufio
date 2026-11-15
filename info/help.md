@@ -65,10 +65,16 @@ ZIP jobs show progress in Jobs mode (`J`). `x`: Cancel the selected job there; a
 | Key | Action |
 |-----|--------|
 | `f` | Start filter mode |
-| `s` | Search file names with fzf |
-| `/` | Search file names with fzf (same as `s`) |
-| `F` | Search file contents with rga (ripgrep-all) |
+| `s` | Fuzzy search file names |
+| `/` | Fuzzy search file names (same as `s`) |
+| `F` | Search file contents with rga (ripgrep-all) and pick a result |
 | `G` | Global search: file names or contents across all bookmarks |
+
+**Fuzzy Search (`s`, `/`, `F`):**
+- `s` / `/` list every file under the current directory (including hidden files) in a built-in search screen; no external tools are needed
+- Type to narrow results with fuzzy (in-order, non-contiguous) matching; matched characters are highlighted
+- `Up/Down` or `Ctrl+J/K or Ctrl+N/P`: Select | `Enter`: Open | `Ctrl+U`: Clear | `ESC`: Back
+- `F` asks for text, runs rga in the background and shows its `file:line:text` results in the same screen. `Enter` opens the file at that line
 
 **Filter Mode:**
 - Type characters to filter files in real-time

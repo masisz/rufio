@@ -107,9 +107,23 @@ With nothing selected, `z` opens zoxide history instead.
 | Key | Action |
 |-----|--------|
 | `f` | Filter the current list as you type (`Enter` keeps the filter, `ESC` clears it) |
-| `s` or `/` | Search file names with fzf |
-| `F` | Search file contents with rga |
+| `s` or `/` | Fuzzy search file names under the current directory (no external tools needed) |
+| `F` | Search file contents with rga, then pick a result in the same screen |
 | `G` | Global search across all bookmarks (no external tools needed) |
+
+### Fuzzy Search Screen (`s`, `/`, `F`)
+
+`s` and `/` list every file under the current directory, including hidden files and links to regular files, while the list is still being scanned. Typing narrows it with fuzzy matching: the query characters must appear in order but need not be adjacent (`sctrl` finds `search_controller.rb`). ASCII letters ignore case and Japanese text is matched as is. Matches after the last `/`, at word boundaries and in consecutive runs rank higher, and matched characters are highlighted.
+
+| Key | Action |
+|-----|--------|
+| Type | Filter the list |
+| `Up` / `Down`, `Ctrl+J` / `Ctrl+K`, `Ctrl+N` / `Ctrl+P` | Select a result |
+| `Enter` | Open the file (`F`: at the matching line) |
+| `Ctrl+U` | Clear the query |
+| `ESC` | Return to the file list |
+
+`F` asks for the text to search, runs rga in the background and streams its `file:line:text` results into this screen; typing then filters those lines. The matching itself uses the bundled Zig library when available and falls back to Ruby otherwise (`RUFIO_NATIVE_FUZZY=0` forces Ruby).
 
 ## Global Search (G mode)
 
@@ -333,9 +347,11 @@ Action names for `KEYBINDS`:
 |-------|-----------------------|
 | Navigation | `move_up` (k), `move_down` (j), `navigate_parent` (h), `navigate_enter` (l), `top` (g), `bottom` (}), `refresh` (R) |
 | Files | `open_file` (o), `preview` (P), `rename` (r), `delete` (d), `create_file` (a), `create_dir` (A), `move_selected` (m), `copy_selected` (c), `delete_selected` (x), `open_explorer` (e) |
-| Selection and search | `select` (Space), `filter` (f), `fzf_search` (s), `fzf_search_alt` (/), `rga_search` (F) |
+| Selection and search | `select` (Space), `filter` (f), `file_search` (s), `file_search_alt` (/), `rga_search` (F) |
 | Bookmarks | `add_bookmark` (b), `bookmark_menu` (B), `zoxide` (z), `start_dir` (0) |
 | Modes | `job_mode` (J), `global_search` (G), `config_mode` (C), `help` (?), `log_viewer` (L), `command_mode` (:), `quit` (q), `quit_cd` (T) |
+
+The former names `fzf_search` / `fzf_search_alt` are still accepted as aliases of `file_search` / `file_search_alt`.
 
 ### script_paths.yml and bookmarks.yml
 
@@ -370,17 +386,16 @@ All tools are optional. Without them, rufio disables the feature or falls back t
 
 | Tool | Used for | Key |
 |------|----------|-----|
-| fzf | File name search | `s`, `/` |
 | rga | File content search | `F` |
 | zoxide | Directory history | `z` |
 | bat | Syntax highlighting in the preview | — |
 
 ```bash
 # macOS
-brew install fzf bat rga zoxide
+brew install bat rga zoxide
 
 # Ubuntu/Debian
-apt install fzf bat zoxide
+apt install bat zoxide
 # rga: https://github.com/phiresky/ripgrep-all
 ```
 

@@ -1,14 +1,21 @@
 # frozen_string_literal: true
 
-require 'shellwords'
+require_relative 'fuzzy_search_session'
+require_relative 'rga_result_source'
 
 module Rufio
-  # 検索（fzf・rga）専用コントローラ
-  # KeybindHandler から fzf/rga 検索系メソッドを分離し、単一責任原則に準拠
+  # 検索（内蔵ファジー検索・rga）専用コントローラ
+  # 選択画面は TerminalUI の内蔵検索画面（FuzzyFinder）を使う
   class SearchController
-    def initialize(directory_listing, file_opener)
+    def initialize(directory_listing, file_opener, dialog_renderer = nil)
       @directory_listing = directory_listing
       @file_opener = file_opener
+      @dialog_renderer = dialog_renderer
+      @terminal_ui = nil
+    end
+
+    def set_terminal_ui(terminal_ui)
+      @terminal_ui = terminal_ui
     end
 
     def set_directory_listing(directory_listing)
@@ -16,73 +23,47 @@ module Rufio
     end
 
     # ============================
-    # fzf 検索
+    # 内蔵ファジー検索（s / /）
     # ============================
 
-    def fzf_search
-      return false unless fzf_available?
+    # 現在のディレクトリ配下のファイルを内蔵検索画面で絞り込み、選択したファイルを開く
+    def file_search
+      return false unless @terminal_ui
 
       current_path = @directory_listing&.current_path || Dir.pwd
-
-      selected_file = nil
-      Dir.chdir(current_path) do
-        selected_file = `find . -type f | fzf --preview 'cat {}'`.strip
+      session = FuzzySearchSession.new(root: current_path)
+      @terminal_ui.start_fuzzy_finder(session, title: "Files: #{current_path}") do |entry|
+        @file_opener.open_file(entry[:path]) if File.file?(entry[:path])
+        :needs_refresh
       end
-
-      if !selected_file.empty?
-        full_path = File.expand_path(selected_file, current_path)
-        @file_opener.open_file(full_path) if File.exist?(full_path)
-      end
-
-      :needs_refresh
+      true
     end
 
-    def fzf_available?
-      system('which fzf > /dev/null 2>&1')
-    end
+    # 旧アクション名（ユーザー設定の fzf_search）との互換
+    alias fzf_search file_search
 
     # ============================
-    # rga 検索
+    # rga 検索（F）
     # ============================
 
+    # rga の結果を内蔵検索画面に流し、選択した行でファイルを開く
     def rga_search
-      return false unless rga_available?
+      return false unless rga_available? && @terminal_ui && @dialog_renderer
 
       current_path = @directory_listing&.current_path || Dir.pwd
+      search_query = @dialog_renderer.show_input_dialog('Content search (rga)', ConfigLoader.message('keybind.search_text'), {
+        border_color: "\e[36m",
+        title_color: "\e[1;36m",
+        content_color: "\e[37m"
+      })
+      return false if search_query.nil? || search_query.empty?
 
-      print ConfigLoader.message('keybind.search_text')
-      search_query = STDIN.gets.chomp
-      return false if search_query.empty?
-
-      search_results = nil
-      Dir.chdir(current_path) do
-        escaped_query = Shellwords.escape(search_query)
-        # "--" で検索語がオプション（--pre=コマンド 等）として解釈されるのを防ぐ
-        search_results = `rga --line-number --with-filename -- #{escaped_query} . 2>/dev/null`
+      session = FuzzySearchSession.new(source: RgaResultSource.new(search_query, current_path))
+      @terminal_ui.start_fuzzy_finder(session, title: "Content: #{search_query}") do |entry|
+        @file_opener.open_file_with_line(entry[:path], entry[:line_number]) if File.file?(entry[:path])
+        :needs_refresh
       end
-
-      if search_results.empty?
-        puts "\n#{ConfigLoader.message('keybind.no_matches')}"
-        print ConfigLoader.message('keybind.press_any_key')
-        KeyInput.getch
-        return true
-      end
-
-      selected_result = IO.popen('fzf', 'r+') do |fzf|
-        fzf.write(search_results)
-        fzf.close_write
-        fzf.read.strip
-      end
-
-      if !selected_result.empty? && selected_result.match(/^(.+?):(\d+):/)
-        file_path = ::Regexp.last_match(1)
-        line_number = ::Regexp.last_match(2).to_i
-        full_path = File.expand_path(file_path, current_path)
-
-        @file_opener.open_file_with_line(full_path, line_number) if File.exist?(full_path)
-      end
-
-      :needs_refresh
+      true
     end
 
     def rga_available?

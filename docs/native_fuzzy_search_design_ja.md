@@ -1,7 +1,7 @@
 # 内蔵曖昧検索の設計（rufio 1.6.0）
 
 ブランチ: `v1.6.0`
-ステータス: Phase 1〜2 実装済み。外部 fzf の置き換えは Phase 3 で行う。
+ステータス: Phase 1〜3 実装済み。再表示キャッシュとプレビューは Phase 4 で行う。
 
 ## 目的
 
@@ -247,4 +247,38 @@ RUFIO_FUZZY_BENCH_LIBRARY=/tmp/librufio_fuzzy_release.dylib \
 # REFRESH_INTERVAL=0 を追加すると毎バッチ再検索との比較ができる。
 ```
 
-Phase 3 の画面接続、外部 fzf の除去、再表示キャッシュ、プレビュー、同梱バイナリ更新は未実装。
+Phase 3 の画面接続・外部 fzf の除去・同梱バイナリ更新は次節を参照。
+
+## Phase 3 の成果（2026-11-15）
+
+### 画面とキー
+
+- `Rufio::FuzzyFinder` を追加した。G mode と同じく全画面で描画し、`TerminalUI#start_fuzzy_finder(session, title:) { |entry| ... }`
+  で開く。1 回の表示に 1 つの `FuzzySearchSession` を割り当て、開くときに start、ESC・選択・G mode の起動で close する。
+- 入力は G mode の矢印・SS3・CSI u の解釈を共有する（`TerminalUI#search_overlay_active?`）。
+  文字キーはすべて検索語になり、`?` もヘルプではなく入力として扱う。Ctrl+J は `"\n"` と同じバイトなので Enter には使わない。
+- 一致位置（UTF-8 先頭バイトオフセット）を表示桁へ変換してハイライトする。省略記号で切った行は省略記号を上書きしない。
+- 候補の追加で順位が変わっても、選択中の候補 ID を追う。検索語を変えたときは先頭に戻す。
+- 選択時のコールバックが `:needs_refresh` を返すと全画面を再描画する（外部エディタから戻った後）。
+- 全画面ビューで結果が減ったときに前フレームの行が残る不具合があった（G mode も同じ）。
+  `Screen#clear(mark_dirty: true)` で全行を Renderer の比較対象にして解消した。既定の `clear` の動作は変えていない。
+
+### 操作の置き換え
+
+- `s` / `/`: `SearchController#file_search` が現在のディレクトリを `FuzzyFileSource` で列挙する。
+  選択したファイルは従来どおり `FileOpener#open_file` で開く。
+- `F`: 入力ダイアログで検索語を受け取り、`RgaResultSource` が `rga --line-number --with-filename --no-heading --color never -- 語 .`
+  の出力を 256 件ずつ流す。表示名は scrub し、パスは元のバイト列から組み立てる。
+  停止判定は 50ms ごとに確認し、出力が止まった rga も終了させてから回収する。選択行は `open_file_with_line` で開く。
+- アクション名を `file_search` / `file_search_alt` に変更した。ユーザー設定の `fzf_search` / `fzf_search_alt` は別名として
+  受け付け、新しい名前と両方ある場合は新しい名前を優先する（`ConfigLoader::LEGACY_KEYBIND_ACTIONS`）。
+- ヘルスチェックから fzf を除いた。プレビューは Phase 4 で追加するため、fzf の `--preview` 相当はまだない。
+
+### 同梱バイナリと計測
+
+`rake native:build` で全 8 プラットフォームを再ビルドし、`rake native:check` と `make test`（Zig 単体テスト）を通した。
+これで通常起動でも `FuzzySearch#native?` が true になる。全 1,456 テスト、失敗・エラーなし（7 件スキップ）。
+
+手元の macOS（Darwin 27.2）・arm64・同梱の ReleaseFast ライブラリで `~/devs` 配下 168,432 ファイルを `FuzzyFinder` で開いた一回の測定では、
+走査と登録の完了まで 1,134ms、その後の `sctrl` の結果取得まで 59ms（総一致 41,493 件）だった。
+キー入力から描画までの時間はまだ計測していない。

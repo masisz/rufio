@@ -14,6 +14,8 @@ module Rufio
     # 後方互換性のためのパス（非推奨）
     YAML_CONFIG_PATH = Config::YAML_CONFIG_PATH
     LOCAL_YAML_PATH = Config::LOCAL_YAML_PATH
+    # 1.6.0 で改名したアクション（旧名 => 新名）。ユーザー設定の旧名も受け付ける
+    LEGACY_KEYBIND_ACTIONS = { fzf_search: :file_search, fzf_search_alt: :file_search_alt }.freeze
 
     class << self
       def load_config
@@ -63,8 +65,8 @@ module Rufio
           # 選択・検索
           select:          ' ',
           filter:          'f',
-          fzf_search:      's',
-          fzf_search_alt:  '/',
+          file_search:     's',
+          file_search_alt: '/',
           rga_search:      'F',
           # ブックマーク
           add_bookmark:    'b',
@@ -101,7 +103,11 @@ module Rufio
         raw_user_keybinds = load_config[:keybinds] || {}
         # 新フォーマット（単一文字列値）のみ受け入れ、古いフォーマット（配列値）は無視
         user_keybinds = raw_user_keybinds.select { |_, v| v.is_a?(String) }
-        default_keybinds.merge(user_keybinds)
+        # 旧アクション名は新しい名前の別名として扱う（新しい名前の指定を優先）
+        legacy = user_keybinds.select { |action, _| LEGACY_KEYBIND_ACTIONS.key?(action) }
+        current = user_keybinds.reject { |action, _| LEGACY_KEYBIND_ACTIONS.key?(action) }
+        renamed = legacy.each_with_object({}) { |(action, key), map| map[LEGACY_KEYBIND_ACTIONS[action]] = key }
+        default_keybinds.merge(renamed).merge(current)
       end
 
       def global_search_excluded_extensions

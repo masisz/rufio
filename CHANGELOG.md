@@ -10,10 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.6.0] - Unreleased
 
 ### Added
-- Phase 1 of the internal fuzzy search engine: a persistent Zig candidate index, bounded top-K ranking, UTF-8 match byte offsets, and an equivalent Ruby fallback. Missing or older native libraries and `RUFIO_NATIVE_FUZZY=0` use Ruby. The engine is available through `Rufio::FuzzySearch`; terminal search keys still use the existing fzf integration until the UI phase is implemented
-- Native/Ruby parity tests, allocation-failure checks, a reproducible synthetic benchmark, and the staged implementation plan in `docs/native_fuzzy_search_design_ja.md`. Native binaries will be rebuilt when the terminal integration is ready; Phase 1 native tests use a separate local build
+- Phase 1 of the internal fuzzy search engine: a persistent Zig candidate index, bounded top-K ranking, UTF-8 match byte offsets, and an equivalent Ruby fallback. Missing or older native libraries and `RUFIO_NATIVE_FUZZY=0` use Ruby. The engine is available through `Rufio::FuzzySearch`
+- Native/Ruby parity tests, allocation-failure checks, a reproducible synthetic benchmark, and the staged implementation plan in `docs/native_fuzzy_search_design_ja.md`. The bundled native binaries for all eight platforms are rebuilt with the fuzzy API
 - Phase 2 adds `Rufio::FuzzySearchSession`: background file listing and index ownership, bounded producer queues, latest-query coalescing, generation-checked immutable results, and nonblocking close with worker-owned cleanup. Candidate-only refreshes are grouped at 50ms intervals; query changes and scan completion bypass the interval
-- `Rufio::FuzzyFileSource` lists hidden files and regular-file symlinks using the existing Zig listing API or a Ruby fallback, skips directory symlinks, and keeps original paths separate from scrubbed UTF-8 labels. A cooperative cancellation callback on `NativeContentSearch#each_batch` stops idle polling as well. Session lifecycle tests and a streaming benchmark cover the new APIs; terminal keys and fzf integration remain unchanged
+- `Rufio::FuzzyFileSource` lists hidden files and regular-file symlinks using the existing Zig listing API or a Ruby fallback, skips directory symlinks, and keeps original paths separate from scrubbed UTF-8 labels. A cooperative cancellation callback on `NativeContentSearch#each_batch` stops idle polling as well. Session lifecycle tests and a streaming benchmark cover the new APIs
+- Built-in fuzzy search screen (`Rufio::FuzzyFinder`) for `s` / `/`: lists every file under the current directory while scanning, filters as you type with in-order fuzzy matching, highlights matched characters, and opens the selection with `Enter`. `Up` / `Down`, `Ctrl+J` / `Ctrl+K`, `Ctrl+N` / `Ctrl+P` select, `Ctrl+U` clears and `ESC` returns. The selection stays on the same file while new candidates arrive
+- `F` asks for the text in an input dialog, then streams rga's `file:line:text` results into the same screen (`Rufio::RgaResultSource`); `Enter` opens the file at that line. rga is stopped when the screen closes
+
+### Changed
+- `s`, `/` and `F` no longer use fzf, and `rufio -c` no longer checks for it. The keybind actions are renamed to `file_search` / `file_search_alt`; the former `fzf_search` / `fzf_search_alt` names in `KEYBINDS` are still accepted as aliases (the new names win when both are set)
+
+### Fixed
+- G mode and the fuzzy search screen erase rows left over from the previous frame when the result list gets shorter
 
 ## [1.5.1] - 2026-11-15
 

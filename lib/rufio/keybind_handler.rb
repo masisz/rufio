@@ -137,8 +137,8 @@ module Rufio
         nil, @dialog_renderer, @selection_manager, @job_manager, @notification_manager
       )
 
-      # SearchController（fzf・rga検索を担当）
-      @search_controller = SearchController.new(nil, @file_opener)
+      # SearchController（内蔵ファジー検索・rga検索を担当）
+      @search_controller = SearchController.new(nil, @file_opener, @dialog_renderer)
 
       # Help mode
       @in_help_mode = false
@@ -168,6 +168,7 @@ module Rufio
       @file_op_controller.set_terminal_ui(terminal_ui)
       @archive_controller.set_terminal_ui(terminal_ui)
       @bookmark_controller.set_terminal_ui(terminal_ui)
+      @search_controller.set_terminal_ui(terminal_ui)
       # terminal_ui が設定されたら、bookmark_manager と zoxide_integration にも渡す
       @bookmark_manager.set_terminal_ui(terminal_ui)
       @zoxide_integration.set_terminal_ui(terminal_ui)
@@ -493,7 +494,7 @@ module Rufio
         else
           @nav_controller.start_filter_mode
         end
-      when :fzf_search, :fzf_search_alt then fzf_search
+      when :file_search, :file_search_alt then file_search
       when :rga_search      then rga_search
       when :add_bookmark    then add_bookmark
       when :bookmark_menu   then show_bookmark_menu
@@ -522,8 +523,8 @@ module Rufio
       :quit_cd
     end
 
-    def fzf_search
-      @search_controller.fzf_search
+    def file_search
+      @search_controller.file_search
     end
 
     def rga_search
