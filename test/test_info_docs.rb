@@ -19,7 +19,8 @@ class TestInfoDocs < Minitest::Test
       assert_includes doc, '| `G` | Global search', name
       assert_includes doc, '| `C` | Config mode', name
       assert_includes doc, '| `e` | Open current directory in file explorer |', name
-      assert_includes doc, '| `/` | Search file names with fzf (same as `s`) |', name
+      assert_includes doc, '| `s` | Fuzzy search file names |', name
+      assert_includes doc, '| `/` | Fuzzy search file names (same as `s`) |', name
       assert_includes doc, '| `Tab` | Cycle to next bookmark (Files mode) |', name
       assert_includes doc, '| `Shift+Tab` | Cycle to previous bookmark (Files mode) |', name
       refute_includes doc, 'Switch mode: Files -> Logs -> Jobs -> Help', name
@@ -50,5 +51,17 @@ class TestInfoDocs < Minitest::Test
     assert_includes doc, '| `Tab` | Next bookmark |'
     refute_includes doc, 'Switch mode (Files / Logs / Jobs / Help)'
     refute_includes doc, 'enter **Help Mode** where you can browse'
+  end
+  # s / / / F は内蔵の検索画面を使う。fzf は不要になった
+  def test_docs_do_not_require_fzf
+    %w[help.md keybindings.md welcome.md].each do |name|
+      refute_match(/fzf/i, read(name), name)
+    end
+    root = File.expand_path('..', __dir__)
+    %w[docs/guide.md docs/guide_ja.md README.md README_ja.md].each do |name|
+      doc = File.read(File.join(root, name))
+      refute_match(/with fzf|fzf でファイル名検索|fzf (file|ファイル)|install fzf|still use fzf|fzf を使用/i, doc, name)
+      assert_includes doc, 'file_search', name if name.start_with?('docs/')
+    end
   end
 end
