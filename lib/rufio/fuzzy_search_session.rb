@@ -2,12 +2,15 @@
 
 require 'thread'
 require_relative 'fuzzy_search'
+require_relative 'fuzzy_candidate_block'
 require_relative 'fuzzy_file_source'
 
 module Rufio
   # One-shot asynchronous session. The UI calls start/update_query/poll/close;
   # the index worker alone creates, uses and destroys the fuzzy index. Source
   # producers must check the supplied cancellation callback between batches.
+  # A batch is an array of rows or a FuzzyCandidateBlock. Blocks are registered as
+  # packed text and only the candidates that reach the results become Ruby rows.
   class FuzzySearchSession
     BATCH_SIZE = 256
     MAX_PENDING_BATCHES = 4
@@ -220,8 +223,43 @@ module Rufio
       end
     end
 
+    # 登録済みの候補。ブロックは詰めたまま持ち、結果に出す候補だけ行にする
+    class Entries
+      attr_reader :length
+
+      def initialize
+        @starts = []
+        @parts = []
+        @length = 0
+      end
+
+      def add(part)
+        if part.is_a?(Array) && @parts.last.is_a?(Array)
+          @parts.last.concat(part)
+        else
+          @starts << @length
+          @parts << (part.is_a?(Array) ? part.dup : part)
+        end
+        @length += part.size
+      end
+
+      def fetch(id)
+        raise IndexError, "candidate #{id} is not registered" unless id.is_a?(Integer) && id >= 0 && id < @length
+
+        at = (@starts.bsearch_index { |start| start > id } || @starts.length) - 1
+        part = @parts[at]
+        part.is_a?(Array) ? part.fetch(id - @starts[at]) : part.entry(id - @starts[at])
+      end
+
+      def clear
+        @starts.clear
+        @parts.clear
+        @length = 0
+      end
+    end
+
     def enqueue(batch)
-      rows = batch.map { |row| immutable_entry(row) }.freeze
+      rows = batch.is_a?(FuzzyCandidateBlock) ? batch : batch.map { |row| immutable_entry(row) }.freeze
       return true if rows.empty?
 
       @mutex.synchronize do
@@ -251,8 +289,15 @@ module Rufio
       @source.each_batch(cancelled: method(:cancelled?), on_error: method(:record_error)) do |batch|
         break if cancelled?
 
-        batch.each_slice(BATCH_SIZE) do |part|
-          break unless enqueue(part)
+        if batch.is_a?(FuzzyCandidateBlock)
+          break unless enqueue(batch)
+
+          # ブロックは待ち行列でほとんど待たされないので、検索ワーカーと UI に実行を譲る
+          Thread.pass
+        else
+          batch.each_slice(BATCH_SIZE) do |part|
+            break unless enqueue(part)
+          end
         end
       end
     rescue StandardError, NoMemoryError => e
@@ -295,7 +340,7 @@ module Rufio
     end
 
     def run_index
-      entries = []
+      entries = Entries.new
       index = nil
       return if cancelled?
 
@@ -311,8 +356,14 @@ module Rufio
         batches.each do |batch|
           break if cancelled?
 
-          index.add(batch.map { |row| row[:text] })
-          entries.concat(batch)
+          if !batch.is_a?(FuzzyCandidateBlock)
+            index.add(batch.map { |row| row[:text] })
+          elsif index.respond_to?(:add_packed)
+            index.add_packed(batch.packed)
+          else
+            index.add(batch.texts)
+          end
+          entries.add(batch)
         end
         break if cancelled?
 
@@ -334,7 +385,8 @@ module Rufio
           end.freeze
           signature = desired
           dirty = false
-          next_query_at = monotonic + @refresh_interval
+          # 候補がまだない検索は集約の待ち時間を始めない（最初の候補が届いたらすぐ照合する）
+          next_query_at = entries.length.zero? ? 0 : monotonic + @refresh_interval
         end
         refresh_at = dirty ? next_query_at : nil
         publish(current_generation, text, matches, total, entries.length, dirty)

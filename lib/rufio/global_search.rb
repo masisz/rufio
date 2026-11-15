@@ -6,6 +6,7 @@ require_relative 'config_loader'
 require_relative 'document_text_extractor'
 require_relative 'native_content_search'
 require_relative 'fuzzy_search_session'
+require_relative 'fuzzy_candidate_block'
 
 module Rufio
   # ブックマーク配下のファイル名・テキスト内容をバックグラウンドで横断検索する。
@@ -366,7 +367,8 @@ module Rufio
 
       engine = NativeContentSearch.new(roots: valid_roots.map(&:last), query: nil,
                                        excluded_extensions: @excluded_extensions)
-      engine.each_batch(cancelled: cancelled) do |batch|
+      # 大きな取り出しは分けて受け取り、解析の合間に検索ワーカーと UI が動けるようにする
+      engine.each_batch(cancelled: cancelled, max_events: FileNameSource::BLOCK_SIZE) do |batch|
         entries = []
         batch.each do |kind, *args|
           case kind
@@ -492,7 +494,7 @@ module Rufio
     # ファイル名検索の候補を FuzzySearchSession に流す。既存の走査（Zig / Ruby）のイベントを
     # バッチに変換し、停止要求があれば次のイベントで走査を打ち切る。
     class FileNameSource
-      BATCH_SIZE = 256
+      BLOCK_SIZE = 4096
       Cancelled = Class.new(StandardError)
 
       attr_reader :skipped
@@ -520,14 +522,35 @@ module Rufio
         @skipped += count
       end
 
-      # scan_roots / scan_files_natively が使う events << [種類, 値] を受け取る
+      # 「ブックマークのルート + 相対パス」から行を作る。scrub した候補だけ元のパスと相対パスを別に持つ
+      class Rows
+        def initialize(prefix, bookmark, encoding, exceptions)
+          @prefix = prefix
+          @bookmark = bookmark
+          @encoding = encoding
+          @exceptions = exceptions
+          freeze
+        end
+
+        def call(index, text)
+          path, relative = @exceptions && @exceptions[index]
+          relative ||= @encoding == Encoding::UTF_8 ? text : text.b.force_encoding(@encoding).freeze
+          { text: text, path: path || (@prefix + text.b).force_encoding(@encoding).freeze,
+            bookmark: @bookmark, relative_path: relative }
+        end
+      end
+
+      # scan_roots / scan_files_natively が使う events << [種類, 値] を受け取る。
+      # 候補は行（Hash）にせず、同じブックマークが続く間は 1 つの FuzzyCandidateBlock に詰める。
       class Sink
         def initialize(source, cancelled, on_error, emit)
           @source = source
           @cancelled = cancelled
           @on_error = on_error
           @emit = emit
-          @pending = []
+          @builder = FuzzyCandidateBlock::Builder.new
+          @exceptions = nil
+          @prefix_text = nil
         end
 
         def <<(event)
@@ -545,11 +568,13 @@ module Rufio
         end
 
         def flush
-          return if @pending.empty?
+          return if @builder.empty?
 
-          batch = @pending
-          @pending = []
-          @emit.call(batch)
+          rows = Rows.new(@prefix, @bookmark, @encoding, @exceptions&.freeze)
+          block = @builder.build(rows)
+          @builder = FuzzyCandidateBlock::Builder.new
+          @exceptions = nil
+          @emit.call(block)
         end
 
         private
@@ -560,10 +585,43 @@ module Rufio
 
         def add(entry)
           relative = entry[:relative_path]
-          # 凍結しておくと、セッションがコピーせずにそのまま保持できる
-          @pending << { text: relative.dup.force_encoding(Encoding::UTF_8).scrub.freeze, path: frozen(entry[:path]),
-                        bookmark: frozen(entry[:bookmark]), relative_path: frozen(relative) }.freeze
-          flush if @pending.length >= BATCH_SIZE
+          path = entry[:path]
+          text = relative.encoding == Encoding::UTF_8 ? relative : relative.dup.force_encoding(Encoding::UTF_8)
+          scrubbed = !text.valid_encoding?
+          text = text.scrub if scrubbed
+          if text.bytesize > FuzzyCandidateBlock::MAX_TEXT_BYTES || text.include?("\0")
+            @on_error.call("#{text[0, 200]}: file name cannot be searched")
+            return
+          end
+
+          tail = tail?(path, relative)
+          start_block(entry, path, tail ? path.bytesize - relative.bytesize : 0) unless fits?(entry, path, relative)
+          index = @builder.add(text)
+          # 「接頭辞 + 表示名」で組み立て直せない候補は、元の文字列をそのまま持つ
+          if scrubbed || !tail || relative.encoding != @encoding
+            (@exceptions ||= {})[index] = [frozen(path), frozen(relative)].freeze
+          end
+          flush if @builder.size >= BLOCK_SIZE
+        end
+
+        def tail?(path, relative)
+          path.end_with?(relative)
+        rescue Encoding::CompatibilityError
+          false
+        end
+
+        # 詰めている途中のブロックと同じブックマーク・同じルートの候補か
+        def fits?(entry, path, relative)
+          @prefix_text && entry[:bookmark] == @bookmark && path.encoding == @encoding &&
+            path.bytesize == @prefix_text.bytesize + relative.bytesize && path.start_with?(@prefix_text)
+        end
+
+        def start_block(entry, path, prefix_length)
+          flush
+          @bookmark = frozen(entry[:bookmark])
+          @encoding = path.encoding
+          @prefix_text = path.byteslice(0, prefix_length).freeze
+          @prefix = @prefix_text.b.freeze
         end
       end
     end

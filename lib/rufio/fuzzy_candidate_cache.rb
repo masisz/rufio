@@ -2,108 +2,125 @@
 
 require 'thread'
 require_relative 'fuzzy_file_source'
+require_relative 'fuzzy_candidate_block'
 
 module Rufio
   # s / / を同じディレクトリで開き直したとき、走査済みの候補一覧を再利用する。
   # 容量（合計候補数・ディレクトリ数）と有効期限で制限し、最近使ったものから残す。
   # 検索インデックスは各セッションのワーカー専有のまま、候補だけを流し直して作り直す。
-  # 候補は「表示名 NUL パス NUL」を連結した 1 本のバイト列で保持する（1 件 1 Hash より大幅に小さい）。
-  # パスが「ルート/表示名」と同じバイト列なら省略し、再生時に組み立て直す。保持するのは text と path だけ。
+  # 候補は FuzzyCandidateBlock（表示名を NUL で終端して連結したバイト列）で保持する（1 件 1 Hash より大幅に小さい）。
+  # パスが「ルート/表示名」と同じバイト列なら持たず、行を作るときに組み立て直す。
+  # 走査がブロックを出した場合はそれをそのまま保存し、再表示するセッションにも同じブロックを渡す（コピーしない）。
   class FuzzyCandidateCache
     # 既定値。利用者は config.rb の FUZZY_SEARCH_CACHE で変更できる（ConfigLoader.fuzzy_search_cache）
     DEFAULT_MAX_ENTRIES = 200_000
     DEFAULT_MAX_ROOTS = 4
     DEFAULT_TTL = 300
-    BATCH_SIZE = 256
+    BLOCK_SIZE = 4096
     SEPARATOR = "\0"
     EMPTY = [].freeze
 
-    # 保存済みの一覧。rows は呼ぶたびに展開する（展開結果は保持しない）
+    # 保存済みの一覧。候補は FuzzyCandidateBlock のまま持ち、再表示するセッションと共有する
     class Entry
-      attr_reader :errors, :stored_at, :size
+      attr_reader :blocks, :errors, :stored_at, :size
 
-      def initialize(prefix:, packed:, size:, encoding:, errors:, stored_at:)
-        @prefix = prefix
-        @packed = packed
-        @size = size
-        @encoding = encoding
+      def initialize(blocks:, errors:, stored_at:)
+        @blocks = blocks.freeze
+        @size = blocks.sum(&:size)
         @errors = errors
         @stored_at = stored_at
         freeze
       end
 
+      # 全件を行に展開する（展開結果は保持しない）。再表示では使わない
       def rows
-        list = []
-        each_slice(BATCH_SIZE) { |batch| list.concat(batch) }
-        list.freeze
-      end
-
-      # 先頭から size 件ずつ展開して渡す。全件を一度に展開しないので最初の候補がすぐ届く
-      def each_slice(size)
-        position = 0
-        batch = []
-        @size.times do
-          text_end = @packed.index(SEPARATOR, position)
-          path_end = @packed.index(SEPARATOR, text_end + 1) || @packed.bytesize
-          text = @packed.byteslice(position, text_end - position).force_encoding(Encoding::UTF_8)
-          path = path_end == text_end + 1 ? @prefix + text.b : @packed.byteslice(text_end + 1, path_end - text_end - 1)
-          batch << { text: text.freeze, path: path.force_encoding(@encoding).freeze }.freeze
-          position = path_end + 1
-          next if batch.length < size
-
-          yield batch.freeze
-          batch = []
-        end
-        yield batch.freeze unless batch.empty?
+        @blocks.flat_map(&:to_a).freeze
       end
     end
 
-    # 候補を 1 件ずつ詰める。上限を超えたら以降は捨てて nil を返す
+    # 候補を詰める。上限を超えたら以降は捨てて nil を返す
     class Packer
       def initialize(root, max_entries)
         @prefix = (root.end_with?(File::SEPARATOR) ? root : root + File::SEPARATOR).b.freeze
         @max_entries = max_entries
-        @buffer = +''.b
+        @blocks = []
         @size = 0
-        @encoding = Encoding::UTF_8
+        reset
       end
 
       def overflow?
-        @buffer.nil?
+        @blocks.nil?
       end
 
+      # text と path を持つ行を 1 件詰める
       def add(row)
         return false if overflow?
 
         text = row.is_a?(Hash) ? row[:text] : nil
         path = row.is_a?(Hash) ? row[:path] : nil
-        unless text.is_a?(String) && path.is_a?(String) && @size < @max_entries
-          @buffer = nil
-          return false
-        end
+        return overflow! unless text.is_a?(String) && path.is_a?(String) && @size < @max_entries
 
         text = text.dup.force_encoding(Encoding::UTF_8)
         text = text.scrub unless text.valid_encoding?
         bytes = path.b
-        if text.include?(SEPARATOR) || bytes.include?(SEPARATOR)
-          @buffer = nil
-          return false
+        if text.include?(SEPARATOR) || bytes.include?(SEPARATOR) || text.bytesize > FuzzyCandidateBlock::MAX_TEXT_BYTES
+          return overflow!
         end
 
-        @encoding = path.encoding
-        @buffer << text.b << SEPARATOR
-        @buffer << bytes unless bytes == @prefix + text.b
-        @buffer << SEPARATOR
+        @encoding ||= path.encoding
+        index = @builder.add(text)
+        unless path.encoding == @encoding && bytes == @prefix + text.b
+          (@exceptions ||= {})[index] = path.frozen? ? path : path.dup.freeze
+        end
         @size += 1
+        flush if @builder.size >= BLOCK_SIZE
         true
+      end
+
+      # 走査が出したブロックは作り直さず、そのまま保存する
+      def add_block(block)
+        return false if overflow?
+        return overflow! if @size + block.size > @max_entries
+
+        flush
+        @blocks << block
+        @size += block.size
+        true
+      end
+
+      def add_batch(batch)
+        return add_block(batch) if batch.is_a?(FuzzyCandidateBlock)
+
+        batch.each { |row| break unless add(row) }
+        !overflow?
       end
 
       def entry(errors, stored_at)
         return nil if overflow?
 
-        packed = @size.zero? ? @buffer : @buffer.byteslice(0, @buffer.bytesize - 1)
-        Entry.new(prefix: @prefix, packed: packed.freeze, size: @size, encoding: @encoding,
-                  errors: errors.map { |message| message.to_s.dup.freeze }.freeze, stored_at: stored_at)
+        flush
+        Entry.new(blocks: @blocks, errors: errors.map { |message| message.to_s.dup.freeze }.freeze, stored_at: stored_at)
+      end
+
+      private
+
+      def overflow!
+        @blocks = nil
+        @builder = nil
+        false
+      end
+
+      def flush
+        return if @builder.empty?
+
+        @blocks << @builder.build(FuzzyCandidateBlock::PathRows.new(@prefix, @encoding, @exceptions&.freeze))
+        reset
+      end
+
+      def reset
+        @builder = FuzzyCandidateBlock::Builder.new
+        @exceptions = nil
+        @encoding = nil
       end
     end
 
@@ -201,7 +218,7 @@ module Rufio
       @entries.each_value.sum(&:size)
     end
 
-    # 保存済みの候補をバッチに分けて流し、走査時のエラーも再現する
+    # 保存済みのブロックを順に流し、走査時のエラーも再現する
     class CachedSource
       def initialize(entry)
         @entry = entry
@@ -209,10 +226,10 @@ module Rufio
 
       def each_batch(cancelled:, on_error:)
         @entry.errors.each { |message| on_error.call(message) }
-        @entry.each_slice(BATCH_SIZE) do |batch|
+        @entry.blocks.each do |block|
           break if cancelled.call
 
-          yield batch
+          yield block
         end
       end
     end
@@ -231,7 +248,7 @@ module Rufio
         errors = []
         recording = ->(message) { errors << message; on_error.call(message) }
         @scan.each_batch(cancelled: cancelled, on_error: recording) do |batch|
-          batch.each { |row| break unless packer.add(row) } unless packer.overflow?
+          packer.add_batch(batch) unless packer.overflow?
           yield batch
         end
         @cache.store_entry(@root, packer.entry(errors, @cache.now)) unless cancelled.call

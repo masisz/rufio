@@ -64,6 +64,28 @@ module Rufio
       self
     end
 
+    # 「候補 NUL」を連結した 1 本のバイト列をそのまま登録する（add(packed.split("\0")) と同じ結果）。
+    # 候補ごとの Ruby 文字列を作らないので、件数が多いときは add より速い。
+    def add_packed(packed)
+      @mutex.synchronize do
+        ensure_open!
+        raise ArgumentError, 'Expected packed candidates' unless packed.is_a?(String)
+        next if packed.empty?
+        raise ArgumentError, 'Packed candidates must end with NUL' unless packed.end_with?("\0")
+
+        if native?
+          # UTF-8 と長さは Zig 側が全件を確認し、1 件でも不正なら何も登録しない
+          check_status(@api.core_fuzzy_add(@handle, packed, packed.bytesize))
+        else
+          strings = packed.b.split("\0".b, -1)
+          strings.pop
+          prepared = strings.map { |text| prepare(validate_text(text.force_encoding(Encoding::UTF_8), MAX_CANDIDATE_BYTES)) }
+          @candidates.concat(prepared)
+        end
+      end
+      self
+    end
+
     def query(text, limit: 100)
       @mutex.synchronize do
         ensure_open!
