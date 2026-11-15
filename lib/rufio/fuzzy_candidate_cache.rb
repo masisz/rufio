@@ -10,6 +10,7 @@ module Rufio
   # 候補は「表示名 NUL パス NUL」を連結した 1 本のバイト列で保持する（1 件 1 Hash より大幅に小さい）。
   # パスが「ルート/表示名」と同じバイト列なら省略し、再生時に組み立て直す。保持するのは text と path だけ。
   class FuzzyCandidateCache
+    # 既定値。利用者は config.rb の FUZZY_SEARCH_CACHE で変更できる（ConfigLoader.fuzzy_search_cache）
     DEFAULT_MAX_ENTRIES = 200_000
     DEFAULT_MAX_ROOTS = 4
     DEFAULT_TTL = 300

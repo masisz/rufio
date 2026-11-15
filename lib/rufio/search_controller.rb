@@ -13,8 +13,10 @@ module Rufio
       @file_opener = file_opener
       @dialog_renderer = dialog_renderer
       @terminal_ui = nil
-      # s / / を開き直したときに走査結果を再利用する（容量・有効期限つき）
-      @candidate_cache = FuzzyCandidateCache.new
+      # s / / を開き直したときに走査結果を再利用する（容量・有効期限は FUZZY_SEARCH_CACHE で変更可）
+      settings = ConfigLoader.fuzzy_search_cache
+      @candidate_cache = FuzzyCandidateCache.new(max_entries: settings[:max_entries], max_roots: settings[:max_roots],
+                                                 ttl: settings[:ttl])
     end
 
     def set_terminal_ui(terminal_ui)

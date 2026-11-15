@@ -19,8 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The fuzzy search screen previews the selected file on the right when the screen is at least 80 columns wide (`Rufio::FuzzyPreviewLoader`). Previews load in the background, only the latest selection is read, and reads are limited to the first 64 KiB. `F` results scroll to the matching line and highlight it. `UI_OPTIONS` `preview_enabled: false` hides the preview
 - Reopening `s` in a directory scanned in the last 5 minutes shows the cached file list immediately (`Rufio::FuzzyCandidateCache`, up to 4 directories and 200,000 files, packed into one string per directory). The title shows `Cached ... ago`, `Ctrl+R` rescans while keeping the query, and choosing a file deleted since then keeps the screen open with `File no longer exists`
 
+- `FUZZY_SEARCH_CACHE` in `config.rb` changes the file list cache limits (`max_entries` up to 1,000,000, `max_roots` up to 16, `ttl` up to 86,400 seconds; `0` disables). Omitted or invalid values keep the defaults (200,000 / 4 / 300)
+
 ### Changed
 - `s`, `/` and `F` no longer use fzf, and `rufio -c` no longer checks for it. The keybind actions are renamed to `file_search` / `file_search_alt`; the former `fzf_search` / `fzf_search_alt` names in `KEYBINDS` are still accepted as aliases (the new names win when both are set)
+- G mode file name search uses the same fuzzy matching as `s`: results are ranked, matched characters are highlighted and filtering runs in the background instead of on each keystroke in the UI thread. Content search stays literal. Exclusions, skipped counts and bookmark labels are unchanged
 
 ### Fixed
 - G mode and the fuzzy search screen erase rows left over from the previous frame when the result list gets shorter

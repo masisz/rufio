@@ -77,6 +77,7 @@ ZIP jobs show progress in Jobs mode (`J`). `x`: Cancel the selected job there; a
 - `F` asks for text, runs rga in the background and shows its `file:line:text` results in the same screen. `Enter` opens the file at that line
 - Screens at least 80 columns wide show a preview of the selected file on the right (`F` centers and highlights the matching line). Set `preview_enabled: false` in `UI_OPTIONS` to hide it
 - Reopening `s` in the same directory within 5 minutes shows the cached list (`Cached ... ago` in the title). `Ctrl+R`: Rescan. A file deleted since then shows `File no longer exists`
+- The cache keeps 4 directories, 200,000 files and 5 minutes by default. Change it with `FUZZY_SEARCH_CACHE = { max_entries: 500_000, max_roots: 8, ttl: 900 }` in `~/.config/rufio/config.rb` (up to 1,000,000 files, 16 directories and 86,400 seconds; `0` disables)
 
 **Filter Mode:**
 - Type characters to filter files in real-time
@@ -153,7 +154,7 @@ Press `B` then select script path management to:
 
 Search file names or text inside every bookmarked directory.
 
-- `Tab`: Switch between file names and content (literal, case insensitive)
+- `Tab`: Switch between fuzzy file names (same matching as `s`, best matches first) and literal content (case insensitive)
 - Content search also reads `.pdf` (page), `.xlsx` (sheet/cell) and `.pptx` (slide)
 - `Up/Down` or `Ctrl+J/K or Ctrl+N/P`: Select a result | `Enter`: Go to the file in Files mode
 - `Ctrl+U`: Clear the query | `ESC`: Return to the previous mode

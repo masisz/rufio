@@ -128,15 +128,15 @@ With nothing selected, `z` opens zoxide history instead.
 
 On screens at least 80 columns wide, the right half shows a preview of the selected file, loaded in the background and limited to the first 64 KiB. `F` results scroll the preview to the matching line and highlight it. `preview_enabled: false` in `UI_OPTIONS` hides it.
 
-Reopening `s` in a directory scanned in the last 5 minutes shows the cached list immediately; the title reads `Cached 2m ago | Ctrl+R: Rescan`. The cache keeps up to 4 directories and 200,000 files in total, so new, deleted or changed files may be missing until you press `Ctrl+R`. Selecting a file that no longer exists keeps the screen open and shows `File no longer exists`.
+Reopening `s` in a directory scanned in the last 5 minutes shows the cached list immediately; the title reads `Cached 2m ago | Ctrl+R: Rescan`. By default the cache keeps up to 4 directories and 200,000 files in total (see `FUZZY_SEARCH_CACHE` below), so new, deleted or changed files may be missing until you press `Ctrl+R`. Selecting a file that no longer exists keeps the screen open and shows `File no longer exists`.
 
 ## Global Search (G mode)
 
-`G` searches recursively under every bookmarked directory. Add bookmarks with `b` first.
+`G` searches recursively under every bookmarked directory. Add bookmarks with `b` first. File names use the same fuzzy matching as `s` (best matches first, matched characters highlighted, filtered in the background); content search stays literal.
 
 | Key | Action |
 |-----|--------|
-| Type | Literal, case-insensitive search |
+| Type | File names: fuzzy search. Content: Literal, case-insensitive search |
 | `Tab` | Switch between **File names** and **Content** |
 | `Up` / `Down`, `Ctrl+J` / `Ctrl+K`, `Ctrl+N` / `Ctrl+P` | Select a result |
 | `Enter` | Go to the file in Files mode |
@@ -344,7 +344,20 @@ APPLICATIONS = {
 
 # Extensions (and /names of directories or files) excluded from G mode search
 GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.log /node_modules].freeze
+
+# File list cache for reopening s / / (omitted keys keep their defaults)
+FUZZY_SEARCH_CACHE = { max_entries: 500_000, max_roots: 8, ttl: 900 }.freeze
 ```
+
+`FUZZY_SEARCH_CACHE` keys:
+
+| Key | Default | Maximum | Meaning |
+|-----|---------|---------|---------|
+| `max_entries` | 200,000 | 1,000,000 | Files kept across all cached directories |
+| `max_roots` | 4 | 16 | Directories kept (least recently used is dropped first) |
+| `ttl` | 300 | 86,400 | Seconds before a cached list is scanned again |
+
+Values above the maximum are capped, invalid values fall back to the default, and `0` disables caching (`max_entries` / `max_roots`) or expires lists immediately (`ttl`). About 90 bytes are used per cached file.
 
 Action names for `KEYBINDS`:
 
