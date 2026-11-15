@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "test_helper"
 require "minitest/autorun"
 require "tmpdir"
 require "fileutils"
@@ -106,14 +107,92 @@ class TestSearchController < Minitest::Test
     ui&.calls&.each { |call| call.first.close }
   end
 
-  def test_file_search_selection_ignores_missing_file
+  def test_file_search_selection_reports_missing_file
     ui = FakeTerminalUI.new
     opened = []
     @file_opener.define_singleton_method(:open_file) { |path| opened << path }
     @controller.set_terminal_ui(ui)
     @controller.file_search
-    ui.calls.first.last.call({ text: 'gone', path: File.join(@test_dir, 'gone') })
+    assert_equal :missing, ui.calls.first.last.call({ text: 'gone', path: File.join(@test_dir, 'gone') })
     assert_empty opened
+  ensure
+    ui&.calls&.each { |call| call.first.close }
+  end
+
+  # === Phase 4: 再表示キャッシュ・再走査・プレビュー ===
+
+  def wait_for_scan(session)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
+    loop do
+      session.poll
+      state = session.snapshot
+      break unless state.scanning || state.searching
+      flunk 'scan did not finish' if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      sleep 0.005
+    end
+  end
+
+  def test_file_search_reuses_cached_candidates
+    ui = FakeTerminalUI.new
+    @controller.set_terminal_ui(ui)
+    @controller.file_search
+    first = ui.calls.first.first
+    assert_nil ui.options.first[:cached_at]
+    first.start
+    wait_for_scan(first)
+    first.close
+
+    @controller.file_search
+    assert_kind_of Numeric, ui.options.last[:cached_at]
+    second = ui.calls.last.first
+    second.start
+    wait_for_scan(second)
+    assert_equal %w[file1.txt file2.rb], second.results.map { |result| result[:entry][:text] }.sort
+  ensure
+    ui&.calls&.each { |call| call.first.close }
+  end
+
+  def test_file_search_rescan_drops_cache_and_scans_again
+    ui = FakeTerminalUI.new
+    @controller.set_terminal_ui(ui)
+    @controller.file_search
+    first = ui.calls.first.first
+    first.start
+    wait_for_scan(first)
+    first.close
+    File.write(File.join(@test_dir, 'new.md'), 'new')
+
+    @controller.file_search
+    rescanned = ui.options.last[:rescan].call
+    assert_instance_of Rufio::FuzzySearchSession, rescanned
+    rescanned.start
+    wait_for_scan(rescanned)
+    assert_includes rescanned.results.map { |result| result[:entry][:text] }, 'new.md'
+    rescanned.close
+  ensure
+    ui&.calls&.each { |call| call.first.close }
+  end
+
+  def test_file_search_preview_follows_ui_option
+    ui = FakeTerminalUI.new
+    @controller.set_terminal_ui(ui)
+    Rufio::ConfigLoader.stub(:ui_options, { preview_enabled: false }) { @controller.file_search }
+    assert_equal false, ui.options.last[:preview]
+    Rufio::ConfigLoader.stub(:ui_options, { preview_enabled: true }) { @controller.file_search }
+    assert_equal true, ui.options.last[:preview]
+  ensure
+    ui&.calls&.each { |call| call.first.close }
+  end
+
+  def test_rga_search_enables_preview_without_cache
+    ui = FakeTerminalUI.new
+    controller = Rufio::SearchController.new(@directory_listing, @file_opener, FakeDialog.new('Hello'))
+    controller.define_singleton_method(:rga_available?) { true }
+    controller.set_terminal_ui(ui)
+    Rufio::ConfigLoader.stub(:ui_options, { preview_enabled: true }) { controller.rga_search }
+    assert_equal true, ui.options.last[:preview]
+    assert_nil ui.options.last[:cached_at]
+    assert_nil ui.options.last[:rescan]
   ensure
     ui&.calls&.each { |call| call.first.close }
   end
@@ -173,8 +252,11 @@ class TestSearchController < Minitest::Test
       @calls = []
     end
 
-    def start_fuzzy_finder(session, title:, &on_select)
+    attr_reader :options
+
+    def start_fuzzy_finder(session, title:, **options, &on_select)
       @calls << [session, title, on_select]
+      (@options ||= []) << options
       true
     end
   end

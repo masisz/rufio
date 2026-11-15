@@ -106,6 +106,36 @@ class TestFuzzyFinderTerminalInput < Minitest::Test
     assert refreshed
   end
 
+  def test_missing_result_keeps_finder_open_with_notice
+    @finder.close
+    calls = 0
+    @session = Rufio::FuzzySearchSession.new(source: ArraySource.new, native: false)
+    @ui.start_fuzzy_finder(@session, title: 'Files', rescan: -> { flunk }) { calls += 1; :missing }
+    @finder = @ui.instance_variable_get(:@fuzzy_finder)
+    settle
+    feed("\r")
+    assert_equal 1, calls
+    assert @ui.fuzzy_finder_active?
+    assert @session.active?
+    screen = Rufio::Screen.new(60, 10)
+    @ui.draw_screen_to_buffer(screen)
+    footer = (0...screen.width).map { |x| screen.get_cell(x, 7).char }.join
+    assert_includes footer, 'File no longer exists'
+    assert_includes footer, 'Ctrl+R'
+    feed("\r")
+    assert_equal 2, calls
+  end
+
+  def test_start_passes_cache_and_preview_options_to_finder
+    @finder.close
+    @session = Rufio::FuzzySearchSession.new(source: ArraySource.new, native: false)
+    cached_at = Process.clock_gettime(Process::CLOCK_MONOTONIC) - 5
+    @ui.start_fuzzy_finder(@session, title: 'Files', cached_at: cached_at, preview: true) { true }
+    settle
+    assert_equal cached_at, @finder.cached_at
+    assert @finder.preview?
+  end
+
   def test_starting_global_search_closes_finder
     @ui.start_global_search([])
     refute @ui.fuzzy_finder_active?

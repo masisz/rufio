@@ -63,5 +63,14 @@ class TestInfoDocs < Minitest::Test
       refute_match(/with fzf|fzf でファイル名検索|fzf (file|ファイル)|install fzf|still use fzf|fzf を使用/i, doc, name)
       assert_includes doc, 'file_search', name if name.start_with?('docs/')
     end
+  end  
+  # 内蔵検索画面の再走査（Ctrl+R）とプレビューを説明する
+  def test_docs_describe_fuzzy_cache_and_preview
+    root = File.expand_path('..', __dir__)
+    { 'info/help.md' => ['Ctrl+R', 'preview'], 'info/keybindings.md' => ['Ctrl+R'],
+      'docs/guide.md' => ['Ctrl+R', 'Cached', 'preview'], 'docs/guide_ja.md' => ['Ctrl+R', 'Cached', 'プレビュー'] }.each do |name, words|
+      doc = File.read(File.join(root, name))
+      words.each { |word| assert_includes doc, word, name }
+    end
   end
 end

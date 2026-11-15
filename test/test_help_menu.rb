@@ -49,6 +49,7 @@ class TestHelpMenu < Minitest::Test
     assert_includes content, 's or /: Fuzzy file name search'
     assert_includes content, 'F: Content search (rga), then pick a result'
     refute_includes content.downcase, 'fzf'
+    assert_includes content, 'In search: Ctrl+R rescans; wide screens show a preview'
     assert_includes content, 'Preview .zip: Entry list (size, method, date, name)'
     assert_includes content, 'Jobs mode shows progress; x cancels'
   end
