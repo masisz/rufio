@@ -73,4 +73,15 @@ class TestInfoDocs < Minitest::Test
       words.each { |word| assert_includes doc, word, name }
     end
   end
+  # G のファイル名検索はあいまい検索、本文検索はリテラル。キャッシュ上限は config.rb で変えられる
+  def test_docs_describe_fuzzy_global_file_names_and_cache_config
+    root = File.expand_path('..', __dir__)
+    { 'info/help.md' => ['fuzzy file names', 'literal content', 'FUZZY_SEARCH_CACHE'],
+      'docs/guide.md' => ['fuzzy', 'Literal, case-insensitive', 'FUZZY_SEARCH_CACHE', '1,000,000'],
+      'docs/guide_ja.md' => ['あいまい', 'リテラル', 'FUZZY_SEARCH_CACHE', '1,000,000'] }.each do |name, words|
+      doc = File.read(File.join(root, name))
+      words.each { |word| assert_includes doc, word, name }
+    end
+    refute_includes File.read(File.join(root, 'info/help.md')), 'file names and content (literal, case insensitive)'
+  end
 end

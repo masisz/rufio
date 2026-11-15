@@ -33,12 +33,24 @@ class TestGlobalSearch < Minitest::Test
     end
   end
 
+  # ファイル名検索はバックグラウンドで照合するので、検索語を変えたら結果を待つ
+  def settle
+    Timeout.timeout(3) do
+      while @search.scanning?
+        @search.poll
+        Thread.pass
+      end
+    end
+  end
+
   def test_searches_all_bookmarks_recursively_and_case_insensitively
     scan([{ name: 'A', path: @a }, { name: 'B', path: @b }])
     @search.handle_key('REPORT')
+    settle
     assert_equal ['Report.md', 'report.txt'], @search.results.map { |r| File.basename(r[:path]) }.sort
     @search.handle_key("\x15")
     @search.handle_key('日本語')
+    settle
     assert_equal [File.join(@a, 'nested', '日本語.txt')], @search.results.map { |r| r[:path] }
   end
 
@@ -72,6 +84,7 @@ class TestGlobalSearch < Minitest::Test
   def test_ctrl_j_and_ctrl_k_select_results_without_changing_query
     scan([{ name: 'A', path: @a }, { name: 'B', path: @b }])
     @search.handle_key('re')
+    settle
     assert_nil @search.handle_key("\x0a")
     assert_equal 1, @search.selected_index
     @search.handle_key("\x0a")
@@ -89,6 +102,7 @@ class TestGlobalSearch < Minitest::Test
     scan([{ name: 'A', path: @a }, { name: 'B', path: @b }])
     @search.handle_key('r')
     @search.handle_key('e')
+    settle
     assert_equal 2, @search.results.length
     @search.handle_key(:down)
     assert_equal 1, @search.selected_index

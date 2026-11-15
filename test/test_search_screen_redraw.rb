@@ -50,22 +50,35 @@ class TestSearchScreenRedraw < Minitest::Test
   end
 
   def test_global_search_erases_rows_of_removed_results
-    search = Rufio::GlobalSearch.new
-    search.open([])
-    entries = (1..8).map { |i| { path: "/root/item#{i}.txt", relative_path: "item#{i}.txt", bookmark: 'b' } }
-    search.instance_variable_set(:@entries, entries)
-    search.instance_variable_set(:@results, entries.dup)
-    search.instance_variable_set(:@scanning, false)
-    search.draw(@screen)
-    @renderer.render(@screen)
-    assert_includes frame[6], 'item4.txt'
+    Dir.mktmpdir('rufio_redraw') do |dir|
+      (1..8).each { |i| File.write(File.join(dir, "item#{i}.txt"), '') }
+      search = Rufio::GlobalSearch.new
+      begin
+        search.open([{ name: 'b', path: dir }])
+        settle_global(search)
+        search.draw(@screen)
+        @renderer.render(@screen)
+        assert_equal 8, frame.count { |line| line.include?('item') }
 
-    search.handle_key('8')
-    search.draw(@screen)
-    @renderer.render(@screen)
-    assert_includes frame[3], 'item8.txt'
-    assert_equal '', frame[6]
-  ensure
-    search&.close
+        search.handle_key('8')
+        settle_global(search)
+        search.draw(@screen)
+        @renderer.render(@screen)
+        assert_includes frame[3], 'item8.txt'
+        assert_equal '', frame[6]
+      ensure
+        search.close
+      end
+    end
+  end
+
+  def settle_global(search)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
+    loop do
+      search.poll
+      break unless search.scanning?
+      flunk 'global search did not settle' if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      sleep 0.005
+    end
   end
 end
