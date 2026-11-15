@@ -22,7 +22,9 @@ module Rufio
       return if cancelled.call
       raise Errno::ENOTDIR, @root unless File.directory?(@root)
 
-      if @native && ENV['RUFIO_NATIVE_SEARCH'] != '0' && NativeContentSearch.files_available?
+      if @native && ENV['RUFIO_NATIVE_SEARCH'] != '0' && NativeContentSearch.labels_available?
+        scan_labels(cancelled, on_error) { |batch| yield batch }
+      elsif @native && ENV['RUFIO_NATIVE_SEARCH'] != '0' && NativeContentSearch.files_available?
         scan_native(cancelled, on_error) { |batch| yield batch }
       else
         scan_ruby(cancelled, on_error) { |batch| yield batch }
@@ -78,6 +80,45 @@ module Rufio
         @exceptions = nil
         @encoding = nil
       end
+    end
+
+    # Zig が相対パスのラベル列を返す場合は、Ruby でファイルごとの文字列を作らずにそのままブロックにする
+    def scan_labels(cancelled, on_error)
+      scanner = NativeContentSearch.new(roots: [@root], labels: true)
+      rows = FuzzyCandidateBlock::PathRows.new(@prefix.b.freeze, Encoding.find('filesystem'))
+      batch = Batch.new(@prefix, on_error)
+      packed = +''.b
+      count = 0
+      limit = BATCH_SIZE
+      emit = lambda do
+        next if count.zero?
+
+        yield FuzzyCandidateBlock.new(packed.freeze, count, rows: rows, checked: true)
+        packed = +''.b
+        count = 0
+        limit = [limit * 2, BLOCK_SIZE].min
+      end
+      scanner.each_batch(cancelled: cancelled) do |events|
+        events.each do |kind, _root_index, value, size|
+          break if cancelled.call
+
+          case kind
+          when :labels
+            packed << value
+            count += size
+            emit.call if count >= limit
+          when :file then batch.add(value) # UTF-8 でない名前
+          when :error then on_error.call(value)
+          end
+        end
+        break if cancelled.call
+
+        emit.call
+        block = batch.take
+        yield block if block
+      end
+    ensure
+      scanner&.close
     end
 
     def scan_native(cancelled, on_error)

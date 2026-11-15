@@ -22,8 +22,10 @@ module Rufio
 
     attr_reader :snapshot
 
+    # position_limit: 一致位置を求める上位の件数（省略時は limit 件すべて）。それより後の結果の
+    # :positions は nil で、表示するときに FuzzySearch.positions で求める。
     def initialize(root: nil, source: nil, native: true, library: nil, limit: 100,
-                   index_factory: nil, refresh_interval: REFRESH_INTERVAL)
+                   index_factory: nil, refresh_interval: REFRESH_INTERVAL, position_limit: nil)
       raise ArgumentError, 'Specify either root or source' unless root.nil? != source.nil?
       unless limit.is_a?(Integer) && limit.between?(0, FuzzySearch::MAX_RESULTS)
         raise ArgumentError, 'Invalid result limit'
@@ -38,6 +40,11 @@ module Rufio
 
       @index_factory = index_factory || -> { FuzzySearch.new(native: native, library: library) }
       @limit = limit
+      unless position_limit.nil? || (position_limit.is_a?(Integer) && position_limit >= 0)
+        raise ArgumentError, 'Invalid position limit'
+      end
+
+      @position_limit = position_limit
       @refresh_interval = refresh_interval.to_f
       @mutex = Mutex.new
       @wake = ConditionVariable.new
@@ -376,7 +383,7 @@ module Rufio
         # changes are batched so loading N files doesn't trigger N/B full scans.
         force = signature.nil? || signature[0] != current_generation || complete
         if dirty && (force || monotonic >= next_query_at)
-          raw = index.query(text, limit: @limit)
+          raw = @position_limit ? index.query(text, limit: @limit, positions: @position_limit) : index.query(text, limit: @limit)
           break if cancelled?
 
           total = index.total_matches

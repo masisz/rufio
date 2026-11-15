@@ -11,7 +11,7 @@ module Rufio
     HEADER_SIZE = 25
     HEADER_FORMAT = 'CL<Q<L<L<L<'
     STATE_SCANNING = 1
-    KINDS = { 1 => :match, 2 => :document, 3 => :error }.freeze
+    KINDS = { 1 => :match, 2 => :document, 3 => :error, 4 => :labels }.freeze
     MAX_QUERY_BYTES = 1024
     POLL_INTERVAL = 0.001
 
@@ -36,6 +36,14 @@ module Rufio
         @handle.zero? ? 0 : NativeScannerZigFFI.core_cache_bytes(@handle)
       end
 
+      # 検索の完了後、キャッシュになかったファイルは別スレッドで格納する（初回の検索を遅くしないため）。
+      # その格納が終わるまで待つ。終わるまでの検索はキャッシュを使わずに行われる（結果は同じ）
+      def wait_for_fill
+        return if @handle.zero? || !NativeScannerZigFFI.respond_to?(:core_cache_wait)
+
+        NativeScannerZigFFI.core_cache_wait(@handle)
+      end
+
       # このキャッシュを使う検索をすべて close してから呼ぶこと
       def close
         return if @handle.zero?
@@ -54,6 +62,11 @@ module Rufio
       NativeScannerZigFFI.files_available?
     end
 
+    # labels: true で使える（ファイルを相対パスのラベル列でまとめて返す）か
+    def self.labels_available?
+      NativeScannerZigFFI.labels_available?
+    end
+
     # Zig 側は ASCII のみ大文字小文字を畳み込むため、大文字小文字を持つ非 ASCII 文字は Ruby 実装に任せる
     def self.supports_query?(query)
       return false if query.empty? || query.bytesize > MAX_QUERY_BYTES
@@ -68,8 +81,13 @@ module Rufio
       line[[match_index - 30, 0].max, 200].to_s.strip
     end
 
-    def initialize(roots:, query: nil, excluded_extensions: [], document_extensions: [], cache: nil, threads: 0)
+    # labels: true（ファイル一覧のみ）は、ファイルを 1 件ずつのイベントではなく
+    # [:labels, root_index, ラベル列, 件数] で返す。ラベル列は「ルートからの相対パス NUL」の連結（UTF-8 確認済み）。
+    # UTF-8 でない名前だけ従来どおり [:file, root_index, path] で返す。
+    def initialize(roots:, query: nil, excluded_extensions: [], document_extensions: [], cache: nil, threads: 0, labels: false)
       @files_only = query.nil?
+      raise ArgumentError, 'labels requires a file listing' if labels && !@files_only
+      raise StandardError, 'Zig file labels are not available' if labels && !self.class.labels_available?
       if @files_only
         raise StandardError, 'Zig file search is not available' unless self.class.files_available?
       else
@@ -80,7 +98,13 @@ module Rufio
       @path_encoding = Encoding.find('filesystem')
       roots_buf = pack(roots)
       excluded_buf = pack(excluded_extensions)
-      @handle = if @files_only
+      @handle = if labels
+                  NativeScannerZigFFI.core_files_labels_create(
+                    roots_buf, roots_buf.bytesize,
+                    excluded_buf, excluded_buf.bytesize,
+                    threads
+                  )
+                elsif @files_only
                   NativeScannerZigFFI.core_files_create(
                     roots_buf, roots_buf.bytesize,
                     excluded_buf, excluded_buf.bytesize,
@@ -177,6 +201,7 @@ module Rufio
           else
             yield [:match, root, path, line, self.class.snippet(extra, offset)]
           end
+        when :labels then yield [:labels, root, path.b, line]
         when :document then yield [:document, root, path]
         when :error then yield [:error, root, "#{path}: #{extra.force_encoding(Encoding::UTF_8).scrub}"]
         end

@@ -392,6 +392,23 @@ export fn core_files_create(
     return @intFromPtr(s);
 }
 
+/// ファイル一覧をルートからの相対パスのラベル列で返す走査を開始する（失敗時は 0）。
+/// drain のレコードは種類 4（line=件数、path=NUL 終端のラベル列）。UTF-8 でない名前は種類 1 で 1 件ずつ返す
+export fn core_files_labels_create(
+    roots: [*]const u8,
+    roots_len: usize,
+    excluded: [*]const u8,
+    excluded_len: usize,
+    threads: u32,
+) u64 {
+    const s = search.Search.createFileLabels(
+        roots[0..roots_len],
+        excluded[0..excluded_len],
+        threads,
+    ) catch return 0;
+    return @intFromPtr(s);
+}
+
 export fn core_search_state(handle: u64) u8 {
     if (handle == 0) return @intFromEnum(search.State.failed);
     const s: *search.Search = @ptrFromInt(handle);
@@ -436,6 +453,13 @@ export fn core_cache_bytes(handle: u64) u64 {
     if (handle == 0) return 0;
     const cache: *search.Cache = @ptrFromInt(handle);
     return cache.cachedBytes();
+}
+
+/// 検索の後でキャッシュへ格納しているスレッドの終了を待つ（テスト用）
+export fn core_cache_wait(handle: u64) void {
+    if (handle == 0) return;
+    const cache: *search.Cache = @ptrFromInt(handle);
+    cache.wait();
 }
 
 /// 使用中の検索をすべて destroy してから呼ぶこと
