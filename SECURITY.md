@@ -31,7 +31,7 @@ rufio is a local TUI tool run by you, on files you can already access.
 - Commands you type yourself in command mode (`:`, `!`) — they are executed as shell commands
 - Code in your own configuration: `~/.rufio/commands.rb` and `~/.config/rufio/commands.rb` are **evaluated as Ruby**. Keep them writable only by you
 - Scripts you register under script paths — they run with your privileges
-- Vulnerabilities in external tools (fzf, rga, bat, zoxide, editors)
+- Vulnerabilities in external tools (rga, bat, zoxide, editors)
 
 ### Design practices
 
@@ -78,7 +78,7 @@ rufioは、あなた自身がアクセスできるファイルに対して、ロ
 - コマンドモード（`:`、`!`）で自分で入力したコマンド — シェルコマンドとして実行されます
 - 自分の設定ファイル内のコード — `~/.rufio/commands.rb` と `~/.config/rufio/commands.rb` は**Rubyとして評価**されます。書き込み権限は自分だけにしてください
 - スクリプトパスに登録したスクリプト — あなたの権限で実行されます
-- 外部ツール（fzf、rga、bat、zoxide、エディタ）自体の脆弱性
+- 外部ツール（rga、bat、zoxide、エディタ）自体の脆弱性
 
 ### 設計上の方針
 

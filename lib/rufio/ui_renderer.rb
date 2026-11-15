@@ -652,7 +652,7 @@ module Rufio
       end
 
       # パスとバージョン情報を行末に追加
-      current_path = @directory_listing.current_path
+      current_path = @directory_listing&.current_path || Dir.pwd
       version_str = " rufio v#{VERSION}"
       version_w = version_str.length
 

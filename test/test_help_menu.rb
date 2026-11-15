@@ -46,7 +46,11 @@ class TestHelpMenu < Minitest::Test
   def test_controls_cover_current_file_mode_keys
     content = @menu.content.join("\n")
     assert_includes content, 'e: Open directory in file explorer'
-    assert_includes content, 's or /: Filename search (fzf)'
+    assert_includes content, 's or /: Fuzzy file name search'
+    assert_includes content, 'F: Content search (rga), then pick a result'
+    refute_includes content.downcase, 'fzf'
+    assert_includes content, 'In search: Ctrl+R rescans; wide screens show a preview'
+    assert_includes content, 'G: Fuzzy file names or literal contents across all bookmarks'
     assert_includes content, 'Preview .zip: Entry list (size, method, date, name)'
     assert_includes content, 'Jobs mode shows progress; x cancels'
   end

@@ -38,19 +38,11 @@ class TestHealthChecker < Minitest::Test
     end
   end
 
-  def test_check_fzf
-    result = @health_checker.send(:check_fzf)
-    
-    assert_includes [:ok, :warning], result[:status]
-    assert result[:message].is_a?(String)
-    
-    if result[:status] == :ok
-      assert result[:message].include?("fzf")
-      assert_nil result[:details]
-    else
-      assert_equal "fzf not found", result[:message]
-      assert result[:details].include?("Install")
-    end
+  def test_does_not_check_fzf
+    refute @health_checker.respond_to?(:check_fzf, true)
+    output, = capture_io { @health_checker.run_check }
+    refute_includes output.downcase, 'fzf'
+    refute_includes @health_checker.send(:install_instruction_for, 'fzf').to_s, 'fzf'
   end
 
   def test_check_rga
@@ -105,21 +97,6 @@ class TestHealthChecker < Minitest::Test
       if result[:status] == :ok
         assert result[:message].include?("Windows")
       end
-    end
-  end
-
-  def test_install_instruction_for_fzf
-    instruction = @health_checker.send(:install_instruction_for, 'fzf')
-    
-    assert instruction.is_a?(String)
-    assert instruction.include?("Install")
-    
-    # プラットフォーム固有の指示が含まれることを確認
-    case RUBY_PLATFORM
-    when /darwin/
-      assert instruction.include?("brew")
-    when /linux/
-      assert instruction.include?("apt") || instruction.include?("package manager")
     end
   end
 

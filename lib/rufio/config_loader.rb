@@ -14,6 +14,11 @@ module Rufio
     # 後方互換性のためのパス（非推奨）
     YAML_CONFIG_PATH = Config::YAML_CONFIG_PATH
     LOCAL_YAML_PATH = Config::LOCAL_YAML_PATH
+    # 1.6.0 で改名したアクション（旧名 => 新名）。ユーザー設定の旧名も受け付ける
+    LEGACY_KEYBIND_ACTIONS = { fzf_search: :file_search, fzf_search_alt: :file_search_alt }.freeze
+    # s / / の一覧キャッシュ（FuzzyCandidateCache）。FUZZY_SEARCH_CACHE で MAX_FUZZY_SEARCH_CACHE まで変更できる
+    DEFAULT_FUZZY_SEARCH_CACHE = { max_entries: 200_000, max_roots: 4, ttl: 300 }.freeze
+    MAX_FUZZY_SEARCH_CACHE = { max_entries: 1_000_000, max_roots: 16, ttl: 86_400 }.freeze
 
     class << self
       def load_config
@@ -63,8 +68,8 @@ module Rufio
           # 選択・検索
           select:          ' ',
           filter:          'f',
-          fzf_search:      's',
-          fzf_search_alt:  '/',
+          file_search:     's',
+          file_search_alt: '/',
           rga_search:      'F',
           # ブックマーク
           add_bookmark:    'b',
@@ -101,7 +106,21 @@ module Rufio
         raw_user_keybinds = load_config[:keybinds] || {}
         # 新フォーマット（単一文字列値）のみ受け入れ、古いフォーマット（配列値）は無視
         user_keybinds = raw_user_keybinds.select { |_, v| v.is_a?(String) }
-        default_keybinds.merge(user_keybinds)
+        # 旧アクション名は新しい名前の別名として扱う（新しい名前の指定を優先）
+        legacy = user_keybinds.select { |action, _| LEGACY_KEYBIND_ACTIONS.key?(action) }
+        current = user_keybinds.reject { |action, _| LEGACY_KEYBIND_ACTIONS.key?(action) }
+        renamed = legacy.each_with_object({}) { |(action, key), map| map[LEGACY_KEYBIND_ACTIONS[action]] = key }
+        default_keybinds.merge(renamed).merge(current)
+      end
+
+      # 0 以上の整数だけを受け付け、上限を超える値は上限に丸める。不正な値は既定値のまま
+      def fuzzy_search_cache
+        values = load_config[:fuzzy_search_cache]
+        values = {} unless values.is_a?(Hash)
+        DEFAULT_FUZZY_SEARCH_CACHE.each_with_object({}) do |(key, default), settings|
+          value = values[key]
+          settings[key] = value.is_a?(Integer) && value >= 0 ? [value, MAX_FUZZY_SEARCH_CACHE[key]].min : default
+        end
       end
 
       def global_search_excluded_extensions
@@ -294,7 +313,8 @@ module Rufio
           applications: safe_const_get(:APPLICATIONS, default_config[:applications]),
           colors: safe_const_get(:COLORS, default_config[:colors]),
           keybinds: safe_const_get(:KEYBINDS, {}),
-          global_search_excluded_extensions: safe_const_get(:GLOBAL_SEARCH_EXCLUDED_EXTENSIONS, [])
+          global_search_excluded_extensions: safe_const_get(:GLOBAL_SEARCH_EXCLUDED_EXTENSIONS, []),
+          fuzzy_search_cache: safe_const_get(:FUZZY_SEARCH_CACHE, {})
         }
 
         if Object.const_defined?(:LANGUAGE)

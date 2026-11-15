@@ -216,21 +216,17 @@ class TestKeybindSystem
   end
 
 
-  def test_fzf_search
-    begin
-      handler = Rufio::KeybindHandler.new
-      directory_listing = Rufio::DirectoryListing.new(@test_dir)
-      handler.set_directory_listing(directory_listing)
-      
-      # fzfが利用可能かチェック
-      if handler.send(:fzf_available?)
-        puts "✓ fzf_search (/ key) - fzf is available (interactive test skipped)"
-      else
-        puts "✗ fzf_search (/ key) - fzf not installed"
-      end
-      
-    rescue NameError
-      puts "期待通りエラー: KeybindHandlerクラスが未実装"
+  def test_file_search_action
+    handler = Rufio::KeybindHandler.new
+    handler.set_directory_listing(Rufio::DirectoryListing.new(@test_dir))
+    searched = []
+    handler.define_singleton_method(:fzf_search) { searched << :fzf_search; true }
+    handler.define_singleton_method(:file_search) { searched << :file_search; true }
+    %w[s /].each { |key| handler.handle_key(key) }
+    if searched == %i[file_search file_search]
+      puts "✓ file_search (s, / key) - built-in fuzzy finder"
+    else
+      puts "✗ file_search (s, / key)"
     end
   end
 
@@ -242,7 +238,7 @@ class TestKeybindSystem
     test_special_commands
     test_boundary_conditions
     test_invalid_keys
-    test_fzf_search
+    test_file_search_action
     puts "=== キーバインドテスト完了 ==="
   end
 end

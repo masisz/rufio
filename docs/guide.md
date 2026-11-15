@@ -107,17 +107,36 @@ With nothing selected, `z` opens zoxide history instead.
 | Key | Action |
 |-----|--------|
 | `f` | Filter the current list as you type (`Enter` keeps the filter, `ESC` clears it) |
-| `s` or `/` | Search file names with fzf |
-| `F` | Search file contents with rga |
+| `s` or `/` | Fuzzy search file names under the current directory (no external tools needed) |
+| `F` | Search file contents with rga, then pick a result in the same screen |
 | `G` | Global search across all bookmarks (no external tools needed) |
 
-## Global Search (G mode)
+### Fuzzy Search Screen (`s`, `/`, `F`)
 
-`G` searches recursively under every bookmarked directory. Add bookmarks with `b` first.
+`s` and `/` list every file under the current directory, including hidden files and links to regular files, while the list is still being scanned. Typing narrows it with fuzzy matching: the query characters must appear in order but need not be adjacent (`sctrl` finds `search_controller.rb`). ASCII letters ignore case and Japanese text is matched as is. Matches after the last `/`, at word boundaries and in consecutive runs rank higher, and matched characters are highlighted.
 
 | Key | Action |
 |-----|--------|
-| Type | Literal, case-insensitive search |
+| Type | Filter the list |
+| `Up` / `Down`, `Ctrl+J` / `Ctrl+K`, `Ctrl+N` / `Ctrl+P` | Select a result |
+| `Enter` | Open the file (`F`: at the matching line) |
+| `Ctrl+U` | Clear the query |
+| `Ctrl+R` | Rescan the directory (keeps the query) |
+| `ESC` | Return to the file list |
+
+`F` asks for the text to search, runs rga in the background and streams its `file:line:text` results into this screen; typing then filters those lines. The matching itself uses the bundled Zig library when available and falls back to Ruby otherwise (`RUFIO_NATIVE_FUZZY=0` forces Ruby).
+
+On screens at least 80 columns wide, the right half shows a preview of the selected file, loaded in the background and limited to the first 64 KiB. `F` results scroll the preview to the matching line and highlight it. `preview_enabled: false` in `UI_OPTIONS` hides it.
+
+Reopening `s` in a directory scanned in the last 5 minutes shows the cached list immediately; the title reads `Cached 2m ago | Ctrl+R: Rescan`. By default the cache keeps up to 4 directories and 200,000 files in total (see `FUZZY_SEARCH_CACHE` below), so new, deleted or changed files may be missing until you press `Ctrl+R`. Selecting a file that no longer exists keeps the screen open and shows `File no longer exists`.
+
+## Global Search (G mode)
+
+`G` searches recursively under every bookmarked directory. Add bookmarks with `b` first. File names use the same fuzzy matching as `s` (best matches first, matched characters highlighted, filtered in the background); content search stays literal.
+
+| Key | Action |
+|-----|--------|
+| Type | File names: fuzzy search. Content: Literal, case-insensitive search |
 | `Tab` | Switch between **File names** and **Content** |
 | `Up` / `Down`, `Ctrl+J` / `Ctrl+K`, `Ctrl+N` / `Ctrl+P` | Select a result |
 | `Enter` | Go to the file in Files mode |
@@ -325,7 +344,20 @@ APPLICATIONS = {
 
 # Extensions (and /names of directories or files) excluded from G mode search
 GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.log /node_modules].freeze
+
+# File list cache for reopening s / / (omitted keys keep their defaults)
+FUZZY_SEARCH_CACHE = { max_entries: 500_000, max_roots: 8, ttl: 900 }.freeze
 ```
+
+`FUZZY_SEARCH_CACHE` keys:
+
+| Key | Default | Maximum | Meaning |
+|-----|---------|---------|---------|
+| `max_entries` | 200,000 | 1,000,000 | Files kept across all cached directories |
+| `max_roots` | 4 | 16 | Directories kept (least recently used is dropped first) |
+| `ttl` | 300 | 86,400 | Seconds before a cached list is scanned again |
+
+Values above the maximum are capped, invalid values fall back to the default, and `0` disables caching (`max_entries` / `max_roots`) or expires lists immediately (`ttl`). About 90 bytes are used per cached file.
 
 Action names for `KEYBINDS`:
 
@@ -333,9 +365,11 @@ Action names for `KEYBINDS`:
 |-------|-----------------------|
 | Navigation | `move_up` (k), `move_down` (j), `navigate_parent` (h), `navigate_enter` (l), `top` (g), `bottom` (}), `refresh` (R) |
 | Files | `open_file` (o), `preview` (P), `rename` (r), `delete` (d), `create_file` (a), `create_dir` (A), `move_selected` (m), `copy_selected` (c), `delete_selected` (x), `open_explorer` (e) |
-| Selection and search | `select` (Space), `filter` (f), `fzf_search` (s), `fzf_search_alt` (/), `rga_search` (F) |
+| Selection and search | `select` (Space), `filter` (f), `file_search` (s), `file_search_alt` (/), `rga_search` (F) |
 | Bookmarks | `add_bookmark` (b), `bookmark_menu` (B), `zoxide` (z), `start_dir` (0) |
 | Modes | `job_mode` (J), `global_search` (G), `config_mode` (C), `help` (?), `log_viewer` (L), `command_mode` (:), `quit` (q), `quit_cd` (T) |
+
+The former names `fzf_search` / `fzf_search_alt` are still accepted as aliases of `file_search` / `file_search_alt`.
 
 ### script_paths.yml and bookmarks.yml
 
@@ -370,17 +404,16 @@ All tools are optional. Without them, rufio disables the feature or falls back t
 
 | Tool | Used for | Key |
 |------|----------|-----|
-| fzf | File name search | `s`, `/` |
 | rga | File content search | `F` |
 | zoxide | Directory history | `z` |
 | bat | Syntax highlighting in the preview | — |
 
 ```bash
 # macOS
-brew install fzf bat rga zoxide
+brew install bat rga zoxide
 
 # Ubuntu/Debian
-apt install fzf bat zoxide
+apt install bat zoxide
 # rga: https://github.com/phiresky/ripgrep-all
 ```
 

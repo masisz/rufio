@@ -109,15 +109,26 @@ module Rufio
       each_batch { |batch| batch.each(&block) }
     end
 
-    # 1 回の取り出しごとにイベント配列を返す（UI へまとめて渡すため）
-    def each_batch
-      return enum_for(:each_batch) unless block_given?
+    # 1 回の取り出しごとにイベント配列を返す（UI へまとめて渡すため）。
+    # max_events を指定すると、取り出した分が多いときはその件数ごとに分けて返す。
+    # 大きな取り出しを解析し終えるまで呼び出し側（と他のスレッド）を待たせない。
+    def each_batch(cancelled: nil, max_events: nil)
+      return enum_for(:each_batch, cancelled: cancelled, max_events: max_events) unless block_given?
 
       loop do
+        break if cancelled && cancelled.call
+
         state = NativeScannerZigFFI.core_search_state(@handle)
         data = drain
         batch = []
-        each_record(data) { |event| batch << event }
+        each_record(data) do |event|
+          batch << event
+          next unless max_events && batch.length >= max_events
+
+          yield batch
+          batch = []
+          break if cancelled && cancelled.call
+        end
         skipped = NativeScannerZigFFI.core_search_skipped(@handle)
         if skipped > @skipped
           batch << [:skipped, skipped - @skipped]

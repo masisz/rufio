@@ -5,15 +5,20 @@ require_relative 'text_utils'
 require_relative 'config_loader'
 require_relative 'document_text_extractor'
 require_relative 'native_content_search'
+require_relative 'fuzzy_search_session'
+require_relative 'fuzzy_candidate_block'
 
 module Rufio
   # ブックマーク配下のファイル名・テキスト内容をバックグラウンドで横断検索する。
+  # ファイル名は s と同じあいまい検索（FuzzySearchSession）、本文は大文字小文字を無視したリテラル検索。
   class GlobalSearch
     SPINNER_FRAMES = ['|', '/', '-', '\\'].freeze
     SPINNER_INTERVAL = 0.12
     # 検索語に一致した部分の表示（黒の太字・黄色背景）
     MATCH_FG = "\e[30m\e[1m"
     MATCH_BG = "\e[43m"
+    # ファイル名検索で一覧に保持する上位件数
+    FILE_RESULT_LIMIT = 1_000
 
     attr_reader :query, :results, :errors, :selected_index, :search_type, :skipped_files
 
@@ -31,6 +36,7 @@ module Rufio
       @active = false
       @scanning = false
       @worker = nil
+      @session = nil
       @document_extractor = DocumentTextExtractor.new
       @document_cache = DocumentTextCache.new(extractor: @document_extractor)
     end
@@ -58,37 +64,14 @@ module Rufio
     def close
       @active = false
       @scanning = false
-      @worker&.kill
-      @worker&.join
-      @worker = nil
+      stop_search
     end
 
     # 1フレーム当たりの処理量を制限し、検索中も入力を受け付ける。
     def poll
       return false unless active?
 
-      changed = false
-      256.times do
-        event = begin
-          @events.pop(true)
-        rescue ThreadError
-          break
-        end
-        changed = true
-        type, value = event
-        case type
-        when :entry
-          @entries << value
-          @results << value if @search_type == :content || matches_query?(value)
-        when :entries
-          # Zig 実装の結果はまとめて届くので、1 フレーム 256 件の上限に縛られない
-          @entries.concat(value)
-          @results.concat(@search_type == :content || @query.empty? ? value : value.select { |entry| matches_query?(entry) })
-        when :error then @errors << value
-        when :skipped then @skipped_files += value || 1
-        when :done then @scanning = false
-        end
-      end
+      changed = @session ? poll_session : poll_events
       if scanning?
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         if now - @last_spinner_update >= SPINNER_INTERVAL
@@ -107,20 +90,21 @@ module Rufio
         @search_type = @search_type == :filename ? :content : :filename
         start_scan
       when "\r" then return @results[@selected_index]
-      when :down then @selected_index = [@selected_index + 1, [@results.length - 1, 0].max].min
-      when :up then @selected_index = [@selected_index - 1, 0].max
+      when :down then select_index(@selected_index + 1)
+      when :up then select_index(@selected_index - 1)
       when "\x0a", "\x0e" then handle_key(:down) # Ctrl+J / Ctrl+N
       when "\x0b", "\x10" then handle_key(:up)   # Ctrl+K / Ctrl+P
       when "\x15" then update_query('')  # Ctrl+U
       when "\u007f", "\b" then update_query(@query[0...-1])
       else
-        update_query(@query + key) if key.is_a?(String) && !key.empty? && key.each_codepoint.all? { |c| c >= 32 && c != 127 }
+        update_query(@query + key) if key.is_a?(String) && !key.empty? && key.valid_encoding? &&
+                                      key.each_codepoint.all? { |c| c >= 32 && c != 127 }
       end
       nil
     end
 
     def draw(screen)
-      screen.clear
+      screen.clear(mark_dirty: true)
       width = screen.width
       type = @search_type == :content ? 'Content' : 'File names'
       write_line(screen, 0, "G mode - #{type} | Tab: Switch name/content search", width, "\e[1;36m")
@@ -133,7 +117,8 @@ module Rufio
                 'Search complete'
               end
       color = scanning? ? "\e[1;33m" : "\e[32m"
-      write_line(screen, 2, "#{state} | #{@bookmark_count} bookmarks | #{@results.length} matches | #{@errors.length} errors | #{@skipped_files} skipped", width, color)
+      matches = @session ? @total_matches : @results.length
+      write_line(screen, 2, "#{state} | #{@bookmark_count} bookmarks | #{matches} matches | #{@errors.length} errors | #{@skipped_files} skipped", width, color)
       row_height = @search_type == :content ? 2 : 1
       capacity = [screen.height - 6, 0].max / row_height
       first = [@selected_index - capacity + 1, 0].max
@@ -149,9 +134,9 @@ module Rufio
                   ''
                 end
         y = index * row_height + 3
-        # ファイル名検索はパス、本文検索はスニペットの一致箇所をハイライトする
-        path_highlight = @search_type == :filename ? prefix.length : nil
-        write_line(screen, y, text, width, selected ? "\e[1;36m" : nil, highlight_from: path_highlight)
+        # ファイル名検索はあいまい検索の一致位置、本文検索はスニペットの一致箇所をハイライトする
+        write_line(screen, y, text, width, selected ? "\e[1;36m" : nil)
+        highlight_positions(screen, y, prefix, entry, width) if @search_type == :filename
         write_line(screen, y + 1, "    #{entry[:match_text]}", width, highlight_from: 4) if entry[:match_text]
       end
       if @results.empty?
@@ -161,7 +146,7 @@ module Rufio
                     'Searching bookmarked directories...'
                   elsif @search_type == :content && @query.empty?
                     'Type a string to search inside text files.'
-                  elsif !@errors.empty? && @entries.empty?
+                  elsif !@errors.empty? && candidate_count.zero?
                     'No readable files in bookmarked directories.'
                   else
                     'No matching files. Edit your search to try again.'
@@ -174,32 +159,48 @@ module Rufio
 
     private
 
-    def start_scan
+    # 本文検索の走査スレッドとファイル名検索のセッションを止める。セッションは待たずに閉じる
+    def stop_search
       @worker&.kill
       @worker&.join
       @worker = nil
+      @session&.close
+      @session = nil
+      @file_source = nil
+    end
+
+    def candidate_count
+      @session ? @candidate_count : @entries.length
+    end
+
+    def start_scan
+      stop_search
       @entries = []
       @results = []
+      @result_ids = []
       @errors = []
       @skipped_files = 0
       @selected_index = 0
+      @selected_id = nil
+      @total_matches = 0
+      @candidate_count = 0
+      @shown = nil
       @events = SizedQueue.new(256)
       @spinner_index = 0
       @last_spinner_update = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       @scanning = !(@search_type == :content && @query.empty?)
       return unless @scanning
+      return start_file_name_session if @search_type == :filename
 
-      roots, events, type, query = @roots, @events, @search_type, @query.downcase
+      roots, events, query = @roots, @events, @query.downcase
       native = self.class.native_search?
-      native_cache = native && type == :content ? (@native_cache ||= NativeContentSearch::Cache.new) : nil
+      native_cache = native ? (@native_cache ||= NativeContentSearch::Cache.new) : nil
       @worker = Thread.new do
         begin
-          if native && type == :content && NativeContentSearch.supports_query?(query)
+          if native && NativeContentSearch.supports_query?(query)
             scan_roots_natively(roots, events, query, native_cache)
-          elsif native && type == :filename && NativeContentSearch.files_available?
-            scan_files_natively(roots, events)
           else
-            scan_roots(roots, events, type, query)
+            scan_roots(roots, events, :content, query)
           end
         rescue StandardError => e
           events << [:error, e.message]
@@ -208,20 +209,100 @@ module Rufio
       end
     end
 
+    # ファイル名は走査と照合を FuzzySearchSession のワーカーに任せ、UI スレッドでは絞り込まない
+    def start_file_name_session
+      @file_source = FileNameSource.new(self, @roots, self.class.native_search?)
+      @session = FuzzySearchSession.new(source: @file_source, limit: FILE_RESULT_LIMIT).start
+      @session.update_query(@query) unless @query.empty?
+      # 開いた直後の状態は描画済みなので、変化があったときだけ poll で再描画させる
+      @shown = @session.snapshot
+    end
+
     def update_query(query)
       @query = query
       @selected_index = 0
-      @search_type == :content ? start_scan : filter_results
+      @selected_id = nil
+      return start_scan if @search_type == :content || @session.nil?
+
+      # 前の検索語の結果を選べないよう、新しい結果が届くまで一覧を空にする
+      @session.update_query(query)
+      @results = []
+      @result_ids = []
+      @scanning = true
+    rescue IOError
+      nil
     end
 
-    def filter_results
-      query = @query.downcase
-      @results = @entries.select { |entry| entry[:relative_path].scrub.downcase.include?(query) }
-      @selected_index = [[@selected_index, @results.length - 1].min, 0].max
+    def select_index(index)
+      @selected_index = index.clamp(0, [@results.length - 1, 0].max)
+      @selected_id = @result_ids&.[](@selected_index)
     end
 
-    def matches_query?(entry)
-      entry[:relative_path].scrub.downcase.include?(@query.downcase)
+    def poll_session
+      @session.poll
+      state = @session.snapshot
+      @skipped_files = @file_source.skipped
+      @scanning = state.scanning || state.searching
+      return false if state.equal?(@shown)
+
+      @shown = state
+      @results = state.results.map { |result| result[:entry].merge(positions: result[:positions]) }
+      @result_ids = state.results.map { |result| result[:id] }
+      @errors = state.errors
+      @total_matches = state.total_matches
+      @candidate_count = state.candidate_count
+      # 候補の追加で順位が変わっても、選択中のファイルを追い続ける
+      index = @selected_id && @result_ids.index(@selected_id)
+      @selected_index = (index || @selected_index).clamp(0, [@results.length - 1, 0].max)
+      true
+    end
+
+    # 本文検索の走査スレッドからのイベントを 1 フレーム当たり最大 256 件取り込む
+    def poll_events
+      changed = false
+      256.times do
+        event = begin
+          @events.pop(true)
+        rescue ThreadError
+          break
+        end
+        changed = true
+        type, value = event
+        case type
+        when :entry
+          @entries << value
+          @results << value
+        when :entries
+          # Zig 実装の結果はまとめて届くので、1 フレーム 256 件の上限に縛られない
+          @entries.concat(value)
+          @results.concat(value)
+        when :error then @errors << value
+        when :skipped then @skipped_files += value || 1
+        when :done then @scanning = false
+        end
+      end
+      changed
+    end
+
+    # あいまい検索の一致位置（UTF-8 の先頭バイトオフセット）を表示桁に変換してハイライトする
+    def highlight_positions(screen, y, prefix, entry, width)
+      offsets = entry[:positions]
+      return if offsets.nil? || offsets.empty?
+
+      targets = offsets.each_with_object({}) { |offset, set| set[offset] = true }
+      line = "#{prefix}#{entry[:text]}"
+      limit = TextUtils.display_width(line) > width ? width - TextUtils::ELLIPSIS_MIN_WIDTH : width
+      x = TextUtils.display_width(prefix)
+      byte = 0
+      entry[:text].each_char do |char|
+        shown = char.match?(/[[:cntrl:]]/) ? ' ' : char
+        char_width = TextUtils.display_width(shown)
+        break if x + char_width > limit
+
+        screen.put(x, y, shown, fg: MATCH_FG, bg: MATCH_BG, width: char_width) if targets[byte]
+        x += char_width
+        byte += char.bytesize
+      end
     end
 
     def scan_roots(roots, events, type, query)
@@ -272,7 +353,7 @@ module Rufio
     end
 
     # Zig 実装でブックマーク配下のファイル一覧を並列走査する
-    def scan_files_natively(roots, events)
+    def scan_files_natively(roots, events, cancelled: nil)
       valid_roots = []
       roots.each do |name, root|
         root = File.expand_path(root)
@@ -286,7 +367,8 @@ module Rufio
 
       engine = NativeContentSearch.new(roots: valid_roots.map(&:last), query: nil,
                                        excluded_extensions: @excluded_extensions)
-      engine.each_batch do |batch|
+      # 大きな取り出しは分けて受け取り、解析の合間に検索ワーカーと UI が動けるようにする
+      engine.each_batch(cancelled: cancelled, max_events: FileNameSource::BLOCK_SIZE) do |batch|
         entries = []
         batch.each do |kind, *args|
           case kind
@@ -407,6 +489,141 @@ module Rufio
         end
       end
       ranges
+    end
+
+    # ファイル名検索の候補を FuzzySearchSession に流す。既存の走査（Zig / Ruby）のイベントを
+    # バッチに変換し、停止要求があれば次のイベントで走査を打ち切る。
+    class FileNameSource
+      BLOCK_SIZE = 4096
+      Cancelled = Class.new(StandardError)
+
+      attr_reader :skipped
+
+      def initialize(search, roots, native)
+        @search = search
+        @roots = roots
+        @native = native
+        @skipped = 0
+      end
+
+      def each_batch(cancelled:, on_error:, &emit)
+        sink = Sink.new(self, cancelled, on_error, emit)
+        if @native && NativeContentSearch.files_available?
+          @search.send(:scan_files_natively, @roots, sink, cancelled: cancelled)
+        else
+          @search.send(:scan_roots, @roots, sink, :filename, '')
+        end
+        sink.flush
+      rescue Cancelled
+        nil
+      end
+
+      def add_skipped(count)
+        @skipped += count
+      end
+
+      # 「ブックマークのルート + 相対パス」から行を作る。scrub した候補だけ元のパスと相対パスを別に持つ
+      class Rows
+        def initialize(prefix, bookmark, encoding, exceptions)
+          @prefix = prefix
+          @bookmark = bookmark
+          @encoding = encoding
+          @exceptions = exceptions
+          freeze
+        end
+
+        def call(index, text)
+          path, relative = @exceptions && @exceptions[index]
+          relative ||= @encoding == Encoding::UTF_8 ? text : text.b.force_encoding(@encoding).freeze
+          { text: text, path: path || (@prefix + text.b).force_encoding(@encoding).freeze,
+            bookmark: @bookmark, relative_path: relative }
+        end
+      end
+
+      # scan_roots / scan_files_natively が使う events << [種類, 値] を受け取る。
+      # 候補は行（Hash）にせず、同じブックマークが続く間は 1 つの FuzzyCandidateBlock に詰める。
+      class Sink
+        def initialize(source, cancelled, on_error, emit)
+          @source = source
+          @cancelled = cancelled
+          @on_error = on_error
+          @emit = emit
+          @builder = FuzzyCandidateBlock::Builder.new
+          @exceptions = nil
+          @prefix_text = nil
+        end
+
+        def <<(event)
+          raise Cancelled if @cancelled.call
+
+          type, value = event
+          case type
+          when :entry then add(value)
+          when :entries then value.each { |entry| add(entry) }
+          when :error then @on_error.call(value)
+          when :skipped then @source.add_skipped(value || 1)
+          end
+          flush if type == :entries
+          self
+        end
+
+        def flush
+          return if @builder.empty?
+
+          rows = Rows.new(@prefix, @bookmark, @encoding, @exceptions&.freeze)
+          block = @builder.build(rows)
+          @builder = FuzzyCandidateBlock::Builder.new
+          @exceptions = nil
+          @emit.call(block)
+        end
+
+        private
+
+        def frozen(value)
+          value.is_a?(String) && !value.frozen? ? value.dup.freeze : value
+        end
+
+        def add(entry)
+          relative = entry[:relative_path]
+          path = entry[:path]
+          text = relative.encoding == Encoding::UTF_8 ? relative : relative.dup.force_encoding(Encoding::UTF_8)
+          scrubbed = !text.valid_encoding?
+          text = text.scrub if scrubbed
+          if text.bytesize > FuzzyCandidateBlock::MAX_TEXT_BYTES || text.include?("\0")
+            @on_error.call("#{text[0, 200]}: file name cannot be searched")
+            return
+          end
+
+          tail = tail?(path, relative)
+          start_block(entry, path, tail ? path.bytesize - relative.bytesize : 0) unless fits?(entry, path, relative)
+          index = @builder.add(text)
+          # 「接頭辞 + 表示名」で組み立て直せない候補は、元の文字列をそのまま持つ
+          if scrubbed || !tail || relative.encoding != @encoding
+            (@exceptions ||= {})[index] = [frozen(path), frozen(relative)].freeze
+          end
+          flush if @builder.size >= BLOCK_SIZE
+        end
+
+        def tail?(path, relative)
+          path.end_with?(relative)
+        rescue Encoding::CompatibilityError
+          false
+        end
+
+        # 詰めている途中のブロックと同じブックマーク・同じルートの候補か
+        def fits?(entry, path, relative)
+          @prefix_text && entry[:bookmark] == @bookmark && path.encoding == @encoding &&
+            path.bytesize == @prefix_text.bytesize + relative.bytesize && path.start_with?(@prefix_text)
+        end
+
+        def start_block(entry, path, prefix_length)
+          flush
+          @bookmark = frozen(entry[:bookmark])
+          @encoding = path.encoding
+          @prefix_text = path.byteslice(0, prefix_length).freeze
+          @prefix = @prefix_text.b.freeze
+        end
+      end
     end
   end
 end

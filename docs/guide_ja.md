@@ -107,17 +107,36 @@ Files モードでは、最上段に現在のパス、その下にブックマ�
 | キー | 操作 |
 |------|------|
 | `f` | 入力に合わせて一覧を絞り込む（`Enter` で確定、`ESC` で解除） |
-| `s` または `/` | fzf でファイル名検索 |
-| `F` | rga でファイル内容検索 |
+| `s` または `/` | 現在のディレクトリ配下のファイル名をあいまい検索（外部ツール不要） |
+| `F` | rga でファイル内容を検索し、同じ画面で結果を選択 |
 | `G` | 全ブックマークを横断検索（外部ツール不要） |
 
-## 横断検索（G モード）
+### あいまい検索画面（`s`、`/`、`F`）
 
-`G` で、ブックマークした全ディレクトリの配下を再帰的に検索します。先に `b` でブックマークを登録してください。
+`s` と `/` は、現在のディレクトリ配下のファイル（隠しファイルと通常ファイルへのリンクを含む）を走査しながら一覧表示します。入力すると、文字が順番どおりに現れれば離れていても一致するあいまい検索で絞り込みます（`sctrl` で `search_controller.rb` が見つかります）。ASCII の英字は大文字小文字を区別せず、日本語はそのまま照合します。最後の `/` 以降・単語の先頭・連続した一致ほど上位に並び、一致した文字はハイライトされます。
 
 | キー | 操作 |
 |------|------|
-| 文字入力 | 大文字・小文字を区別しない部分一致検索 |
+| 入力 | 一覧を絞り込む |
+| `↑` / `↓`、`Ctrl+J` / `Ctrl+K`、`Ctrl+N` / `Ctrl+P` | 結果を選択 |
+| `Enter` | ファイルを開く（`F` は一致した行で開く） |
+| `Ctrl+U` | 検索語をクリア |
+| `Ctrl+R` | ディレクトリを走査し直す（検索語は保持） |
+| `ESC` | ファイル一覧に戻る |
+
+`F` は検索する文字列を尋ね、rga をバックグラウンドで実行して `ファイル:行:本文` の結果をこの画面へ流し込みます。入力するとその結果の行を絞り込めます。照合には同梱の Zig ライブラリを使い、利用できない場合は Ruby 実装に切り替えます（`RUFIO_NATIVE_FUZZY=0` で Ruby を強制）。
+
+幅 80 桁以上の画面では、右半分に選択中のファイルのプレビューを表示します。読み込みはバックグラウンドで行い、先頭 64 KiB までに制限します。`F` の結果では一致した行までスクロールして強調します。`UI_OPTIONS` の `preview_enabled: false` で非表示にできます。
+
+直近 5 分以内に走査したディレクトリで `s` を開き直すと、キャッシュした一覧をすぐに表示し、タイトルに `Cached 2m ago | Ctrl+R: Rescan` と出します。キャッシュは既定で最大 4 ディレクトリ・合計 20 万ファイルまでです（下記 `FUZZY_SEARCH_CACHE` で変更可）。その後に追加・削除・変更されたファイルは `Ctrl+R` で走査し直すまで反映されません。削除済みのファイルを選んだ場合は画面を閉じずに `File no longer exists` と表示します。
+
+## 横断検索（G モード）
+
+`G` で、ブックマークした全ディレクトリの配下を再帰的に検索します。先に `b` でブックマークを登録してください。ファイル名は `s` と同じあいまい検索（よく一致したものから並び、一致文字をハイライト、絞り込みはバックグラウンド）で、内容検索はリテラルのままです。
+
+| キー | 操作 |
+|------|------|
+| 文字入力 | ファイル名: あいまい検索。内容: 大文字・小文字を区別しないリテラル（部分一致）検索 |
 | `Tab` | **File names（ファイル名）** と **Content（内容）** を切り替え |
 | `↑` / `↓`、`Ctrl+J` / `Ctrl+K`、`Ctrl+N` / `Ctrl+P` | 結果を選択 |
 | `Enter` | Files モードでそのファイルの場所へ移動 |
@@ -325,7 +344,20 @@ APPLICATIONS = {
 
 # G モードの検索から除外する拡張子（/ 始まりはディレクトリ・ファイル名）
 GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.log /node_modules].freeze
+
+# s / / を開き直すときの一覧キャッシュ（省略したキーは既定値）
+FUZZY_SEARCH_CACHE = { max_entries: 500_000, max_roots: 8, ttl: 900 }.freeze
 ```
+
+`FUZZY_SEARCH_CACHE` のキー:
+
+| キー | 既定値 | 上限 | 意味 |
+|------|--------|------|------|
+| `max_entries` | 200,000 | 1,000,000 | 全ディレクトリ合計で保持するファイル数 |
+| `max_roots` | 4 | 16 | 保持するディレクトリ数（最近使っていないものから捨てる） |
+| `ttl` | 300 | 86,400 | 一覧を走査し直すまでの秒数 |
+
+上限を超える値は上限に丸め、不正な値は既定値を使います。`0` はキャッシュの無効化（`max_entries` / `max_roots`）または即時期限切れ（`ttl`）です。キャッシュは 1 ファイルあたり約 90 バイトを使います。
 
 `KEYBINDS` で使えるアクション名:
 
@@ -333,9 +365,11 @@ GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.log /node_modules].freeze
 |------|------------------------------|
 | 移動 | `move_up` (k), `move_down` (j), `navigate_parent` (h), `navigate_enter` (l), `top` (g), `bottom` (}), `refresh` (R) |
 | ファイル | `open_file` (o), `preview` (P), `rename` (r), `delete` (d), `create_file` (a), `create_dir` (A), `move_selected` (m), `copy_selected` (c), `delete_selected` (x), `open_explorer` (e) |
-| 選択・検索 | `select` (Space), `filter` (f), `fzf_search` (s), `fzf_search_alt` (/), `rga_search` (F) |
+| 選択・検索 | `select` (Space), `filter` (f), `file_search` (s), `file_search_alt` (/), `rga_search` (F) |
 | ブックマーク | `add_bookmark` (b), `bookmark_menu` (B), `zoxide` (z), `start_dir` (0) |
 | モード | `job_mode` (J), `global_search` (G), `config_mode` (C), `help` (?), `log_viewer` (L), `command_mode` (:), `quit` (q), `quit_cd` (T) |
+
+以前のアクション名 `fzf_search` / `fzf_search_alt` も `file_search` / `file_search_alt` の別名として引き続き使えます。
 
 ### script_paths.yml と bookmarks.yml
 
@@ -370,17 +404,16 @@ script_paths:
 
 | ツール | 用途 | キー |
 |--------|------|------|
-| fzf | ファイル名検索 | `s`、`/` |
 | rga | ファイル内容検索 | `F` |
 | zoxide | ディレクトリ履歴 | `z` |
 | bat | プレビューのシンタックスハイライト | — |
 
 ```bash
 # macOS
-brew install fzf bat rga zoxide
+brew install bat rga zoxide
 
 # Ubuntu/Debian
-apt install fzf bat zoxide
+apt install bat zoxide
 # rga: https://github.com/phiresky/ripgrep-all
 ```
 

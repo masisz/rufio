@@ -83,4 +83,6 @@ lib/rufio/native/*.bundle
 
 # Benchmark and test files (temporary)
 benchmark_*.rb
+!test/benchmark_fuzzy_search.rb
+!test/benchmark_fuzzy_session.rb
 test_performance_*.rb

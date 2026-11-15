@@ -46,10 +46,12 @@ ZIP extraction and compression run as background jobs. Check progress in Jobs mo
 | Key | Action |
 |-----|--------|
 | `f` | Enter filter mode (type to filter) |
-| `s` | Search file names with fzf |
-| `/` | Search file names with fzf (same as `s`) |
-| `F` | Search file contents with rga |
+| `s` | Fuzzy search file names |
+| `/` | Fuzzy search file names (same as `s`) |
+| `F` | Search file contents with rga and pick a result |
 | `G` | Global search: file names or contents across all bookmarks |
+
+In the built-in search screen (`s`, `/`, `F`), type to fuzzy-filter, use **Up/Down** or **Ctrl+J/K** to select, **Enter** to open and **ESC** to go back. **Ctrl+R** rescans a cached file list; wide screens show a preview of the selected file.
 
 ## Bookmarks & Navigation
 

@@ -156,7 +156,10 @@ module Rufio
     end
 
     # Clear the entire screen
-    def clear
+    #
+    # @param mark_dirty [Boolean] true で全行を dirty にする。毎フレーム全体を描き直す
+    #   画面（G mode・内蔵検索）で、描かなくなった行も Renderer に消させるために使う
+    def clear(mark_dirty: false)
       @cells.each do |row|
         row.each do |cell|
           cell.char  = ' '
@@ -167,6 +170,7 @@ module Rufio
       end
       # Phase1: Clear dirty rows after full clear
       @dirty_rows.clear
+      @height.times { |y| @dirty_rows.add(y) } if mark_dirty
     end
 
     # Phase1: Get dirty rows (rows that have been modified since last clear)

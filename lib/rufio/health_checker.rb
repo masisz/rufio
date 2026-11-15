@@ -18,7 +18,6 @@ module Rufio
       checks = [
         { name: ConfigLoader.message('health.ruby_version'), method: :check_ruby_version },
         { name: ConfigLoader.message('health.required_gems'), method: :check_required_gems },
-        { name: ConfigLoader.message('health.fzf'), method: :check_fzf },
         { name: ConfigLoader.message('health.rga'), method: :check_rga },
         { name: ConfigLoader.message('health.zoxide'), method: :check_zoxide },
         { name: ConfigLoader.message('health.bat'), method: :check_bat },
@@ -82,23 +81,6 @@ module Rufio
           status: :error,
           message: "#{ConfigLoader.message('health.missing_gems')}: #{missing_gems.join(', ')}",
           details: "#{ConfigLoader.message('health.gem_install_instruction')} #{missing_gems.join(' ')}"
-        }
-      end
-    end
-
-    def check_fzf
-      if system("which fzf > /dev/null 2>&1")
-        version = `fzf --version 2>/dev/null`.strip
-        {
-          status: :ok,
-          message: "fzf #{version}",
-          details: nil
-        }
-      else
-        {
-          status: :warning,
-          message: "fzf #{ConfigLoader.message('health.tool_not_found')}",
-          details: install_instruction_for('fzf')
         }
       end
     end
@@ -192,8 +174,6 @@ module Rufio
       case RUBY_PLATFORM
       when /darwin/
         case tool
-        when 'fzf'
-          "#{ConfigLoader.message('health.install_brew')} fzf"
         when 'rga'
           "#{ConfigLoader.message('health.install_brew')} rga"
         when 'zoxide'
@@ -203,8 +183,6 @@ module Rufio
         end
       when /linux/
         case tool
-        when 'fzf'
-          "#{ConfigLoader.message('health.install_apt')} fzf (Ubuntu/Debian) or check your package manager"
         when 'rga'
           ConfigLoader.message('health.rga_releases')
         when 'zoxide'
