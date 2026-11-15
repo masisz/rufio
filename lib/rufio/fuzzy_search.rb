@@ -9,6 +9,8 @@ require_relative 'native_scanner_zig'
 module Rufio
   # Persistent candidate index. No subprocesses; native and Ruby return the same
   # scores and UTF-8 byte offsets. A session serializes access to its native handle.
+  # A query that extends the previous one (the previous query is a subsequence of it)
+  # only scores the previous matches plus candidates added since; see #scanned.
   class FuzzySearch
     MAX_QUERY_BYTES = 1024
     MAX_CANDIDATE_BYTES = 65_536
@@ -18,11 +20,18 @@ module Rufio
 
     attr_reader :total_matches
 
+    # Candidates scored by the last query. nil when an older native library cannot report it.
+    attr_reader :scanned
+
     def initialize(native: true, library: nil)
       @mutex = Mutex.new
       @closed = false
       @total_matches = 0
       @candidates = []
+      @previous_query = nil
+      @previous_ids = nil
+      @previous_count = 0
+      @scanned = 0
       if native && ENV['RUFIO_NATIVE_FUZZY'] != '0'
         @api = load_api(library || NativeScannerZigFFI.library_path)
         @handle = @api.core_fuzzy_create if @api
@@ -87,7 +96,8 @@ module Rufio
     def validate_text(text, max_bytes)
       raise ArgumentError, 'Expected UTF-8 text' unless text.is_a?(String)
 
-      utf8 = text.dup.force_encoding(Encoding::UTF_8)
+      # Candidates are usually UTF-8 already; copying each one only to relabel it is wasted work.
+      utf8 = text.encoding == Encoding::UTF_8 ? text : text.dup.force_encoding(Encoding::UTF_8)
       unless utf8.valid_encoding? && !utf8.include?("\0") && utf8.bytesize <= max_bytes
         raise ArgumentError, 'Invalid UTF-8, NUL, or text too long'
       end
@@ -105,6 +115,11 @@ module Rufio
         extern 'int32_t core_fuzzy_query(uint64_t, const char*, size_t, uint32_t)'
         extern 'void* core_fuzzy_results(uint64_t, void*)'
         extern 'void core_fuzzy_destroy(uint64_t)'
+        begin
+          extern 'uint64_t core_fuzzy_scanned(uint64_t)'
+        rescue Fiddle::DLError
+          nil # 1.6.0 development builds before narrowing
+        end
       end
     rescue Fiddle::DLError
       nil
@@ -121,6 +136,7 @@ module Rufio
       pointer = @api.core_fuzzy_results(@handle, length)
       bytes = length[0, Fiddle::SIZEOF_SIZE_T].unpack1(Fiddle::SIZEOF_SIZE_T == 8 ? 'Q' : 'L')
       data = pointer.to_str(bytes)
+      @scanned = @api.respond_to?(:core_fuzzy_scanned) ? @api.core_fuzzy_scanned(@handle) : nil
       @total_matches, count = data.unpack('Q<L<')
       offset = 12
       Array.new(count) do
@@ -212,15 +228,28 @@ module Rufio
       [best - chars.length + (query.length == chars.length ? 64 : 0), positions]
     end
 
+    def subsequence?(small, large)
+      matched = 0
+      large.each { |char| matched += 1 if matched < small.length && char == small[matched] }
+      matched == small.length
+    end
+
     def query_ruby(text, limit)
       query = text.codepoints.map { |c| fold(c) }
+      narrow = @previous_query && !query.empty? && subsequence?(@previous_query, query)
+      ids = narrow ? @previous_ids + (@previous_count...@candidates.length).to_a : (0...@candidates.length)
+      @scanned = ids.size
+      @previous_query = nil
+      matched_ids = []
       @total_matches = 0
       # Bounded sorted list: the fallback favors simplicity, while Zig uses a heap.
       best = []
-      @candidates.each_with_index do |candidate, id|
+      ids.each do |id|
+        candidate = @candidates[id]
         matched = score(candidate, query)
         next unless matched
 
+        matched_ids << id
         @total_matches += 1
         next if limit.zero?
 
@@ -230,6 +259,11 @@ module Rufio
 
         best.insert(at, { id: id, score: matched[0] })
         best.pop if best.length > limit
+      end
+      unless query.empty?
+        @previous_query = query
+        @previous_ids = matched_ids
+        @previous_count = @candidates.length
       end
       best.each { |item| item[:positions] = score(@candidates[item[:id]], query, trace: true)[1] }
     end

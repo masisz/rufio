@@ -554,10 +554,15 @@ module Rufio
 
         private
 
+        def frozen(value)
+          value.is_a?(String) && !value.frozen? ? value.dup.freeze : value
+        end
+
         def add(entry)
           relative = entry[:relative_path]
-          @pending << { text: relative.dup.force_encoding(Encoding::UTF_8).scrub, path: entry[:path],
-                        bookmark: entry[:bookmark], relative_path: relative }
+          # 凍結しておくと、セッションがコピーせずにそのまま保持できる
+          @pending << { text: relative.dup.force_encoding(Encoding::UTF_8).scrub.freeze, path: frozen(entry[:path]),
+                        bookmark: frozen(entry[:bookmark]), relative_path: frozen(relative) }.freeze
           flush if @pending.length >= BATCH_SIZE
         end
       end

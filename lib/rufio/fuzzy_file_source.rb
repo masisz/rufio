@@ -29,7 +29,8 @@ module Rufio
 
     def entry(path)
       relative = path.delete_prefix(@prefix)
-      { text: relative.dup.force_encoding(Encoding::UTF_8).scrub, path: path }
+      # 凍結しておくと、セッションがコピーせずにそのまま保持できる
+      { text: relative.dup.force_encoding(Encoding::UTF_8).scrub.freeze, path: path.frozen? ? path : path.dup.freeze }.freeze
     end
 
     def scan_native(cancelled, on_error)

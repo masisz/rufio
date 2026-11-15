@@ -189,6 +189,7 @@ module Rufio
     def immutable_entry(value)
       row = value.is_a?(String) ? { text: value } : value
       raise ArgumentError, 'Candidate must contain text' unless row.is_a?(Hash) && row[:text].is_a?(String)
+      return row if reusable?(row)
 
       copied = row.each_with_object({}) do |(key, item), copy|
         unless item.is_a?(String) || item.is_a?(Numeric) || item.is_a?(Symbol) ||
@@ -203,6 +204,20 @@ module Rufio
       end
       copied[:text] = text.freeze
       copied.freeze
+    end
+
+    # A frozen row whose strings are frozen cannot change after it is queued, so the
+    # session keeps it as is instead of copying every candidate (sources freeze rows).
+    def reusable?(row)
+      return false unless row.frozen?
+
+      text = row[:text]
+      return false unless text.frozen? && text.encoding == Encoding::UTF_8 && text.valid_encoding? &&
+                          !text.include?("\0") && text.bytesize <= FuzzySearch::MAX_CANDIDATE_BYTES
+
+      row.each_value.all? do |item|
+        item.is_a?(String) ? item.frozen? : (item.is_a?(Numeric) || item.is_a?(Symbol) || item.nil? || item == true || item == false)
+      end
     end
 
     def enqueue(batch)

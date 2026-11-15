@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `s`, `/` and `F` no longer use fzf, and `rufio -c` no longer checks for it. The keybind actions are renamed to `file_search` / `file_search_alt`; the former `fzf_search` / `fzf_search_alt` names in `KEYBINDS` are still accepted as aliases (the new names win when both are set)
 - G mode file name search uses the same fuzzy matching as `s`: results are ranked, matched characters are highlighted and filtering runs in the background instead of on each keystroke in the UI thread. Content search stays literal. Exclusions, skipped counts and bookmark labels are unchanged
 
+### Performance
+- The fuzzy index narrows from the previous query: when the previous query is a subsequence of the new one (typing more characters), only the previous matches and candidates added since are scored. `Rufio::FuzzySearch#scanned` reports how many candidates the last query scored; the Ruby fallback narrows the same way
+- Native fuzzy scoring runs on all CPU cores for 16,384 or more candidates, with work split into chunks claimed atomically and per-thread top-K merged deterministically (results are identical to a single thread)
+- The native index stores each candidate once as UTF-8 plus a start offset and a character count, and decodes characters only for candidates that pass the subsequence check. For 168,785 paths the memory increase dropped from about 222 MiB to about 48 MiB, and registration from about 390 ms to about 43 ms
+- Sessions keep frozen candidates without copying them, and the file, rga and G mode sources emit frozen rows. Reopening `s` from the cache for 168,785 files takes about 0.22–0.32 s instead of 0.76–1.05 s
+- On the same data, a query takes 1.7–12.9 ms instead of 20.7–47.6 ms, and typing `s` → `sctrl` takes 9–14 ms per key instead of 22–55 ms. The bundled native libraries for all eight platforms are rebuilt
+
 ### Fixed
 - G mode and the fuzzy search screen erase rows left over from the previous frame when the result list gets shorter
 

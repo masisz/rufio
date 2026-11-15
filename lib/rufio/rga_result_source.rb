@@ -67,7 +67,7 @@ module Rufio
       rest = line.byteslice(match.end(0)..)
       text = "#{relative}:#{match[2]}:#{rest}".force_encoding(Encoding::UTF_8).scrub
       path = File.join(@root.b, relative).force_encoding(Encoding.default_external)
-      { text: text, path: path, line_number: match[2].to_i }
+      { text: text.freeze, path: path.freeze, line_number: match[2].to_i }.freeze
     end
 
     # 途中で止めたときは rga を終了させてから回収する
