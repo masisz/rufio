@@ -101,7 +101,7 @@ The most used keys. See the **[User Guide](./docs/guide.md)** for every key and 
 | `?` | Help |
 | `q`, `T` | Quit, quit and cd the shell to the current directory |
 
-In G mode, use `Ctrl+J` / `Ctrl+K` to select the next / previous result and `Enter` to open it.
+In G mode, use `Up` / `Down` or `Ctrl+J` / `Ctrl+K` to select the next / previous result and `Enter` to open it. Application cursor arrows and extended Ctrl-key sequences are supported, including on Ghostty.
 
 ## Documentation
 
