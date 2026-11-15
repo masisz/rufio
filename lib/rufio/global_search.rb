@@ -19,6 +19,8 @@ module Rufio
     MATCH_BG = "\e[43m"
     # ファイル名検索で一覧に保持する上位件数
     FILE_RESULT_LIMIT = 1_000
+    # 一致位置は上位のこの件数だけ照合時に求め、それより下の行は表示するときに求める
+    FILE_POSITION_LIMIT = 100
 
     attr_reader :query, :results, :errors, :selected_index, :search_type, :skipped_files
 
@@ -212,7 +214,8 @@ module Rufio
     # ファイル名は走査と照合を FuzzySearchSession のワーカーに任せ、UI スレッドでは絞り込まない
     def start_file_name_session
       @file_source = FileNameSource.new(self, @roots, self.class.native_search?)
-      @session = FuzzySearchSession.new(source: @file_source, limit: FILE_RESULT_LIMIT).start
+      @session = FuzzySearchSession.new(source: @file_source, limit: FILE_RESULT_LIMIT,
+                                        position_limit: FILE_POSITION_LIMIT).start
       @session.update_query(@query) unless @query.empty?
       # 開いた直後の状態は描画済みなので、変化があったときだけ poll で再描画させる
       @shown = @session.snapshot
@@ -287,6 +290,8 @@ module Rufio
     # あいまい検索の一致位置（UTF-8 の先頭バイトオフセット）を表示桁に変換してハイライトする
     def highlight_positions(screen, y, prefix, entry, width)
       offsets = entry[:positions]
+      # 照合時に位置を求めなかった下位の行は、表示する行だけここで求める（照合と同じ位置になる）
+      offsets = FuzzySearch.positions(entry[:text], @shown.query) if offsets.nil? && @shown
       return if offsets.nil? || offsets.empty?
 
       targets = offsets.each_with_object({}) { |offset, set| set[offset] = true }
@@ -365,13 +370,22 @@ module Rufio
       end
       return if valid_roots.empty?
 
+      # ラベル列を受け取れる相手（FileNameSource::Sink）には、ファイルごとのイベントを作らずに渡す
+      labels = events.respond_to?(:add_labels) && NativeContentSearch.labels_available?
       engine = NativeContentSearch.new(roots: valid_roots.map(&:last), query: nil,
-                                       excluded_extensions: @excluded_extensions)
+                                       excluded_extensions: @excluded_extensions, labels: labels)
       # 大きな取り出しは分けて受け取り、解析の合間に検索ワーカーと UI が動けるようにする
       engine.each_batch(cancelled: cancelled, max_events: FileNameSource::BLOCK_SIZE) do |batch|
         entries = []
         batch.each do |kind, *args|
           case kind
+          when :labels
+            unless entries.empty?
+              events << [:entries, entries]
+              entries = []
+            end
+            name, root = valid_roots[args[0]]
+            events.add_labels(name, root, args[1], args[2])
           when :file, :match
             name, root = valid_roots[args[0]]
             path = args[1]
@@ -565,6 +579,16 @@ module Rufio
           end
           flush if type == :entries
           self
+        end
+
+        # Zig のラベル列（ルートからの相対パス NUL の連結）をそのままブロックにして渡す
+        def add_labels(bookmark, root, packed, count)
+          raise Cancelled if @cancelled.call
+
+          flush
+          prefix = (root.end_with?(File::SEPARATOR) ? root : root + File::SEPARATOR).b.freeze
+          rows = Rows.new(prefix, frozen(bookmark), Encoding.find('filesystem'), nil)
+          @emit.call(FuzzyCandidateBlock.new(packed.freeze, count, rows: rows, checked: true))
         end
 
         def flush

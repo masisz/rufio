@@ -26,6 +26,8 @@ const READ_BUFFER = 256 * 1024;
 /// サイズ不明時の初回読み込み量（多くのソースファイルが 1 回で収まる）
 const FIRST_READ = 16 * 1024;
 const LOCAL_FLUSH = 64 * 1024;
+/// ラベルの最大長（検索インデックスが受け付ける候補の長さ）
+const MAX_LABEL = 65536;
 /// Ruby 側が取り出していない出力がこれを超えたらワーカーは待機する
 const MAX_PENDING = 8 * 1024 * 1024;
 
@@ -39,6 +41,9 @@ pub const Kind = enum(u8) {
     match = 1,
     document = 2,
     err = 3,
+    /// ファイル一覧のラベルモード: 同じルートのファイルの相対パスを NUL 終端で連結したもの。
+    /// line に件数、path にラベル列を入れる（Ruby がファイルごとにレコードを解析せずに済む）
+    labels = 4,
 };
 
 pub const State = enum(u8) {
@@ -283,6 +288,8 @@ const Job = struct {
 pub const Search = struct {
     matcher: Matcher,
     files_only: bool = false,
+    /// files_only で、ファイルを相対パスのラベル列（Kind.labels）として出す
+    labels: bool = false,
     roots: StringList,
     excluded: StringList,
     documents: StringList,
@@ -314,21 +321,29 @@ pub const Search = struct {
 
     pub fn create(roots: []const u8, query: []const u8, excluded: []const u8, documents: []const u8, threads: usize, cache: ?*Cache) !*Search {
         if (query.len == 0 or query.len > MAX_NEEDLE or roots.len == 0) return error.InvalidArgument;
-        return createInternal(roots, query, excluded, documents, threads, cache, false);
+        return createInternal(roots, query, excluded, documents, threads, cache, false, false);
     }
 
     /// ファイル一覧列挙モード（fd 互換・ファイル内容は開かずに高速走査）
     pub fn createFiles(roots: []const u8, excluded: []const u8, threads: usize) !*Search {
         if (roots.len == 0) return error.InvalidArgument;
-        return createInternal(roots, "", excluded, "", threads, null, true);
+        return createInternal(roots, "", excluded, "", threads, null, true, false);
     }
 
-    fn createInternal(roots: []const u8, query: []const u8, excluded: []const u8, documents: []const u8, threads: usize, cache: ?*Cache, files_only: bool) !*Search {
+    /// ファイル一覧をルートからの相対パスのラベル列（Kind.labels）で出す。
+    /// UTF-8 として正しくない・長すぎるパスだけ従来どおり 1 件ずつ Kind.match で出す
+    pub fn createFileLabels(roots: []const u8, excluded: []const u8, threads: usize) !*Search {
+        if (roots.len == 0) return error.InvalidArgument;
+        return createInternal(roots, "", excluded, "", threads, null, true, true);
+    }
+
+    fn createInternal(roots: []const u8, query: []const u8, excluded: []const u8, documents: []const u8, threads: usize, cache: ?*Cache, files_only: bool, labels: bool) !*Search {
         const self = try std.heap.c_allocator.create(Search);
         errdefer std.heap.c_allocator.destroy(self);
         self.* = .{
             .matcher = Matcher.init(query),
             .files_only = files_only,
+            .labels = labels,
             .roots = try StringList.init(roots),
             .excluded = try StringList.init(excluded),
             .documents = try StringList.init(documents),
@@ -493,10 +508,10 @@ fn workerMain(s: *Search) void {
             w.subdirs = null;
             w.subdirs_tail = null;
             w.subdir_count = 0;
-            if (w.out.len >= LOCAL_FLUSH) s.publish(&w.out);
+            if (w.out.len >= LOCAL_FLUSH) w.flush();
         }
     } else |_| {}
-    s.publish(&w.out);
+    w.flush();
     s.workerExit();
 }
 
@@ -509,6 +524,11 @@ const Worker = struct {
     subdirs_tail: ?*Job = null,
     subdir_count: usize = 0,
     key: Buf = .{},
+    /// 書きかけのラベル列（Kind.labels）。out 内のヘッダ位置・ルート・件数
+    segment_start: usize = 0,
+    segment_root: u32 = 0,
+    segment_count: u64 = 0,
+    segment_open: bool = false,
 
     fn init(self: *Worker) !void {
         if (!self.s.files_only) {
@@ -533,7 +553,56 @@ const Worker = struct {
         return self.s.cancelled.load(.monotonic);
     }
 
+    /// 書きかけのラベル列を閉じてから出力を公開する
+    fn flush(self: *Worker) void {
+        self.closeSegment();
+        self.s.publish(&self.out);
+    }
+
+    fn closeSegment(self: *Worker) void {
+        if (!self.segment_open) return;
+        self.segment_open = false;
+        const header = self.out.ptr[self.segment_start..][0..RECORD_HEADER];
+        std.mem.writeInt(u64, header[5..13], self.segment_count, .little);
+        std.mem.writeInt(u32, header[17..21], @intCast(self.out.len - self.segment_start - RECORD_HEADER), .little);
+    }
+
+    /// ルートからの相対パス（ラベル）を書きかけのラベル列に足す
+    fn addLabel(self: *Worker, job: *Job, name: []const u8) void {
+        const root = self.s.roots.items[job.root];
+        const dir_path = job.path();
+        var relative: []const u8 = if (dir_path.len >= root.len) dir_path[root.len..] else "";
+        while (relative.len > 0 and relative[0] == '/') relative = relative[1..];
+        const label_len = relative.len + @as(usize, if (relative.len > 0) 1 else 0) + name.len;
+        // 検索インデックスが受け付けない名前は従来のレコードで出し、Ruby 側で scrub する
+        if (label_len > MAX_LABEL or !std.unicode.utf8ValidateSlice(relative) or !std.unicode.utf8ValidateSlice(name)) {
+            self.record(.match, job.root, 1, 0, dir_path, name, "");
+            return;
+        }
+        if (!self.segment_open or self.segment_root != job.root) {
+            self.closeSegment();
+            self.out.reserve(self.out.len + RECORD_HEADER + label_len + 1) catch return;
+            self.segment_start = self.out.len;
+            var hdr: [RECORD_HEADER]u8 = @splat(0);
+            hdr[0] = @intFromEnum(Kind.labels);
+            std.mem.writeInt(u32, hdr[1..5], job.root, .little);
+            self.out.append(&hdr) catch unreachable;
+            self.segment_root = job.root;
+            self.segment_count = 0;
+            self.segment_open = true;
+        }
+        self.out.reserve(self.out.len + label_len + 1) catch return;
+        if (relative.len > 0) {
+            self.out.append(relative) catch unreachable;
+            self.out.append("/") catch unreachable;
+        }
+        self.out.append(name) catch unreachable;
+        self.out.append("\x00") catch unreachable;
+        self.segment_count += 1;
+    }
+
     fn record(self: *Worker, kind: Kind, root: u32, line: u64, offset: u32, dir: []const u8, name: []const u8, extra: []const u8) void {
+        self.closeSegment();
         const clean_dir = if (name.len > 0 and std.mem.eql(u8, dir, "."))
             ""
         else if (name.len > 0 and std.mem.startsWith(u8, dir, "./"))
@@ -634,8 +703,12 @@ const Worker = struct {
 
         // ファイル一覧モード（fd 互換）: ファイルを開かずにパスのみ記録
         if (self.s.files_only) {
-            self.record(.match, job.root, 1, 0, job.path(), name, "");
-            if (self.out.len >= LOCAL_FLUSH) self.s.publish(&self.out);
+            if (self.s.labels) {
+                self.addLabel(job, name);
+            } else {
+                self.record(.match, job.root, 1, 0, job.path(), name, "");
+            }
+            if (self.out.len >= LOCAL_FLUSH) self.flush();
             return;
         }
         const ext = extname(name);
@@ -672,11 +745,10 @@ const Worker = struct {
             return;
         };
         defer file.close();
-        if (cache) |cc| {
-            self.searchWholeFile(file, job, name, meta.?, cc, key);
-        } else {
-            self.searchFile(file, job, name, size, 0);
-        }
+        // キャッシュにない内容は通常どおり検索し、キャッシュへの格納は検索の完了後に別スレッドで行う
+        // （初回の検索がキャッシュ用の読み込みと複製を待たない）
+        if (cache) |cc| cc.enqueue(key, meta.?);
+        self.searchFile(file, job, name, size, 0);
     }
 
     fn cacheKey(self: *Worker, dir: []const u8, name: []const u8) ?[]const u8 {
@@ -689,7 +761,7 @@ const Worker = struct {
 
     /// dst を埋めるまで読む。通常ファイルの短い read は EOF なのでそこで止める（EOF 確認の read を省く）。
     /// エラー時は null
-    fn readUpTo(file: os.File, dst: []u8) ?usize {
+    pub fn readUpTo(file: os.File, dst: []u8) ?usize {
         var got: usize = 0;
         while (got < dst.len) {
             const want = dst.len - got;
@@ -699,32 +771,6 @@ const Worker = struct {
             if (n < want) break;
         }
         return got;
-    }
-
-    /// キャッシュ対象のファイルを丸ごと読み、判定結果と内容をキャッシュしてから検索する
-    fn searchWholeFile(self: *Worker, file: os.File, job: *Job, name: []const u8, meta: FileMeta, cache: *Cache, key: []const u8) void {
-        const size: usize = @intCast(meta.size);
-        // 1 バイト余分に要求してファイルの伸長を検知する
-        self.read.reserve(size + 1) catch return;
-        const buf = self.read.ptr[0 .. size + 1];
-        const first = if (size < FIRST_READ) size + 1 else BINARY_SAMPLE;
-        var got = readUpTo(file, buf[0..first]) orelse return self.recordErrno(job.root, job.path(), name);
-        if (std.mem.indexOfScalar(u8, buf[0..@min(got, BINARY_SAMPLE)], 0) != null) {
-            cache.store(key, meta, null);
-            _ = self.s.skipped.fetchAdd(1, .monotonic);
-            return;
-        }
-        if (got == first and first < buf.len) {
-            got += readUpTo(file, buf[got..]) orelse return self.recordErrno(job.root, job.path(), name);
-        }
-        if (got > size) {
-            // 走査後にファイルが伸びた: キャッシュせず残りをストリーミングで処理
-            self.searchFile(file, job, name, null, got);
-            return;
-        }
-        cache.store(key, meta, buf[0..got]);
-        var line_no: u64 = 1;
-        self.searchLines(buf[0..got], job, name, &line_no);
     }
 
     /// 完全な行の並び（末尾は改行または EOF）を検索してマッチを記録する
@@ -819,6 +865,12 @@ const MAX_CACHED_FILE = 16 * 1024 * 1024;
 pub const Cache = struct {
     const SHARDS = 64;
 
+    /// 検索中にキャッシュになかったファイル。検索の完了後に格納スレッドが読んで格納する
+    const Pending = struct {
+        path: [:0]u8,
+        meta: FileMeta,
+    };
+
     const Entry = struct {
         meta: FileMeta,
         /// null はバイナリ判定済み
@@ -843,6 +895,14 @@ pub const Cache = struct {
     gen: u32 = 0,
     busy: std.atomic.Value(bool) = .init(false),
 
+    pending_mutex: os.Mutex = .{},
+    pending: std.ArrayList(Pending) = .empty,
+    /// 格納スレッドが予算の上限に達した。エントリが減るまで格納待ちに加えない
+    /// （入らないファイルのために毎回格納スレッドが動き、次の検索がキャッシュを使えなくなるのを防ぐ）
+    full: std.atomic.Value(bool) = .init(false),
+    filler: ?std.Thread = null,
+    fill_cancel: std.atomic.Value(bool) = .init(false),
+
     pub fn create(max_bytes: u64) !*Cache {
         const self = try std.heap.c_allocator.create(Cache);
         self.* = .{ .max_bytes = max_bytes };
@@ -850,6 +910,9 @@ pub const Cache = struct {
     }
 
     pub fn destroy(self: *Cache) void {
+        self.fill_cancel.store(true, .release);
+        self.joinFiller();
+        self.clearPending();
         for (&self.shards) |*shard| {
             var it = shard.map.iterator();
             while (it.next()) |kv| freeEntry(kv.key_ptr.*, kv.value_ptr.*);
@@ -862,11 +925,108 @@ pub const Cache = struct {
         return self.bytes.load(.acquire);
     }
 
-    /// 1 つのキャッシュを同時に使える検索は 1 つだけ
+    /// 1 つのキャッシュを同時に使える検索は 1 つだけ（格納スレッドの実行中も使えない）
     pub fn begin(self: *Cache) bool {
         if (self.busy.cmpxchgStrong(false, true, .acq_rel, .acquire) != null) return false;
+        self.joinFiller(); // 終わっている格納スレッドを回収する
         self.gen +%= 1;
         return true;
+    }
+
+    /// 格納スレッドの終了を待つ（テストと終了処理用）
+    pub fn wait(self: *Cache) void {
+        while (self.filler != null and self.busy.load(.acquire)) std.Thread.yield() catch {};
+        if (!self.busy.load(.acquire)) self.joinFiller();
+    }
+
+    fn joinFiller(self: *Cache) void {
+        if (self.filler) |thread| {
+            thread.join();
+            self.filler = null;
+        }
+    }
+
+    fn clearPending(self: *Cache) void {
+        for (self.pending.items) |item| std.heap.c_allocator.free(item.path);
+        self.pending.clearAndFree(std.heap.c_allocator);
+    }
+
+    /// 検索中に見つかったキャッシュにないファイルを格納待ちに加える。予算は格納するときに判定する
+    /// （バイナリは内容を持たないので、ここで大きさを数えると予算を無駄にする）
+    pub fn enqueue(self: *Cache, key: []const u8, meta: FileMeta) void {
+        if (self.full.load(.monotonic) or meta.size > self.max_bytes) return;
+        self.pending_mutex.lock();
+        defer self.pending_mutex.unlock();
+        const path = std.heap.c_allocator.dupeSentinel(u8, key, 0) catch return;
+        self.pending.append(std.heap.c_allocator, .{ .path = path, .meta = meta }) catch {
+            std.heap.c_allocator.free(path);
+        };
+    }
+
+    fn fillMain(self: *Cache) void {
+        var scratch: os.Scratch = .{};
+        const ready = if (scratch.init()) true else |_| false;
+        defer if (ready) scratch.deinit();
+        if (ready) {
+            for (self.pending.items) |item| {
+                if (self.fill_cancel.load(.acquire)) break;
+                self.fillOne(item, &scratch);
+            }
+        }
+        self.clearPending();
+        self.busy.store(false, .release);
+    }
+
+    /// 1 ファイルを丸ごと読んで格納する。走査時から大きさが変わっていれば格納しない
+    /// （内容が変わっても属性が変わっていれば、次の検索の lookup が属性の違いで捨てる）
+    fn fillOne(self: *Cache, item: Pending, scratch: *os.Scratch) void {
+        const size: usize = @intCast(item.meta.size);
+        const file = os.openRead(item.path, scratch) orelse return;
+        defer file.close();
+        // 先頭だけ読んでバイナリなら内容を持たずに判定だけ格納する（大きなバイナリを丸ごと読まない）
+        var sample: [BINARY_SAMPLE]u8 = undefined;
+        const head = @min(size + 1, BINARY_SAMPLE);
+        const sampled = Worker.readUpTo(file, sample[0..head]) orelse return;
+        if (std.mem.indexOfScalar(u8, sample[0..sampled], 0) != null) {
+            self.insert(item.path, item.meta, null, 0);
+            return;
+        }
+        if (sampled > size or (sampled < head and sampled != size)) return; // 大きさが変わった
+        if (!self.reserve(size)) {
+            self.full.store(true, .monotonic);
+            return;
+        }
+        // 1 バイト余分に要求してファイルの伸長を検知する
+        const memory: [*]u8 = @ptrCast(c.malloc(size + 1) orelse {
+            self.unreserve(size);
+            return;
+        });
+        @memcpy(memory[0..sampled], sample[0..sampled]);
+        const rest = if (sampled < head) 0 else Worker.readUpTo(file, memory[sampled .. size + 1]) orelse {
+            c.free(memory);
+            self.unreserve(size);
+            return;
+        };
+        if (sampled + rest != size) {
+            c.free(memory);
+            self.unreserve(size);
+            return;
+        }
+        self.insert(item.path, item.meta, memory, size);
+    }
+
+    /// 内容 len バイト分の予算を確保する。上限を超えるなら確保せず false
+    fn reserve(self: *Cache, len: usize) bool {
+        const prev = self.bytes.fetchAdd(len, .monotonic);
+        if (prev + len > self.max_bytes) {
+            _ = self.bytes.fetchSub(len, .monotonic);
+            return false;
+        }
+        return true;
+    }
+
+    fn unreserve(self: *Cache, len: usize) void {
+        if (len > 0) _ = self.bytes.fetchSub(len, .monotonic);
     }
 
     /// 完走した検索のあとは、今回見つからなかった（削除・範囲外の）エントリを捨てる
@@ -887,6 +1047,14 @@ pub const Cache = struct {
                 }
             }
         }
+        // 完走した検索で見つかった未格納のファイルを、別スレッドで読んで格納する（その間 busy のまま）
+        if (completed and self.pending.items.len > 0 and !self.fill_cancel.load(.acquire)) {
+            if (std.Thread.spawn(.{ .stack_size = 512 * 1024 }, fillMain, .{self})) |thread| {
+                self.filler = thread;
+                return;
+            } else |_| {}
+        }
+        self.clearPending();
         self.busy.store(false, .release);
     }
 
@@ -900,7 +1068,10 @@ pub const Cache = struct {
     }
 
     fn release(self: *Cache, entry: Entry) void {
-        if (entry.data != null) _ = self.bytes.fetchSub(entry.len, .monotonic);
+        if (entry.data != null) {
+            _ = self.bytes.fetchSub(entry.len, .monotonic);
+            self.full.store(false, .monotonic);
+        }
     }
 
     pub fn lookup(self: *Cache, key: []const u8, meta: FileMeta) ?Hit {
@@ -938,6 +1109,11 @@ pub const Cache = struct {
             data = p;
             len = bytes.len;
         }
+        self.insert(key, meta, data, len);
+    }
+
+    /// data の予算は確保済み。失敗したら data を解放して予算を返す
+    fn insert(self: *Cache, key: []const u8, meta: FileMeta, data: ?[*]u8, len: usize) void {
         const owned_key = std.heap.c_allocator.dupe(u8, key) catch {
             if (data) |p| {
                 c.free(p);

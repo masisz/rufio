@@ -63,6 +63,8 @@ fn decode(bytes: []const u8, chars: []u21, bonuses: []u8, offsets: ?[]u32) void 
         pos += len;
     }
     for (bonuses[basename..i]) |*bonus| bonus.* += 8;
+    // The first character of the file name ranks file-name prefixes above matches inside words.
+    if (basename < i) bonuses[basename] += 8;
 }
 
 /// One pass over the raw bytes: non-matches never pay for decoding or the DP.
@@ -191,8 +193,9 @@ pub const Engine = struct {
     scanned: usize = 0,
     /// Worker threads; 0 picks the CPU count (at most MAX_THREADS).
     threads: usize = 0,
-    /// Scans below this many candidates stay on the calling thread.
-    min_parallel: usize = 16384,
+    /// Scans below this many candidates stay on the calling thread. 2048 was the fastest of
+    /// 1024-16384 on 50k-168k paths (4 cores): narrowed steps no longer fall back to one thread.
+    min_parallel: usize = 2048,
     previous_query: std.ArrayList(u21) = .empty,
     previous_ids: std.ArrayList(u32) = .empty,
     previous_count: usize = 0,
@@ -263,6 +266,12 @@ pub const Engine = struct {
 
     /// Serialized by the Ruby session; no concurrent mutation on a handle.
     pub fn query(self: *Engine, text: []const u8, limit: usize) !void {
+        return self.queryPositions(text, limit, limit);
+    }
+
+    /// Like query, but recovers match positions only for the best `position_limit` results;
+    /// the others report zero positions (callers compute them on demand when shown).
+    pub fn queryPositions(self: *Engine, text: []const u8, limit: usize, position_limit: usize) !void {
         if (text.len > MAX_QUERY_BYTES or limit > MAX_RESULTS or
             std.mem.indexOfScalar(u8, text, 0) != null or !std.unicode.utf8ValidateSlice(text)) return error.InvalidInput;
         var query_chars: [MAX_QUERY_BYTES]u21 = undefined;
@@ -361,7 +370,7 @@ pub const Engine = struct {
         }.less);
         self.matches.shrinkRetainingCapacity(@min(limit, self.matches.items.len));
 
-        try self.writeResults(needle, &workers[0]);
+        try self.writeResults(needle, &workers[0], position_limit);
 
         if (length > 0) {
             self.previous_query.clearRetainingCapacity();
@@ -372,17 +381,18 @@ pub const Engine = struct {
         }
     }
 
-    fn writeResults(self: *Engine, needle: []const u21, worker: *Worker) !void {
+    fn writeResults(self: *Engine, needle: []const u21, worker: *Worker, position_limit: usize) !void {
         try self.write(u64, self.total);
         try self.write(u32, @intCast(self.matches.items.len));
         if (self.matches.items.len == 0) return;
         const offsets = try self.allocator.alloc(u32, self.max_chars);
         defer self.allocator.free(offsets);
-        for (self.matches.items) |item| {
+        for (self.matches.items, 0..) |item, rank| {
+            const with_positions = rank < position_limit;
             try self.write(u64, @intCast(item.id));
             try self.write(i64, item.score);
-            try self.write(u32, @intCast(needle.len));
-            if (needle.len == 0) continue;
+            try self.write(u32, if (with_positions) @intCast(needle.len) else 0);
+            if (needle.len == 0 or !with_positions) continue;
             const n = self.char_counts.items[item.id];
             const chars = worker.chars[0..n];
             decode(self.bytesOf(item.id), chars, worker.bonuses[0..n], offsets[0..n]);
@@ -431,7 +441,9 @@ fn score(chars: []const u21, bonuses: []const u8, needle: []const u21, rows: []i
             }
             if (c != char) continue;
             if (row == 0) {
-                current[i] = @as(i64, bonuses[i]) - @as(i64, @intCast(i));
+                // No penalty for the distance from the start: long directory prefixes must not
+                // outweigh a match in the file name (the length penalty still prefers short paths).
+                current[i] = @as(i64, bonuses[i]);
             } else {
                 var value: i64 = if (prefix_score == NEGATIVE) NEGATIVE else prefix_score - @as(i64, @intCast(i)) + 1;
                 var source = prefix_index;
@@ -474,6 +486,14 @@ pub export fn core_fuzzy_query(handle: u64, data: [*]const u8, length: usize, li
     if (handle == 0) return -1;
     const engine: *Engine = @ptrFromInt(handle);
     engine.query(data[0..length], limit) catch |err| return if (err == error.InvalidInput) -1 else -2;
+    return 0;
+}
+
+/// core_fuzzy_query that recovers positions only for the best `position_limit` results.
+pub export fn core_fuzzy_query_positions(handle: u64, data: [*]const u8, length: usize, limit: u32, position_limit: u32) i32 {
+    if (handle == 0) return -1;
+    const engine: *Engine = @ptrFromInt(handle);
+    engine.queryPositions(data[0..length], limit, position_limit) catch |err| return if (err == error.InvalidInput) -1 else -2;
     return 0;
 }
 

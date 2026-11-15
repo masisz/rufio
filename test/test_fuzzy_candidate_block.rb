@@ -315,3 +315,134 @@ class TestFuzzyBlockSources < Minitest::Test
     end
   end
 end
+
+# Zig がファイル一覧を「相対パス NUL」の連結（ラベル列）で返すモード
+class TestNativeFileLabels < Minitest::Test
+  def setup
+    skip 'native file labels are not available' unless Rufio::NativeContentSearch.labels_available?
+    @dir = File.realpath(Dir.mktmpdir('rufio_labels'))
+    FileUtils.mkdir_p(File.join(@dir, '日本', 'deep', 'er'))
+    File.write(File.join(@dir, 'a.rb'), '')
+    File.write(File.join(@dir, '.hidden'), '')
+    File.write(File.join(@dir, '日本', '検索.rb'), '')
+    File.write(File.join(@dir, '日本', 'deep', 'er', 'z.txt'), '')
+    File.symlink(File.join(@dir, 'a.rb'), File.join(@dir, 'link.rb'))
+    File.symlink(File.join(@dir, '日本'), File.join(@dir, 'dirlink'))
+  end
+
+  def teardown
+    FileUtils.rm_rf(@dir) if @dir
+  end
+
+  def events(**options)
+    scanner = Rufio::NativeContentSearch.new(roots: [@dir], **options)
+    scanner.each_batch.to_a.flatten(1)
+  ensure
+    scanner&.close
+  end
+
+  def test_labels_list_the_same_files_as_the_file_listing
+    files = events.select { |event| event[0] == :file }.map { |event| event[2] }
+    labels = events(labels: true).select { |event| event[0] == :labels }
+
+    assert labels.all? { |event| event[2].encoding == Encoding::BINARY && event[2].end_with?("\0") }
+    names = labels.flat_map { |event| event[2].split("\0").map { |name| name.force_encoding(Encoding::UTF_8) } }
+    assert_equal labels.sum { |event| event[3] }, names.length
+    assert_equal files.sort, names.map { |name| File.join(@dir, name) }.sort
+    assert_equal ['.hidden', 'a.rb', 'link.rb', '日本/deep/er/z.txt', '日本/検索.rb'], names.sort
+  end
+
+  def test_names_that_are_not_utf8_are_returned_one_by_one
+    raw = File.join(@dir, "bad\xFF.txt".b)
+    begin
+      File.write(raw, '')
+    rescue SystemCallError, ArgumentError
+      skip 'file system rejects non UTF-8 names'
+    end
+    all = events(labels: true)
+    names = all.select { |event| event[0] == :labels }.flat_map { |event| event[2].split("\0") }
+    refute_includes names, "bad\xFF.txt".b
+    assert_equal [raw.b], all.select { |event| event[0] == :file }.map { |event| event[2].b }
+
+    rows = []
+    Rufio::FuzzyFileSource.new(@dir).each_batch(cancelled: -> { false }, on_error: ->(m) { flunk m }) { |batch| rows.concat(batch) }
+    bad = rows.find { |row| row[:path].b == raw.b }
+    assert_equal 'bad�.txt', bad[:text]
+  end
+
+  def test_file_source_and_g_use_label_blocks
+    rows = []
+    blocks = []
+    Rufio::FuzzyFileSource.new(@dir).each_batch(cancelled: -> { false }, on_error: ->(m) { flunk m }) do |batch|
+      blocks << batch
+      rows.concat(batch)
+    end
+    assert blocks.all? { |batch| batch.is_a?(Rufio::FuzzyCandidateBlock) }
+    assert_equal File.join(@dir, '日本', '検索.rb'), rows.find { |row| row[:text] == '日本/検索.rb' }[:path]
+    assert rows.all? { |row| File.file?(row[:path]) }
+
+    search = Rufio::GlobalSearch.allocate
+    search.instance_variable_set(:@excluded_extensions, ['.txt'])
+    source = Rufio::GlobalSearch::FileNameSource.new(search, [['B', @dir]], true)
+    g_rows = []
+    source.each_batch(cancelled: -> { false }, on_error: ->(m) { flunk m }) { |batch| g_rows.concat(batch) }
+    assert_equal ['.hidden', 'a.rb', 'link.rb', '日本/検索.rb'], g_rows.map { |row| row[:relative_path] }.sort
+    assert g_rows.all? { |row| row[:bookmark] == 'B' && row[:path] == File.join(@dir, row[:relative_path]) }
+    assert_equal 1, source.skipped
+  end
+
+  def test_labels_require_a_file_listing
+    assert_raises(ArgumentError) { Rufio::NativeContentSearch.new(roots: [@dir], query: 'x', labels: true) }
+  end
+end
+
+# 一致位置を上位の指定件数だけ求める照合（G の上位 1,000 件のうち表示される行だけ位置が要る）
+class TestFuzzyPositionLimit < Minitest::Test
+  NAMES = ['src/search_controller.rb', 'lib/sc.rb', 'docs/s_c_notes.md', 'test/scope_check.rb', '日本/s検c.rb'].freeze
+
+  def test_limited_positions_keep_order_and_scores_and_fill_the_rest_with_nil
+    [false, true].each do |native|
+      index = Rufio::FuzzySearch.new(native: native)
+      next index.close if native && !index.native?
+
+      index.add(NAMES)
+      full = index.query('sc', limit: 10)
+      limited = index.query('sc', limit: 10, positions: 2)
+      assert_equal full.map { |r| [r[:id], r[:score]] }, limited.map { |r| [r[:id], r[:score]] }, "native=#{native}"
+      assert_equal full.first(2), limited.first(2)
+      assert limited.drop(2).all? { |r| r[:positions].nil? }
+      # 表示するときに求めた位置は照合時の位置と同じ
+      full.each { |r| assert_equal r[:positions], Rufio::FuzzySearch.positions(NAMES[r[:id]], 'sc') }
+      assert_equal [], index.query('', limit: 3, positions: 0).map { |r| r[:positions] }.uniq.flatten
+      assert_raises(ArgumentError) { index.query('sc', positions: -1) }
+    ensure
+      index&.close
+    end
+  end
+
+  def test_positions_helper
+    assert_nil Rufio::FuzzySearch.positions('abc', 'xyz')
+    assert_equal [], Rufio::FuzzySearch.positions('abc', '')
+    assert_equal [0, 3], Rufio::FuzzySearch.positions('日本', '日本')
+  end
+
+  def test_session_passes_the_position_limit
+    source = Object.new
+    source.define_singleton_method(:each_batch) { |cancelled:, on_error:, &block| block.call(NAMES) }
+    search = Rufio::FuzzySearchSession.new(source: source, native: false, limit: 10, position_limit: 1).start
+    search.update_query('sc')
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
+    loop do
+      search.poll
+      break unless search.scanning? || search.searching?
+      flunk 'session did not finish' if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      sleep 0.005
+    end
+    positions = search.results.map { |r| r[:positions] }
+    refute_nil positions.first
+    assert positions.drop(1).all?(&:nil?)
+    assert_raises(ArgumentError) { Rufio::FuzzySearchSession.new(source: source, position_limit: -1) }
+  ensure
+    search&.close
+  end
+end

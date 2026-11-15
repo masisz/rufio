@@ -153,3 +153,42 @@ class TestNativeFuzzySearch < Minitest::Test
     assert_raises(IOError) { @native.query('日') }
   end
 end
+
+# 先頭からの距離では減点せず、ファイル名の先頭の文字に加点する（長いディレクトリより、ファイル名での一致を優先）
+class TestFuzzyFileNameRanking < Minitest::Test
+  CASES = {
+    'rakefile' => [['usr/share/nano/makefile.nanorc', 'opt/rbenv/versions/3.3.6/lib/ruby/gems/3.3.0/gems/rbs-2.8.2/Rakefile'],
+                   'opt/rbenv/versions/3.3.6/lib/ruby/gems/3.3.0/gems/rbs-2.8.2/Rakefile'],
+    'unicode' => [['usr/share/terminfo/r/rxvt-unicode', 'usr/include/python3.11/unicodeobject.h'],
+                  'usr/include/python3.11/unicodeobject.h'],
+    'gemspec' => [['lib/ruby/3.3.0/rubygems/gemspec_helpers.rb', 'lib/ruby/3.2.0/bundler/source/gemspec.rb'],
+                  'lib/ruby/3.2.0/bundler/source/gemspec.rb']
+  }.freeze
+
+  def test_file_name_prefixes_rank_first_in_both_engines
+    engines = [Rufio::FuzzySearch.new(native: false)]
+    native = Rufio::FuzzySearch.new
+    engines << native if native.native?
+    engines.each do |index|
+      CASES.each do |query, (names, expected)|
+        index = index.class.new(native: index.native?)
+        index.add(names)
+        assert_equal expected, names[index.query(query, limit: 1).first[:id]], "native=#{index.native?} query=#{query}"
+        index.close
+      end
+    end
+  ensure
+    native&.close
+  end
+
+  def test_first_file_name_character_bonus
+    index = Rufio::FuzzySearch.new(native: false)
+    index.add(['a/b', 'ab'])
+    # どちらも先頭の境界で一致する。a/b の b はファイル名の先頭（+8）だが、a は連続一致の 24 を失う
+    scores = index.query('ab', limit: 2).to_h { |r| [r[:id], r[:score]] }
+    assert_equal 16 + 8 + 8 + 8 + 16 + 8 + 24 - 2 + 64, scores[1] # ab: a は境界とファイル名の先頭、b は連続
+    assert_operator scores[1], :>, scores[0]
+  ensure
+    index&.close
+  end
+end
