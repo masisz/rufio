@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 2 adds `Rufio::FuzzySearchSession`: background file listing and index ownership, bounded producer queues, latest-query coalescing, generation-checked immutable results, and nonblocking close with worker-owned cleanup. Candidate-only refreshes are grouped at 50ms intervals; query changes and scan completion bypass the interval
 - `Rufio::FuzzyFileSource` lists hidden files and regular-file symlinks using the existing Zig listing API or a Ruby fallback, skips directory symlinks, and keeps original paths separate from scrubbed UTF-8 labels. A cooperative cancellation callback on `NativeContentSearch#each_batch` stops idle polling as well. Session lifecycle tests and a streaming benchmark cover the new APIs; terminal keys and fzf integration remain unchanged
 
+## [1.5.1] - 2026-11-15
+
+### Fixed
+- G mode recognizes application cursor arrows (SS3), modified CSI arrows, and extended Ctrl+J/K (CSI u) input used by terminals such as Ghostty. Unknown sequences and key releases no longer close G mode, and Unix input briefly waits for escape-sequence continuation bytes
+
 ## [1.5.0] - 2026-11-14
 
 ### Added

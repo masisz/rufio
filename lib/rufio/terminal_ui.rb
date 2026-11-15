@@ -206,6 +206,9 @@ module Rufio
         b = windows_queue_pop_with_timeout(timeout)
         b.nil? ? nil : b.chr(Encoding::BINARY)
       else
+        # ESC と後続バイトが別々に届く端末でも、矢印を ESC と誤認しない。
+        return nil unless IO.select([STDIN], nil, nil, 0.025)
+
         STDIN.read_nonblock(1) rescue nil
       end
     end
@@ -479,24 +482,33 @@ module Rufio
             end
             return true
           end
-          input = case third_char
-          when 'A' then global_search_active? && !help_dialog_active? ? :up : 'k'  # Up arrow
-          when 'B' then global_search_active? && !help_dialog_active? ? :down : 'j'  # Down arrow
-          when 'C' then global_search_active? && !help_dialog_active? ? :right : 'l'  # Right arrow
-          when 'D' then global_search_active? && !help_dialog_active? ? :left : 'h'  # Left arrow
-          when 'Z'
-            if help_dialog_active?
-              handle_help_input("\e[Z")
-            elsif !global_search_active?
-              handle_shift_tab
-            end
-            return true  # Shift+Tab
+          if global_search_active? && !help_dialog_active?
+            input = read_global_search_csi(third_char)
+            return true unless input
           else
-            # 未知の CSI シーケンス（\e[27;1u 等）: 残りバイトを読み捨てて
-            # パイプを汚染しないようにする
-            drain_csi_sequence(third_char)
-            "\e"
+            input = case third_char
+            when 'A' then global_search_active? && !help_dialog_active? ? :up : 'k'  # Up arrow
+            when 'B' then global_search_active? && !help_dialog_active? ? :down : 'j'  # Down arrow
+            when 'C' then global_search_active? && !help_dialog_active? ? :right : 'l'  # Right arrow
+            when 'D' then global_search_active? && !help_dialog_active? ? :left : 'h'  # Left arrow
+            when 'Z'
+              if help_dialog_active?
+                handle_help_input("\e[Z")
+              elsif !global_search_active?
+                handle_shift_tab
+              end
+              return true  # Shift+Tab
+            else
+              # 未知の CSI シーケンス（\e[27;1u 等）: 残りバイトを読み捨てて
+              # パイプを汚染しないようにする
+              drain_csi_sequence(third_char)
+              "\e"
+            end
           end
+        elsif next_char == 'O' && global_search_active? && !help_dialog_active?
+          # Application cursor mode (SS3), used by terminals such as Ghostty.
+          input = { 'A' => :up, 'B' => :down, 'C' => :right, 'D' => :left }[read_next_input_byte]
+          return true unless input
         else
           input = "\e"  # ESCキー（そのまま保持）
         end
@@ -1054,6 +1066,29 @@ module Rufio
     def handle_help_input(input)
       @help_menu.handle_key(input)
       true
+    end
+
+    # G mode accepts legacy CSI arrows and extended keyboard events. Unknown
+    # sequences and key releases are consumed without acting like Escape.
+    def read_global_search_csi(first_char)
+      sequence = +first_char.to_s
+      64.times do
+        break if sequence.match?(/[@-~]\z/)
+
+        char = read_next_input_byte
+        return nil unless char
+
+        sequence << char
+      end
+      if (match = sequence.match(/\A(?:1(?:;\d+(?::([123]))?)?)?([ABCD])\z/))
+        return nil if match[1] == '3'
+
+        return { 'A' => :up, 'B' => :down, 'C' => :right, 'D' => :left }[match[2]]
+      end
+      match = sequence.match(/\A(\d+);5(?::([123]))?u\z/)
+      return nil unless match && match[2] != '3'
+
+      { 106 => "\x0a", 107 => "\x0b", 110 => "\x0e", 112 => "\x10", 117 => "\x15" }[match[1].to_i]
     end
 
     # 未知の CSI シーケンス（\e[X...）の残りバイトを終端アルファベットまで読み捨てる。
