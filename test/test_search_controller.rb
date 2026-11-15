@@ -76,9 +76,12 @@ class TestSearchController < Minitest::Test
     assert_equal 1, ui.calls.length
     session, title, on_select = ui.calls.first
     assert_instance_of Rufio::FuzzySearchSession, session
+    # 初回は走査結果をキャッシュへ記録しながら FuzzyFileSource で現在のディレクトリを列挙する
     source = session.instance_variable_get(:@source)
-    assert_instance_of Rufio::FuzzyFileSource, source
-    assert_equal File.expand_path(@test_dir), source.instance_variable_get(:@root)
+    assert_instance_of Rufio::FuzzyCandidateCache::RecordingSource, source
+    scan = source.instance_variable_get(:@scan)
+    assert_instance_of Rufio::FuzzyFileSource, scan
+    assert_equal File.expand_path(@test_dir), scan.instance_variable_get(:@root)
     assert_includes title, @test_dir
     refute_nil on_select
   ensure
