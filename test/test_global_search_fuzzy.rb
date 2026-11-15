@@ -145,6 +145,25 @@ class TestGlobalSearchFuzzy < Minitest::Test
     assert rows.all? { |row| row.values.all? { |value| !value.is_a?(String) || value.frozen? } }
   end
 
+  # 候補は行（Hash）にせずブックマークごとのブロックで流し、行は結果に出すときだけ作る
+  def test_file_name_candidates_are_packed_per_bookmark
+    @search.instance_variable_set(:@excluded_extensions, [])
+    [false, Rufio::NativeContentSearch.files_available?].uniq.each do |native|
+      batches = []
+      source = Rufio::GlobalSearch::FileNameSource.new(@search, [['A', @a], ['B', @b]], native)
+      source.each_batch(cancelled: -> { false }, on_error: ->(message) { flunk message }) { |batch| batches << batch }
+
+      assert batches.all? { |batch| batch.is_a?(Rufio::FuzzyCandidateBlock) }, "native=#{native}"
+      rows = batches.flat_map(&:to_a).sort_by { |row| row[:path] }
+      expected = [[File.join(@a, 's_c_t_r_l_notes.txt'), 'A', 's_c_t_r_l_notes.txt'],
+                  [File.join(@a, 'src', 'sctrl.rb'), 'A', File.join('src', 'sctrl.rb')],
+                  [File.join(@b, 'Report.md'), 'B', 'Report.md'],
+                  [File.join(@b, 'skip.log'), 'B', 'skip.log']]
+      assert_equal expected, rows.map { |row| [row[:path], row[:bookmark], row[:relative_path]] }
+      assert_equal rows.map { |row| row[:relative_path] }, rows.map { |row| row[:text] }
+    end
+  end
+
   def test_close_releases_the_session
     @search.open(bookmarks)
     session = @search.instance_variable_get(:@session)
