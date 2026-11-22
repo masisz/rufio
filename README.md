@@ -21,7 +21,7 @@ rufio brings finding files, running scripts, and checking results together in on
 - **Run scripts where your files are**: Register your script directories, then press `:`, type `@` + part of a script name, press `Tab`, and hit `Enter`. Run Ruby, Python, or PowerShell scripts in the directory you are browsing
 - **Follow jobs and execution logs**: Keep browsing while scripts run in the background. Press `J` to check jobs and `L` to view execution logs
 - **Add your own actions in Ruby**: Define custom commands with a small Ruby DSL in `~/.config/rufio/commands.rb`. `~/.rufio/commands.rb` is also supported
-- **Use installed tools without extra configuration**: Search contents with rga, highlight previews with bat, and navigate directory history with zoxide
+- **Use installed tools without extra configuration**: Highlight previews with bat, read SQLite databases with `sqlite3`, and navigate directory history with zoxide
 - **Windows support**: Run PowerShell scripts with keyboard input handling adapted to Windows terminals
 - **Trace behavior in the source**: The implementation is primarily Ruby, so you can inspect and change the parts you need. Security design is documented in [SECURITY.md](./SECURITY.md)
 
@@ -44,7 +44,7 @@ rufio brings finding files, running scripts, and checking results together in on
 - **Move Between Cells**: In preview mode (`P`), `hjkl` moves a cell cursor through the grid, which scrolls in both directions to follow it
 - **Pick Columns**: `Space` selects columns, and `y` then copies the cursor row's selected columns joined with commas
 - **Copy with `y`**: Copies the cell under the cursor (`Y` for the whole row), or the current and selected file paths in the file list, using your clipboard command or OSC 52 over SSH
-- **Fast Search**: Built-in fuzzy file name search, rga content search, plus built-in search across all bookmarks that also reads PDF, Excel and PowerPoint
+- **One Search Key**: `/` searches where you are: the file list searches the directory tree by name (fuzzy) or contents (also reading PDF, Excel and PowerPoint), a preview searches inside the file, and a table preview filters its rows
 - **ZIP Archives**: Extract or compress selected items as a background job
 - **Jump to a Path**: Paste any path into `:cd`
 - **Bookmarks**: Quick access to frequently used directories
@@ -104,15 +104,14 @@ The most used keys. See the **[User Guide](./docs/guide.md)** for every key and 
 | `m/c/x` | Move / copy / delete selected items |
 | `z` | Extract or compress selected items (`.zip`); zoxide history when nothing is selected |
 | `a/A`, `r`, `d` | Create file / directory, rename, delete |
-| `f`, `s`, `F` | Filter, fuzzy file name search, rga content search |
-| `G` | Search names or contents (PDF, Excel, PowerPoint too) across all bookmarks |
+| `f`, `/` | Filter the list, search under the current directory (names or contents) |
 | `b`, `B`, `1-9` | Add bookmark, bookmark menu, jump to bookmark 1-9 |
 | `:` | Command mode (`@script`, `rake:task`, `!shell`, `cd <path>`) |
 | `J`, `L`, `C` | Jobs, logs, config directory |
 | `?` | Help |
 | `q`, `T` | Quit, quit and cd the shell to the current directory |
 
-In G mode, use `Up` / `Down` or `Ctrl+J` / `Ctrl+K` to select the next / previous result and `Enter` to open it. Application cursor arrows and extended Ctrl-key sequences are supported, including on Ghostty.
+In the search screen, use `Up` / `Down` or `Ctrl+J` / `Ctrl+K` to select the next / previous result and `Enter` to open it. Application cursor arrows and extended Ctrl-key sequences are supported, including on Ghostty.
 
 ## Documentation
 

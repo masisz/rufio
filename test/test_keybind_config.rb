@@ -52,42 +52,38 @@ class TestKeybindConfig < Minitest::Test
     assert_equal 'q', Rufio::ConfigLoader.default_keybinds[:quit]
   end
 
-  def test_default_keybinds_file_search_is_s_and_slash
+  def test_default_keybinds_search_is_slash
     keybinds = Rufio::ConfigLoader.default_keybinds
-    assert_equal 's', keybinds[:file_search]
-    assert_equal '/', keybinds[:file_search_alt]
-    refute keybinds.key?(:fzf_search)
-    refute keybinds.key?(:fzf_search_alt)
-  end
-
-  def test_legacy_fzf_search_names_are_aliases_in_user_config
-    Rufio::ConfigLoader.stub(:load_config, { keybinds: { fzf_search: 'x', fzf_search_alt: 'X' } }) do
-      keybinds = Rufio::ConfigLoader.keybinds
-      assert_equal 'x', keybinds[:file_search]
-      assert_equal 'X', keybinds[:file_search_alt]
-      refute keybinds.key?(:fzf_search)
-      refute keybinds.key?(:fzf_search_alt)
+    assert_equal '/', keybinds[:search]
+    # 1.7.0 で検索は / 一本に統合した
+    %i[fzf_search fzf_search_alt file_search file_search_alt rga_search global_search].each do |action|
+      refute keybinds.key?(action), "#{action} は廃止したこと"
     end
   end
 
-  def test_s_and_slash_dispatch_to_file_search
+  def test_legacy_search_names_are_aliases_in_user_config
+    %i[fzf_search file_search file_search_alt rga_search global_search].each do |action|
+      Rufio::ConfigLoader.stub(:load_config, { keybinds: { action => 'x' } }) do
+        keybinds = Rufio::ConfigLoader.keybinds
+        assert_equal 'x', keybinds[:search], "旧 #{action} の設定は :search に移すこと"
+        refute keybinds.key?(action)
+      end
+    end
+  end
+
+  def test_slash_dispatches_to_search
     handler = Rufio::KeybindHandler.new
     handler.set_directory_listing(Rufio::DirectoryListing.new(Dir.pwd))
     searched = []
-    handler.define_singleton_method(:fzf_search) { searched << :fzf_search; true }
-    handler.define_singleton_method(:file_search) { searched << :file_search; true }
-    %w[s /].each { |key| handler.handle_key(key) }
-    assert_equal %i[file_search file_search], searched
+    handler.define_singleton_method(:start_search) { searched << :search; true }
+    handler.handle_key('/')
+    assert_equal %i[search], searched
   end
 
-  def test_new_file_search_name_wins_over_legacy_alias
-    Rufio::ConfigLoader.stub(:load_config, { keybinds: { file_search: 'y', fzf_search: 'x' } }) do
-      assert_equal 'y', Rufio::ConfigLoader.keybinds[:file_search]
+  def test_the_new_search_name_wins_over_a_legacy_alias
+    Rufio::ConfigLoader.stub(:load_config, { keybinds: { search: 'y', file_search: 'x' } }) do
+      assert_equal 'y', Rufio::ConfigLoader.keybinds[:search]
     end
-  end
-
-  def test_default_keybinds_rga_search_is_F
-    assert_equal 'F', Rufio::ConfigLoader.default_keybinds[:rga_search]
   end
 
   def test_default_keybinds_add_bookmark_is_b
@@ -105,7 +101,7 @@ class TestKeybindConfig < Minitest::Test
       :top, :bottom, :refresh, :open_file,
       :rename, :delete, :create_file, :create_dir,
       :move_selected, :copy_selected, :delete_selected, :open_explorer,
-      :select, :filter, :file_search, :file_search_alt, :rga_search,
+      :select, :filter, :search,
       :add_bookmark, :bookmark_menu, :zoxide, :start_dir,
       :job_mode, :help, :log_viewer, :command_mode, :quit
     ]

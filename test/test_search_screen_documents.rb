@@ -5,12 +5,12 @@ require 'minitest/autorun'
 require 'timeout'
 require_relative 'support/document_search_fixtures'
 
-class TestGlobalDocumentSearch < Minitest::Test
+class TestSearchScreenDocuments < Minitest::Test
   include DocumentSearchFixtures
 
   def setup
     @root = Dir.mktmpdir('rufio-global-documents')
-    @search = Rufio::GlobalSearch.new
+    @search = Rufio::SearchScreen.new
     write_search_pdf(File.join(@root, 'sample.pdf'))
     write_search_xlsx(File.join(@root, 'sample.xlsx'))
     write_search_pptx(File.join(@root, 'sample.pptx'))
@@ -55,7 +55,7 @@ class TestGlobalDocumentSearch < Minitest::Test
   end
 
   def test_extension_exclusions_also_apply_to_documents
-    Rufio::ConfigLoader.stub(:global_search_excluded_extensions, %w[.pdf .xlsx .pptx]) do
+    Rufio::ConfigLoader.stub(:search_excluded_extensions, %w[.pdf .xlsx .pptx]) do
       @search.open([{ name: 'Docs', path: @root }])
       @search.handle_key("\t")
       @search.handle_key('needle')

@@ -50,12 +50,9 @@ ZIP extraction and compression run as background jobs. Check progress in Jobs mo
 | Key | Action |
 |-----|--------|
 | `f` | Enter filter mode (type to filter) |
-| `s` | Fuzzy search file names |
-| `/` | Fuzzy search file names (same as `s`) |
-| `F` | Search file contents with rga and pick a result |
-| `G` | Global search: file names or contents across all bookmarks |
+| `/` | Search under the current directory (file names or contents) |
 
-In the built-in search screen (`s`, `/`, `F`), type to fuzzy-filter, use **Up/Down** or **Ctrl+J/K** to select, **Enter** to open and **ESC** to go back. **Ctrl+R** rescans a cached file list; wide screens show a preview of the selected file.
+`/` is the only search key, and what it searches depends on where you are: the file list searches the directory tree, a preview searches inside the file, and a table preview filters its rows. In the file list it opens the search screen, where you type to filter, **Tab** switches between fuzzy file names and literal contents, **Up/Down** or **Ctrl+J/K** select, **Enter** goes to the file and **ESC** returns.
 
 ## Bookmarks & Navigation
 
@@ -72,7 +69,6 @@ In the built-in search screen (`s`, `/`, `F`), type to fuzzy-filter, use **Up/Do
 | Key | Action |
 |-----|--------|
 | `:` | Enter command mode |
-| `G` | Global search mode |
 | `C` | Config mode: open `~/.config/rufio/` |
 | `J` | Job mode (view background jobs) |
 | `L` | View execution logs |
@@ -100,7 +96,7 @@ In the built-in search screen (`s`, `/`, `F`), type to fuzzy-filter, use **Up/Do
 - **y**: Copy the cell under the cursor to the clipboard (the raw value, including any newlines inside it). With columns selected, it copies the cursor row's selected columns instead, joined with commas as one CSV line (`apple,30`), in column order
 - **Y**: Copy the whole row as one CSV line
 - **[/]**: Previous / next sheet, for a workbook's sheets or a database's tables
-- **/**: Open the list of sheets or tables. `j`/`k` or the arrow keys move, `Ctrl+D/U` page, `g/}` jump to the first and last entry, `Enter` opens the selected one, `ESC` or `/` closes the list. `>` marks the sheet on screen. A single-sheet file has no list
+- **t**: Open the list of sheets or tables. `j`/`k` or the arrow keys move, `Ctrl+D/U` page, `g/}` jump to the first and last entry, `Enter` opens the selected one, `ESC` or `/` closes the list. `>` marks the sheet on screen. A single-sheet file has no list
 - The line under the file name shows the cell address and the column name, e.g. `R3C2 price`, and the result of a copy
 - **ESC**: Back to the file list
 
@@ -131,14 +127,16 @@ Copying uses `pbcopy`, `clip`, `wl-copy`, `xclip` or `xsel` when one is availabl
 - `cd <path>` - Go to a directory (paste a path; a file path selects the file, `cd -` goes back, `Tab` completes directories)
 - `command` - Execute a built-in or plugin command
 
-### Global Search (G)
-- **Type**: Filter results (literal, case insensitive)
+### Search (`/`) in the file list
+- **Type**: Filter results (fuzzy for file names, literal and case insensitive for contents)
 - **Tab**: Switch between file names and content
 - **Up/Down** or **Ctrl+J/K or Ctrl+N/P**: Select a result
 - **Enter**: Go to the selected file in Files mode
 - **Ctrl+U**: Clear the query
-- **ESC**: Return to the previous mode
+- **ESC**: Return to Files mode
+- Only the current directory tree is searched; bookmarks are not
 - Content search also reads `.pdf`, `.xlsx` and `.pptx`
+- `SEARCH_EXCLUDED_EXTENSIONS` in `config.rb` skips extensions, or `/name` directories and files
 
 ### Config Mode (C)
 - Same navigation, preview and file operations as Files mode

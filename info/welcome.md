@@ -9,7 +9,7 @@ A TUI file manager that executes and coordinates tools and scripts from files.
 - **Tool Runtime** - Execute scripts and rake tasks from command mode
 - **Vim-like Keybindings** - Navigate with `j/k/h/l` keys
 - **Real-time Filtering** - Press `f` to filter files instantly
-- **Fuzzy Search** - Press `s` to fuzzy-search file names in a built-in screen, `F` to pick from `rga` content results
+- **One Search Key** - Press `/` to search: file names or contents under the current directory, inside a preview, or the rows of a table
 - **Global Search** - Press `G` to search names or contents (including PDF/Excel/PowerPoint) across all bookmarks
 - **ZIP Support** - Preview `.zip` contents, extract or compress selected items with `z`
 - **Bookmark Support** - Quick access to favorite directories
@@ -25,11 +25,10 @@ Text previews read at most the first 64 KiB. PDF bodies are not previewed, keepi
 | `j/k` | Move down/up |
 | `h/l` | Go to parent / Enter directory |
 | `f` | Filter files |
-| `s` | Fuzzy search file names |
+| `/` | Search under the current directory |
 | `b` | Add bookmark |
 | `B` | Bookmark menu |
 | `z` | zoxide history / extract or compress selected items |
-| `G` | Global search across bookmarks |
 | `C` | Config mode |
 | `:` | Command mode |
 | `J` | Job mode |
@@ -38,7 +37,7 @@ Text previews read at most the first 64 KiB. PDF bodies are not previewed, keepi
 | `q` | Quit |
 | `T` | Quit and cd to the current directory |
 
-In G mode, use `Up` / `Down` or `Ctrl+J` / `Ctrl+K` to select the next / previous result and `Enter` to open it. Application cursor arrows and extended Ctrl-key sequences are supported, including on Ghostty.
+In the search screen, use `Up` / `Down` or `Ctrl+J` / `Ctrl+K` to select the next / previous result and `Enter` to open it. Application cursor arrows and extended Ctrl-key sequences are supported, including on Ghostty.
 
 ## Command Mode
 

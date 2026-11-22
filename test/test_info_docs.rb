@@ -16,11 +16,11 @@ class TestInfoDocs < Minitest::Test
       doc = read(name)
       assert_includes doc, '| `}` | Jump to bottom of list |', name
       refute_includes doc, '| `G` | Jump to bottom of list |', name
-      assert_includes doc, '| `G` | Global search', name
       assert_includes doc, '| `C` | Config mode', name
       assert_includes doc, '| `e` | Open current directory in file explorer |', name
-      assert_includes doc, '| `s` | Fuzzy search file names |', name
-      assert_includes doc, '| `/` | Fuzzy search file names (same as `s`) |', name
+      refute_includes doc, '| `G` | Global search', name
+      refute_includes doc, '| `s` | Fuzzy search file names |', name
+      refute_match(/\| `F` \| Search file contents with rga/, doc, name)
       refute_includes doc, 'Cycle to next bookmark', name
       refute_includes doc, 'Cycle to previous bookmark', name
       refute_includes doc, 'Switch mode: Files -> Logs -> Jobs -> Help', name
@@ -46,8 +46,9 @@ class TestInfoDocs < Minitest::Test
 
   def test_welcome_lists_current_modes
     doc = read('welcome.md')
-    assert_includes doc, '| `G` | Global search across bookmarks |'
+    assert_includes doc, '| `/` | Search under the current directory |'
     assert_includes doc, '| `C` | Config mode |'
+    refute_includes doc, '| `G` | Global search across bookmarks |'
     refute_includes doc, 'Next bookmark'
     refute_includes doc, 'Switch mode (Files / Logs / Jobs / Help)'
     refute_includes doc, 'enter **Help Mode** where you can browse'
@@ -88,36 +89,37 @@ class TestInfoDocs < Minitest::Test
     end
   end
 
-  # s / / / F は内蔵の検索画面を使う。fzf は不要になった
-  def test_docs_do_not_require_fzf
+  # 検索は内蔵の実装で、fzf も rga も使わない
+  def test_docs_do_not_require_external_search_tools
     %w[help.md keybindings.md welcome.md].each do |name|
       refute_match(/fzf/i, read(name), name)
+      refute_match(/rga/i, read(name), name)
     end
     root = File.expand_path('..', __dir__)
     %w[docs/guide.md docs/guide_ja.md README.md README_ja.md].each do |name|
       doc = File.read(File.join(root, name))
       refute_match(/with fzf|fzf でファイル名検索|fzf (file|ファイル)|install fzf|still use fzf|fzf を使用/i, doc, name)
-      assert_includes doc, 'file_search', name if name.start_with?('docs/')
-    end
-  end  
-  # 内蔵検索画面の再走査（Ctrl+R）とプレビューを説明する
-  def test_docs_describe_fuzzy_cache_and_preview
-    root = File.expand_path('..', __dir__)
-    { 'info/help.md' => ['Ctrl+R', 'preview'], 'info/keybindings.md' => ['Ctrl+R'],
-      'docs/guide.md' => ['Ctrl+R', 'Cached', 'preview'], 'docs/guide_ja.md' => ['Ctrl+R', 'Cached', 'プレビュー'] }.each do |name, words|
-      doc = File.read(File.join(root, name))
-      words.each { |word| assert_includes doc, word, name }
+      assert_includes doc, '`search` (/)', name if name.start_with?('docs/')
     end
   end
-  # G のファイル名検索はあいまい検索、本文検索はリテラル。キャッシュ上限は config.rb で変えられる
-  def test_docs_describe_fuzzy_global_file_names_and_cache_config
+
+  # 検索キーは / 一本。旧 G モード・s・F とそのキャッシュ設定は説明に残さない
+  def test_docs_describe_the_single_search_key
     root = File.expand_path('..', __dir__)
-    { 'info/help.md' => ['fuzzy file names', 'literal content', 'FUZZY_SEARCH_CACHE'],
-      'docs/guide.md' => ['fuzzy', 'Literal, case-insensitive', 'FUZZY_SEARCH_CACHE', '1,000,000'],
-      'docs/guide_ja.md' => ['あいまい', 'リテラル', 'FUZZY_SEARCH_CACHE', '1,000,000'] }.each do |name, words|
+    { 'info/help.md' => ['Search (`/`)', 'fuzzy file names', 'literal content'],
+      'info/keybindings.md' => ['`/` is the only search key', 'Tab'],
+      'docs/guide.md' => ['Search Screen (`/` in the file list)', 'fuzzy', 'bookmarks are not searched'],
+      'docs/guide_ja.md' => ['検索画面（ファイル一覧の `/`）', 'あいまい', 'ブックマークは検索しません'] }.each do |name, words|
       doc = File.read(File.join(root, name))
       words.each { |word| assert_includes doc, word, name }
     end
-    refute_includes File.read(File.join(root, 'info/help.md')), 'file names and content (literal, case insensitive)'
+
+    %w[info/help.md info/keybindings.md info/welcome.md
+       docs/guide.md docs/guide_ja.md README.md README_ja.md].each do |name|
+      doc = File.read(File.join(root, name))
+      refute_includes doc, 'FUZZY_SEARCH_CACHE', name
+      refute_includes doc, 'G mode', name
+      refute_includes doc, 'G モード', name
+    end
   end
 end

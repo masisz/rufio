@@ -18,7 +18,7 @@ module Rufio
       checks = [
         { name: ConfigLoader.message('health.ruby_version'), method: :check_ruby_version },
         { name: ConfigLoader.message('health.required_gems'), method: :check_required_gems },
-        { name: ConfigLoader.message('health.rga'), method: :check_rga },
+        { name: ConfigLoader.message('health.sqlite3'), method: :check_sqlite3 },
         { name: ConfigLoader.message('health.zoxide'), method: :check_zoxide },
         { name: ConfigLoader.message('health.bat'), method: :check_bat },
         { name: ConfigLoader.message('health.clipboard'), method: :check_clipboard },
@@ -86,9 +86,10 @@ module Rufio
       end
     end
 
-    def check_rga
-      if system("which rga > /dev/null 2>&1")
-        version = `rga --version 2>/dev/null | head -1`.strip
+    # SQLite のプレビュー（表として読む）に使う
+    def check_sqlite3
+      if system("which sqlite3 > /dev/null 2>&1")
+        version = `sqlite3 --version 2>/dev/null | head -1`.strip
         {
           status: :ok,
           message: version,
@@ -97,8 +98,8 @@ module Rufio
       else
         {
           status: :warning,
-          message: "rga #{ConfigLoader.message('health.tool_not_found')}",
-          details: install_instruction_for('rga')
+          message: "sqlite3 #{ConfigLoader.message('health.tool_not_found')}",
+          details: install_instruction_for('sqlite3')
         }
       end
     end
@@ -190,8 +191,8 @@ module Rufio
       case RUBY_PLATFORM
       when /darwin/
         case tool
-        when 'rga'
-          "#{ConfigLoader.message('health.install_brew')} rga"
+        when 'sqlite3'
+          "#{ConfigLoader.message('health.install_brew')} sqlite"
         when 'zoxide'
           "#{ConfigLoader.message('health.install_brew')} zoxide"
         when 'bat'
@@ -199,8 +200,8 @@ module Rufio
         end
       when /linux/
         case tool
-        when 'rga'
-          ConfigLoader.message('health.rga_releases')
+        when 'sqlite3'
+          "#{ConfigLoader.message('health.install_apt')} sqlite3 (Ubuntu/Debian) or check your package manager"
         when 'zoxide'
           "#{ConfigLoader.message('health.install_apt')} zoxide (Ubuntu/Debian) or check your package manager"
         when 'bat'

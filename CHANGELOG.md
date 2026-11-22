@@ -25,7 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Rufio::TableSource` and `Rufio::PreviewRegistry`: a table format implements `supports?` and `open` and returns sheets whose rows are read through `fetch_rows(offset, limit)`, so further formats (Excel, SQLite) need no change to the renderer. The plan is in `docs/csv_cell_preview_design_ja.md`
 - `Rufio::SheetPicker` holds the sheet list's selection and scroll position, and `TableDocument#sheet_label` gives each format its own word for them (`Tables` for SQLite, `Sheets` otherwise)
 
+### Changed
+- Search is one key. `/` opens the search screen for the current directory tree: `Tab` switches between fuzzy file names and literal contents, `Enter` goes to the file, `ESC` returns. Bookmarks are no longer searched, and the screen reports the directory it is searching
+- `SEARCH_EXCLUDED_EXTENSIONS` in `config.rb` replaces `GLOBAL_SEARCH_EXCLUDED_EXTENSIONS`, which is still read when the new name is not set
+- `rufio -c` checks for `sqlite3` (used by the SQLite preview) instead of `rga`
+- In a table preview the list of sheets or tables moved from `/` to `t`, leaving `/` for searching
+
 ### Removed
+- G mode is gone: the `G` key, the Search tab and the mode itself. Its search moved to `/`, scoped to the current directory
+- `s` (fuzzy file name search), `/` (its alias) and `F` (rga content search) are gone, with the search screen they used (`FuzzyFinder`), the rga integration (`RgaResultSource`), the file list cache (`FuzzyCandidateCache` and `FUZZY_SEARCH_CACHE`) and its preview pane (`FuzzyPreviewLoader`). `rga` is no longer used at all. The `search` keybind accepts the old action names (`file_search`, `file_search_alt`, `rga_search`, `global_search`, `fzf_search`, `fzf_search_alt`) so existing `KEYBINDS` settings keep working
 - `Tab` / `Shift+Tab` no longer cycle through bookmarks in Files and Config modes; the keys do nothing there. Bookmarks are reached with `1`-`9`, the `B` menu and `0` for the start directory. In the other modes `Shift+Tab` still switches to the previous mode
 
 ## [1.6.0] - 2026-11-22

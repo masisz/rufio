@@ -11,11 +11,10 @@ module Rufio
   # 形式（CSV / 将来の Excel・SQLite）には依存せず、TableDocument だけを見る。
   class TablePreviewView < PreviewView
     MOVE_HINT = 'hjkl: move  Space: col  y: copy  ESC: back'
-    SHEET_HINT = '[ ]: sheet  /: list'
+    SHEET_HINT = '[ ]: sheet  t: list'
     PICKER_HINT = 'j/k: move  Enter: open  ESC: cancel'
-    # シート一覧を開くキー（Files モードの file_search_alt と同じ / を、
-    # プレビューモード中は一覧に使う）
-    LIST_KEY = '/'
+    # シート一覧を開くキー（`/` はプレビュー内検索に使うため `t`（table））
+    LIST_KEY = 't'
     # 一覧で現在表示中のシートに付ける印（Windows の端末でも崩れない ASCII）
     CURRENT_MARK = '>'
     # ステータス行に並べる選択カラム名の上限（残りは +n と出す）

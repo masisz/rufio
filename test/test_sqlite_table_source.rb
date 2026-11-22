@@ -199,7 +199,7 @@ class TestSqliteTableSource < Minitest::Test
       doc = open_db
       view = Rufio::TablePreviewView.new(doc, path: @path)
 
-      assert view.handle_key('/'), '/ でテーブル一覧を開くこと'
+      assert view.handle_key('t'), 't でテーブル一覧を開くこと'
       assert_equal %w[items sales], view.picker.names
       assert_equal 'Tables (2)', view.picker_title
       assert_equal 1, queries.length, '一覧を出すだけではテーブルの中身を読まないこと'

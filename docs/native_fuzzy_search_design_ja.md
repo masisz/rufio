@@ -354,7 +354,7 @@ macOS（Darwin 27.2）・arm64・同梱 ReleaseFast ライブラリ、`~/devs` �
 
 ### G のファイル名検索
 
-- `GlobalSearch::FileNameSource` が既存の走査（Zig の `scan_files_natively` / Ruby の `scan_roots`）のイベントを
+- `SearchScreen::FileNameSource` が既存の走査（Zig の `scan_files_natively` / Ruby の `scan_roots`）のイベントを
   候補バッチに変換し、`FuzzySearchSession`（上位 1,000 件）に流す。除外設定・ブックマーク名・skipped の数は従来どおり。
   停止要求は次のイベントで走査を打ち切り、Zig 走査は `each_batch(cancelled:)` で待機中も止まる。
   ファイル名検索では `Thread#kill` を使わない（本文検索の走査スレッドは従来どおり）。
@@ -507,7 +507,7 @@ Ruby 2.7 には Ractor がない。Fiddle の呼び出しは GVL を外すので
 - `FuzzyCandidateCache`: 走査が出したブロックをそのまま保存し、再表示するセッションにも同じブロックを渡す。
   展開もコピーもしない（従来は「表示名 NUL パス NUL」を保存用に詰め直し、再表示のたびに 256 件ずつ行へ展開していた）。
   行の配列を出すソースは従来どおり text と path だけを 4,096 件ごとのブロックに詰める。
-- G のファイル名検索（`GlobalSearch::FileNameSource`）: 同じブックマークが続く間は 1 つのブロックに詰め、
+- G のファイル名検索（`SearchScreen::FileNameSource`）: 同じブックマークが続く間は 1 つのブロックに詰め、
   行（text・path・bookmark・relative_path）は結果に出すときに作る。追加順（= ID）は従来と同じ。
 - 候補がまだ 1 件もない状態で照合した直後は、候補追加の集約（50ms）を始めない。開いた直後の空の検索が
   集約の待ち時間を使い、最初の候補の表示が約 50ms 遅れていた。

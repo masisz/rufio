@@ -34,14 +34,14 @@ class TestNativeContentSearch < Minitest::Test
   end
 
   def teardown
-    Rufio::GlobalSearch.native_search = nil
+    Rufio::SearchScreen.native_search = nil
     FileUtils.rm_rf(@root) if @root
   end
 
   def run_search(native, query, bookmarks = @bookmarks, excluded: ['.png'])
-    Rufio::GlobalSearch.native_search = native
-    Rufio::ConfigLoader.stub(:global_search_excluded_extensions, excluded) do
-      search = Rufio::GlobalSearch.new
+    Rufio::SearchScreen.native_search = native
+    Rufio::ConfigLoader.stub(:search_excluded_extensions, excluded) do
+      search = Rufio::SearchScreen.new
       search.open(bookmarks)
       search.handle_key("\t")
       search.handle_key(query)
@@ -95,10 +95,10 @@ class TestNativeContentSearch < Minitest::Test
   end
 
   def test_native_is_used_when_enabled
-    Rufio::GlobalSearch.native_search = true
-    assert Rufio::GlobalSearch.native_search?
-    Rufio::GlobalSearch.native_search = false
-    refute Rufio::GlobalSearch.native_search?
+    Rufio::SearchScreen.native_search = true
+    assert Rufio::SearchScreen.native_search?
+    Rufio::SearchScreen.native_search = false
+    refute Rufio::SearchScreen.native_search?
   end
 
   def test_case_sensitive_non_ascii_queries_fall_back_to_ruby
@@ -109,8 +109,8 @@ class TestNativeContentSearch < Minitest::Test
 
   def test_close_cancels_running_native_search
     200.times { |i| File.write(File.join(@b, "f#{i}.txt"), "world\n" * 2000) }
-    Rufio::GlobalSearch.native_search = true
-    search = Rufio::GlobalSearch.new
+    Rufio::SearchScreen.native_search = true
+    search = Rufio::SearchScreen.new
     search.open(@bookmarks)
     search.handle_key("\t")
     search.handle_key('w')
@@ -181,8 +181,8 @@ class TestNativeContentSearch < Minitest::Test
   end
 
   def test_global_search_reuses_cache_between_queries
-    Rufio::GlobalSearch.native_search = true
-    search = Rufio::GlobalSearch.new
+    Rufio::SearchScreen.native_search = true
+    search = Rufio::SearchScreen.new
     search.open(@bookmarks)
     search.handle_key("\t")
     search.handle_key('world')
@@ -199,8 +199,8 @@ class TestNativeContentSearch < Minitest::Test
 
   def test_large_result_sets_arrive_in_few_frames
     File.write(File.join(@a, 'many.txt'), "world\n" * 20_000)
-    Rufio::GlobalSearch.native_search = true
-    search = Rufio::GlobalSearch.new
+    Rufio::SearchScreen.native_search = true
+    search = Rufio::SearchScreen.new
     search.open([{ name: 'A', path: @a }])
     search.handle_key("\t")
     search.handle_key('world')
@@ -247,9 +247,9 @@ class TestNativeContentSearch < Minitest::Test
   end
 
   def run_filename_search(native, query = '', bookmarks = @bookmarks, excluded: ['.png', '/er'])
-    Rufio::GlobalSearch.native_search = native
-    Rufio::ConfigLoader.stub(:global_search_excluded_extensions, excluded) do
-      search = Rufio::GlobalSearch.new
+    Rufio::SearchScreen.native_search = native
+    Rufio::ConfigLoader.stub(:search_excluded_extensions, excluded) do
+      search = Rufio::SearchScreen.new
       search.open(bookmarks)
       search.handle_key(query) unless query.empty?
       wait_for_scan(search)

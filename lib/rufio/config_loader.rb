@@ -14,11 +14,13 @@ module Rufio
     # 後方互換性のためのパス（非推奨）
     YAML_CONFIG_PATH = Config::YAML_CONFIG_PATH
     LOCAL_YAML_PATH = Config::LOCAL_YAML_PATH
-    # 1.6.0 で改名したアクション（旧名 => 新名）。ユーザー設定の旧名も受け付ける
-    LEGACY_KEYBIND_ACTIONS = { fzf_search: :file_search, fzf_search_alt: :file_search_alt }.freeze
-    # s / / の一覧キャッシュ（FuzzyCandidateCache）。FUZZY_SEARCH_CACHE で MAX_FUZZY_SEARCH_CACHE まで変更できる
-    DEFAULT_FUZZY_SEARCH_CACHE = { max_entries: 200_000, max_roots: 4, ttl: 300 }.freeze
-    MAX_FUZZY_SEARCH_CACHE = { max_entries: 1_000_000, max_roots: 16, ttl: 86_400 }.freeze
+    # 改名・統合したアクション（旧名 => 新名）。ユーザー設定の旧名も受け付ける。
+    # 1.7.0 で検索を :search 一本にまとめたため、旧 s / / / F / G の設定は :search に移す
+    LEGACY_KEYBIND_ACTIONS = {
+      fzf_search: :search, fzf_search_alt: :search,
+      file_search: :search, file_search_alt: :search,
+      rga_search: :search, global_search: :search
+    }.freeze
 
     # 表プレビュー（CSV / TSV / Excel / SQLite）の読み込み上限と表示設定。
     # max_bytes はテキスト形式（CSV / TSV）を読む量。max_rows 行で解析を打ち切るため、
@@ -82,9 +84,7 @@ module Rufio
           # 選択・検索
           select:          ' ',
           filter:          'f',
-          file_search:     's',
-          file_search_alt: '/',
-          rga_search:      'F',
+          search:          '/',
           # ブックマーク
           add_bookmark:    'b',
           bookmark_menu:   'B',
@@ -92,7 +92,6 @@ module Rufio
           start_dir:       '0',
           # モード・ツール
           job_mode:        'J',
-          global_search:   'G',
           config_mode:     'C',
           help:            '?',
           log_viewer:      'L',
@@ -153,18 +152,9 @@ module Rufio
         settings
       end
 
-      # 0 以上の整数だけを受け付け、上限を超える値は上限に丸める。不正な値は既定値のまま
-      def fuzzy_search_cache
-        values = load_config[:fuzzy_search_cache]
-        values = {} unless values.is_a?(Hash)
-        DEFAULT_FUZZY_SEARCH_CACHE.each_with_object({}) do |(key, default), settings|
-          value = values[key]
-          settings[key] = value.is_a?(Integer) && value >= 0 ? [value, MAX_FUZZY_SEARCH_CACHE[key]].min : default
-        end
-      end
-
-      def global_search_excluded_extensions
-        values = load_config[:global_search_excluded_extensions]
+      # 検索（`/`）で中身を読まない拡張子・ディレクトリ
+      def search_excluded_extensions
+        values = load_config[:search_excluded_extensions]
         return [] unless values.is_a?(Array)
 
         values.select { |value| value.is_a?(String) }.map do |value|
@@ -353,8 +343,9 @@ module Rufio
           applications: safe_const_get(:APPLICATIONS, default_config[:applications]),
           colors: safe_const_get(:COLORS, default_config[:colors]),
           keybinds: safe_const_get(:KEYBINDS, {}),
-          global_search_excluded_extensions: safe_const_get(:GLOBAL_SEARCH_EXCLUDED_EXTENSIONS, []),
-          fuzzy_search_cache: safe_const_get(:FUZZY_SEARCH_CACHE, {}),
+          # SEARCH_EXCLUDED_EXTENSIONS が新しい名前。旧名の設定もそのまま使える
+          search_excluded_extensions: safe_const_get(:SEARCH_EXCLUDED_EXTENSIONS,
+                                                     safe_const_get(:GLOBAL_SEARCH_EXCLUDED_EXTENSIONS, [])),
           table_preview: safe_const_get(:TABLE_PREVIEW, {}),
           clipboard_command: safe_const_get(:CLIPBOARD_COMMAND, nil)
         }
@@ -405,7 +396,7 @@ module Rufio
             selected: { hsl: [50, 90, 70] },
             preview: { hsl: [180, 60, 65] }
           },
-          global_search_excluded_extensions: [],
+          search_excluded_extensions: [],
           keybinds: {},      # ユーザーの上書きのみ格納（デフォルトはdefault_keybindsを参照）
           ui_options: {},    # ユーザーの上書きのみ格納（デフォルトはdefault_ui_optionsを参照）
           table_preview: {},      # ユーザーの上書きのみ格納（デフォルトはDEFAULT_TABLE_PREVIEWを参照）

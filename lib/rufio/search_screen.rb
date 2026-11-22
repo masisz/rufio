@@ -9,9 +9,11 @@ require_relative 'fuzzy_search_session'
 require_relative 'fuzzy_candidate_block'
 
 module Rufio
-  # ブックマーク配下のファイル名・テキスト内容をバックグラウンドで横断検索する。
-  # ファイル名は s と同じあいまい検索（FuzzySearchSession）、本文は大文字小文字を無視したリテラル検索。
-  class GlobalSearch
+  # 指定したディレクトリ配下のファイル名・テキスト内容をバックグラウンドで検索する画面（`/`）。
+  # ファイル名はあいまい検索（FuzzySearchSession）、本文は大文字小文字を無視したリテラル検索。
+  #
+  # 対象（roots）は呼び出し側が決める。Files モードの `/` は現在のディレクトリ 1 つを渡す。
+  class SearchScreen
     SPINNER_FRAMES = ['|', '/', '-', '\\'].freeze
     SPINNER_INTERVAL = 0.12
     # 検索語に一致した部分の表示（黒の太字・黄色背景）
@@ -51,16 +53,40 @@ module Rufio
       @scanning
     end
 
-    def open(bookmarks)
+    # @param roots [Array<Hash>] 検索対象 [{ name:, path: }, ...]
+    def open(roots)
       close
       @active = true
       @query = ''
       @search_type = :filename
-      @excluded_extensions = ConfigLoader.global_search_excluded_extensions
-      @bookmark_count = bookmarks.length
-      @roots = bookmarks.map { |bookmark| [bookmark[:name].to_s, bookmark[:path].to_s] }
+      @excluded_extensions = ConfigLoader.search_excluded_extensions
+      @roots = roots.map { |root| [root[:name].to_s, root[:path].to_s] }
       start_scan
       true
+    end
+
+    # 対象が 1 つだけなら、結果の行頭に対象名を出さない（同じ名前が並ぶだけになる）
+    def single_root?
+      @roots.length == 1
+    end
+
+    # 画面上部に出す検索対象の短い名前（1 つならディレクトリ名）
+    def root_name
+      return '' if @roots.empty?
+
+      single_root? ? File.basename(@roots.first.last) : "#{@roots.length} directories"
+    end
+
+    # 状態行に出す検索対象のパス（ホームは ~ に畳む）
+    def root_label
+      return '' if @roots.empty?
+      return "#{@roots.length} directories" unless single_root?
+
+      path = @roots.first.last
+      home = Dir.home
+      path.start_with?(home) ? path.sub(home, '~') : path
+    rescue StandardError
+      @roots.first.last
     end
 
     def close
@@ -109,7 +135,8 @@ module Rufio
       screen.clear(mark_dirty: true)
       width = screen.width
       type = @search_type == :content ? 'Content' : 'File names'
-      write_line(screen, 0, "G mode - #{type} | Tab: Switch name/content search", width, "\e[1;36m")
+      write_line(screen, 0, "Search in #{root_name} - #{type} | Tab: Switch name/content search",
+                 width, "\e[1;36m")
       write_line(screen, 1, "Search: #{@query}_", width)
       state = if scanning?
                 "[#{SPINNER_FRAMES[@spinner_index]}] Searching..."
@@ -120,13 +147,13 @@ module Rufio
               end
       color = scanning? ? "\e[1;33m" : "\e[32m"
       matches = @session ? @total_matches : @results.length
-      write_line(screen, 2, "#{state} | #{@bookmark_count} bookmarks | #{matches} matches | #{@errors.length} errors | #{@skipped_files} skipped", width, color)
+      write_line(screen, 2, "#{state} | #{matches} matches | #{@errors.length} errors | #{@skipped_files} skipped | #{root_label}", width, color)
       row_height = @search_type == :content ? 2 : 1
       capacity = [screen.height - 6, 0].max / row_height
       first = [@selected_index - capacity + 1, 0].max
       @results.slice(first, capacity).to_a.each_with_index do |entry, index|
         selected = first + index == @selected_index
-        prefix = "#{selected ? '>' : ' '} [#{entry[:bookmark]}] "
+        prefix = single_root? ? "#{selected ? '>' : ' '} " : "#{selected ? '>' : ' '} [#{entry[:bookmark]}] "
         text = "#{prefix}#{entry[:relative_path]}"
         text += if entry[:location]
                   " - #{entry[:location]}"
@@ -142,14 +169,14 @@ module Rufio
         write_line(screen, y + 1, "    #{entry[:match_text]}", width, highlight_from: 4) if entry[:match_text]
       end
       if @results.empty?
-        message = if @bookmark_count.zero?
-                    'No bookmarks. Add directories with b in Files mode.'
+        message = if @roots.empty?
+                    'Nothing to search here.'
                   elsif scanning?
-                    'Searching bookmarked directories...'
+                    'Searching...'
                   elsif @search_type == :content && @query.empty?
                     'Type a string to search inside text files.'
                   elsif !@errors.empty? && candidate_count.zero?
-                    'No readable files in bookmarked directories.'
+                    'No readable files in this directory.'
                   else
                     'No matching files. Edit your search to try again.'
                   end

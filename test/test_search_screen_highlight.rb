@@ -4,15 +4,15 @@ require_relative 'test_helper'
 require 'minitest/autorun'
 require 'timeout'
 
-# G mode の結果一覧で検索語に一致した部分をハイライトする
-class TestGlobalSearchHighlight < Minitest::Test
+# 検索画面（`/`）の結果一覧で検索語に一致した部分をハイライトする
+class TestSearchScreenHighlight < Minitest::Test
   def setup
     @root = Dir.mktmpdir('rufio-highlight')
     @dir = File.join(@root, 'first')
     FileUtils.mkdir_p(@dir)
     File.write(File.join(@dir, 'Report_First.txt'), "xx Hello WORLD and world\n")
     File.write(File.join(@dir, 'jp.txt'), "日本語の検索\n")
-    @search = Rufio::GlobalSearch.new
+    @search = Rufio::SearchScreen.new
     @search.open([{ name: 'first', path: @dir }])
     @screen = Rufio::Screen.new(100, 24)
   end
@@ -66,8 +66,8 @@ class TestGlobalSearchHighlight < Minitest::Test
     path_start = text.index('Report_First.txt')
     assert_highlight(y, path_start + 'Report_'.length, 'First'.length)
     assert_highlight(y, path_start, 'Report_'.length, false)
-    # ブックマーク名 [first] は検索対象外なのでハイライトしない
-    assert_highlight(y, text.index('[first]'), '[first]'.length, false)
+    # 対象が 1 つのときは行頭に対象名を出さない
+    refute_includes text, '[first]'
   end
 
   def test_content_snippet_highlights_every_occurrence

@@ -401,9 +401,9 @@ class TestTablePreview < Minitest::Test
     [screen, ui, handler]
   end
 
-  def test_slash_draws_the_sheet_list
+  def test_t_draws_the_sheet_list
     screen, ui, handler = workbook_renderer
-    handler.handle_key('/')
+    handler.handle_key('t')
     ui.draw_screen(screen)
     text = screen_text(screen, 24)
 
@@ -416,7 +416,7 @@ class TestTablePreview < Minitest::Test
 
   def test_the_selected_entry_is_highlighted_in_the_list
     screen, ui, handler = workbook_renderer
-    handler.handle_key('/')
+    handler.handle_key('t')
     handler.handle_key('j')
     ui.draw_screen(screen)
 
@@ -427,7 +427,7 @@ class TestTablePreview < Minitest::Test
 
   def test_choosing_from_the_list_draws_the_selected_grid
     screen, ui, handler = workbook_renderer
-    handler.handle_key('/')
+    handler.handle_key('t')
     handler.handle_key('j')
     handler.handle_key("\r")
     screen.clear
@@ -454,7 +454,7 @@ class TestTablePreview < Minitest::Test
 
     screen, ui, handler = renderer_for(name: 'shop.db')
     assert handler.focus_preview_pane
-    handler.handle_key('/')
+    handler.handle_key('t')
     ui.draw_screen(screen)
     text = screen_text(screen, 24)
 

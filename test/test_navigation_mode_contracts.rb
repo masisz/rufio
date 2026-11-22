@@ -129,7 +129,7 @@ class TestNavigationModeContracts < Minitest::Test
   end
 
   def test_terminal_delegates_mode_changes_to_handler
-    [:files, :logs, :jobs, :config, :global, :help].each do |mode|
+    [:files, :logs, :jobs, :config, :help].each do |mode|
       handler = Minitest::Mock.new
       handler.expect(:switch_mode, true, [mode])
       terminal = Rufio::TerminalUI.allocate

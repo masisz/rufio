@@ -3,8 +3,7 @@
 require 'io/console'
 require_relative 'text_utils'
 require_relative 'help_menu'
-require_relative 'global_search'
-require_relative 'fuzzy_finder'
+require_relative 'search_screen'
 require_relative 'ui_renderer'
 
 module Rufio
@@ -34,9 +33,7 @@ module Rufio
       @input_thread = nil
       @command_mode_active = false
       @help_menu = HelpMenu.new
-      @global_search = GlobalSearch.new
-      @fuzzy_finder = FuzzyFinder.new
-      @fuzzy_finder_on_select = nil
+      @search_screen = SearchScreen.new
       @command_input = ""
       @command_mode = CommandMode.new
       @dialog_renderer = DialogRenderer.new
@@ -239,8 +236,7 @@ module Rufio
     end
 
     def cleanup_terminal
-      @global_search.close
-      @fuzzy_finder.close
+      @search_screen.close
       # マウスレポートを先に無効化して新しいイベントの流入を止める
       if windows?
         print "\e[?1000l\e[?1006l"
@@ -359,8 +355,7 @@ module Rufio
         # 通知・ランプ・実行状態の更新を一か所に集約する。
         needs_redraw = true if @background_status.update(@background_executor, now: start)
 
-        needs_redraw = true if @global_search.poll
-        needs_redraw = true if @fuzzy_finder.poll
+        needs_redraw = true if @search_screen.poll
         needs_redraw = true if @keybind_handler&.poll_archive_jobs
 
         # 非同期シンタックスハイライト完了チェック（UIRenderer側のフラグを参照）
@@ -413,14 +408,8 @@ module Rufio
 
     # UIRenderer に全描画処理を委譲
     def draw_screen_to_buffer(screen, notification_message = nil, fps = nil)
-      if fuzzy_finder_active?
-        @fuzzy_finder.draw(screen)
-        @ui_renderer.draw_mode_tabs_to_buffer(screen, @screen_height - 1)
-        return
-      end
-
-      if global_search_active?
-        @global_search.draw(screen)
+      if search_active?
+        @search_screen.draw(screen)
         @ui_renderer.draw_mode_tabs_to_buffer(screen, @screen_height - 1)
         return
       end
@@ -494,7 +483,7 @@ module Rufio
             return true
           end
           if search_overlay_active? && !help_dialog_active?
-            input = read_global_search_csi(third_char)
+            input = read_search_screen_csi(third_char)
             return true unless input
           else
             input = case third_char
@@ -526,8 +515,7 @@ module Rufio
       end
 
       return handle_help_input(input) if help_dialog_active?
-      return handle_fuzzy_finder_input(input) if fuzzy_finder_active?
-      return handle_global_search_input(input) if global_search_active?
+      return handle_search_input(input) if search_active?
 
       # 数字キー（1-9）: Filesモード かつ フィルターモード外でブックマークジャンプ＋ハイライト
       if input&.match?(/^[1-9]$/) && (@tab_mode_manager.current_mode == :files || @keybind_handler.config_mode?) && !@keybind_handler.filter_active?
@@ -601,15 +589,9 @@ module Rufio
         return
       end
 
-      if fuzzy_finder_active?
-        handle_fuzzy_finder_input(:up) if btn == 64
-        handle_fuzzy_finder_input(:down) if btn == 65
-        return
-      end
-
-      if global_search_active?
-        handle_global_search_input(:up) if btn == 64
-        handle_global_search_input(:down) if btn == 65
+      if search_active?
+        handle_search_input(:up) if btn == 64
+        handle_search_input(:down) if btn == 65
         return
       end
 
@@ -1011,74 +993,37 @@ module Rufio
     # Screen と Renderer のアクセサ（他のクラスから利用可能に）
     attr_reader :screen, :renderer
 
-    def start_global_search(bookmarks)
-      close_fuzzy_finder
-      @global_search.open(bookmarks)
+    # `/`: 検索画面を開く
+    # @param roots [Array<Hash>] 検索対象 [{ name:, path: }, ...]
+    def start_search(roots)
+      @search_screen.open(roots)
     end
 
-    # s / / / F の内蔵検索画面を開く。Enter で選んだ候補をブロックに渡し、
-    # ブロックが :needs_refresh を返したら（外部エディタから戻った後など）全画面を再描画する。
-    # :missing を返したら画面を閉じずに通知を出す。options は FuzzyFinder#open に渡す
-    # （cached_at: / rescan: / preview:）。
-    def start_fuzzy_finder(session, title:, **options, &on_select)
-      @global_search.close
-      @fuzzy_finder_on_select = on_select
-      @fuzzy_finder.open(session, title: title, **options)
-      # 入力ダイアログ等が直接描いた領域が残らないよう、差分ではなく全画面を描き直す
-      render_full_screen
-      true
-    end
-
-    def fuzzy_finder_active?
-      @fuzzy_finder.active?
-    end
-
-    def close_fuzzy_finder
-      @fuzzy_finder.close
-      @fuzzy_finder_on_select = nil
-    end
-
-    def handle_fuzzy_finder_input(input)
-      entry = @fuzzy_finder.handle_key(input)
-      return true unless entry
-
-      result = @fuzzy_finder_on_select&.call(entry)
-      if result == :missing
-        # キャッシュや rga の結果より後に削除・移動されたファイル
-        @fuzzy_finder.show_notice('File no longer exists')
-        return true
-      end
-
-      close_fuzzy_finder
-      refresh_display if result == :needs_refresh
-      true
-    end
-
-    # G mode と内蔵検索画面は、どちらも矢印キー等を移動として受け取る
+    # 検索画面は矢印キー等を移動として受け取る
     def search_overlay_active?
-      global_search_active? || fuzzy_finder_active?
+      search_active?
     end
 
-    def global_search_active?
-      @global_search.active?
+    def search_active?
+      @search_screen.active?
     end
 
-    def handle_global_search_input(input)
+    def handle_search_input(input)
       if input == ConfigLoader.keybinds[:help]
         show_help_dialog
         return true
       end
-      result = @global_search.handle_key(input)
+      result = @search_screen.handle_key(input)
       if result.is_a?(Hash) && File.file?(result[:path])
         @keybind_handler.switch_mode(:files)
         if @keybind_handler.navigate_to_directory(File.dirname(result[:path]))
           index = @keybind_handler.get_active_entries.index { |entry| entry[:path] == result[:path] }
           @keybind_handler.select_index(index) if index
           @keybind_handler.unfocus_preview_pane
-          @global_search.close
+          @search_screen.close
         end
       end
-      unless global_search_active?
+      unless search_active?
         mode = if @keybind_handler.in_job_mode?
                  :jobs
                elsif @keybind_handler.log_viewer_mode?
@@ -1108,9 +1053,9 @@ module Rufio
       true
     end
 
-    # G mode accepts legacy CSI arrows and extended keyboard events. Unknown
-    # sequences and key releases are consumed without acting like Escape.
-    def read_global_search_csi(first_char)
+    # 検索画面は旧来の CSI 矢印や拡張キーイベントも受け取る。未知のシーケンスと
+    # キーリリースは Escape と区別して読み捨てる。
+    def read_search_screen_csi(first_char)
       sequence = +first_char.to_s
       64.times do
         break if sequence.match?(/[@-~]\z/)

@@ -12,7 +12,7 @@ module Rufio
     # モード一覧のテスト
     def test_available_modes
       modes = @manager.available_modes
-      assert_equal %i[files config global logs jobs help], modes
+      assert_equal %i[files config logs jobs help], modes
     end
 
     def test_default_mode_is_files
@@ -26,9 +26,6 @@ module Rufio
 
       @manager.next_mode
       assert_equal :config, @manager.current_mode
-
-      @manager.next_mode
-      assert_equal :global, @manager.current_mode
 
       @manager.next_mode
       assert_equal :logs, @manager.current_mode
@@ -104,7 +101,7 @@ module Rufio
 
       assert_equal :logs, info[:mode]
       assert_equal 'Logs', info[:label]
-      assert_equal 3, info[:index]  # files=0, config=1, global=2, logs=3, jobs=4, help=5
+      assert_equal 2, info[:index]  # files=0, config=1, logs=2, jobs=3, help=4
     end
 
     # 状態コールバックのテスト

@@ -45,21 +45,27 @@ class TestHealthChecker < Minitest::Test
     refute_includes @health_checker.send(:install_instruction_for, 'fzf').to_s, 'fzf'
   end
 
-  def test_check_rga
-    result = @health_checker.send(:check_rga)
+  def test_check_sqlite3
+    result = @health_checker.send(:check_sqlite3)
 
     assert_includes [:ok, :warning], result[:status]
     assert result[:message].is_a?(String)
 
     if result[:status] == :ok
-      # rgaのバージョン出力は "ripgrep-all x.x.x" の形式
+      # sqlite3 のバージョン出力は "3.x.y ..." の形式
       assert !result[:message].empty?, "Message should not be empty"
       assert_nil result[:details]
     else
-      # 警告メッセージを確認
-      assert result[:message].include?("rga"), "Warning message should mention rga"
+      assert result[:message].include?("sqlite3"), "Warning message should mention sqlite3"
       assert result[:details].is_a?(String)
     end
+  end
+
+  # rga は使わなくなったので、ヘルスチェックからも外した
+  def test_rga_is_no_longer_checked
+    refute @health_checker.respond_to?(:check_rga, true)
+    output, = capture_io { @health_checker.run_check }
+    refute_includes output.downcase, 'rga'
   end
 
   def test_check_zoxide
@@ -100,9 +106,9 @@ class TestHealthChecker < Minitest::Test
     end
   end
 
-  def test_install_instruction_for_rga
-    instruction = @health_checker.send(:install_instruction_for, 'rga')
-    
+  def test_install_instruction_for_sqlite3
+    instruction = @health_checker.send(:install_instruction_for, 'sqlite3')
+
     assert instruction.is_a?(String)
     assert instruction.include?("Install") || instruction.include?("github") || instruction.include?("Check")
   end

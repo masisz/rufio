@@ -3,9 +3,9 @@
 require_relative 'test_helper'
 require 'minitest/autorun'
 require 'timeout'
-require_relative '../lib/rufio/global_search'
+require_relative '../lib/rufio/search_screen'
 
-class TestGlobalSearch < Minitest::Test
+class TestSearchScreen < Minitest::Test
   def setup
     @root = Dir.mktmpdir('rufio-global')
     @a = File.join(@root, 'alpha')
@@ -15,7 +15,7 @@ class TestGlobalSearch < Minitest::Test
     File.write(File.join(@a, 'nested', '日本語.txt'), 'one')
     File.write(File.join(@a, 'Report.md'), 'two')
     File.write(File.join(@b, 'report.txt'), 'three')
-    @search = Rufio::GlobalSearch.new
+    @search = Rufio::SearchScreen.new
   end
 
   def teardown
@@ -61,7 +61,7 @@ class TestGlobalSearch < Minitest::Test
     assert_equal 2, @search.results.map { |r| r[:path] }.uniq.length
   end
 
-  def test_missing_roots_and_empty_bookmarks_are_reported
+  def test_missing_roots_and_an_empty_target_are_reported
     scan([{ name: 'Missing', path: File.join(@root, 'missing') }])
     assert_empty @search.results
     refute_empty @search.errors
@@ -69,7 +69,7 @@ class TestGlobalSearch < Minitest::Test
     screen = Rufio::Screen.new(80, 24)
     @search.draw(screen)
     text = (0...24).map { |y| Rufio::ColorHelper.strip_ansi(screen.row(y)) }.join("\n")
-    assert_includes text, 'No bookmarks'
+    assert_includes text, 'Nothing to search here.'
     assert_includes text, 'ESC: Back'
   end
 
@@ -121,34 +121,39 @@ class TestGlobalSearch < Minitest::Test
     assert_equal 2, @search.results.length
   end
 
-  def test_G_opens_global_search_without_moving_directory
-    Dir.mktmpdir do |root|
-      handler = Rufio::KeybindHandler.new
-      listing = Rufio::DirectoryListing.new(root)
-      handler.set_directory_listing(listing)
-      ui = Rufio::TerminalUI.new
-      handler.set_terminal_ui(ui)
-      ui.instance_variable_set(:@keybind_handler, handler)
-      ui.instance_variable_set(:@directory_listing, listing)
-      manager = handler.instance_variable_get(:@bookmark_manager)
-      manager.stub(:list, [{ name: 'B', path: @b }]) do
-        handler.handle_key('G')
+  def test_slash_opens_the_search_screen_without_moving_directory
+    handler = Rufio::KeybindHandler.new
+    listing = Rufio::DirectoryListing.new(@root)
+    handler.set_directory_listing(listing)
+    ui = Rufio::TerminalUI.new
+    handler.set_terminal_ui(ui)
+    ui.instance_variable_set(:@keybind_handler, handler)
+    ui.instance_variable_set(:@directory_listing, listing)
+
+    handler.handle_key('/')
+    assert ui.search_active?
+    assert_equal @root, listing.current_path
+
+    search = ui.instance_variable_get(:@search_screen)
+    Timeout.timeout(3) do
+      while search.scanning?
+        search.poll
+        Thread.pass
       end
-      assert ui.global_search_active?
-      assert_equal root, listing.current_path
-      search = ui.instance_variable_get(:@global_search)
-      Timeout.timeout(3) do
-        while search.scanning?
-          search.poll
-          Thread.pass
-        end
-      end
-      ui.handle_global_search_input("\r")
-      refute ui.global_search_active?
-      assert_equal @b, listing.current_path
-      assert_equal 'report.txt', handler.current_entry[:name]
-    ensure
-      search&.close
     end
+    search.handle_key('report.txt')
+    Timeout.timeout(3) do
+      while search.scanning?
+        search.poll
+        Thread.pass
+      end
+    end
+
+    ui.handle_search_input("\r")
+    refute ui.search_active?
+    assert_equal @b, listing.current_path, '選んだファイルのディレクトリへ移動すること'
+    assert_equal 'report.txt', handler.current_entry[:name]
+  ensure
+    ui&.instance_variable_get(:@search_screen)&.close
   end
 end

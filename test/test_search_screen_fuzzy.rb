@@ -5,7 +5,7 @@ require 'minitest/autorun'
 
 # G mode のファイル名検索は s と同じあいまい検索（FuzzySearchSession）で、
 # バックグラウンドで照合する。本文検索はリテラルのまま。
-class TestGlobalSearchFuzzy < Minitest::Test
+class TestSearchScreenFuzzy < Minitest::Test
   def setup
     @root = Dir.mktmpdir('rufio-global-fuzzy')
     @a = File.join(@root, 'alpha')
@@ -16,7 +16,7 @@ class TestGlobalSearchFuzzy < Minitest::Test
     File.write(File.join(@a, 's_c_t_r_l_notes.txt'), 'two')
     File.write(File.join(@b, 'Report.md'), 'needle three')
     File.write(File.join(@b, 'skip.log'), 'log')
-    @search = Rufio::GlobalSearch.new
+    @search = Rufio::SearchScreen.new
     @screen = Rufio::Screen.new(100, 20)
   end
 
@@ -124,7 +124,7 @@ class TestGlobalSearchFuzzy < Minitest::Test
   end
 
   def test_status_shows_total_matches_and_skipped_files
-    Rufio::ConfigLoader.stub(:global_search_excluded_extensions, ['.log']) do
+    Rufio::ConfigLoader.stub(:search_excluded_extensions, ['.log']) do
       @search.open(bookmarks)
       settle
     end
@@ -137,7 +137,7 @@ class TestGlobalSearchFuzzy < Minitest::Test
 
   def test_file_name_candidates_are_frozen
     rows = []
-    source = Rufio::GlobalSearch::FileNameSource.new(@search, [['A', @a]], false)
+    source = Rufio::SearchScreen::FileNameSource.new(@search, [['A', @a]], false)
     @search.instance_variable_set(:@excluded_extensions, [])
     source.each_batch(cancelled: -> { false }, on_error: ->(_) {}) { |batch| rows.concat(batch) }
     refute_empty rows
@@ -150,7 +150,7 @@ class TestGlobalSearchFuzzy < Minitest::Test
     @search.instance_variable_set(:@excluded_extensions, [])
     [false, Rufio::NativeContentSearch.files_available?].uniq.each do |native|
       batches = []
-      source = Rufio::GlobalSearch::FileNameSource.new(@search, [['A', @a], ['B', @b]], native)
+      source = Rufio::SearchScreen::FileNameSource.new(@search, [['A', @a], ['B', @b]], native)
       source.each_batch(cancelled: -> { false }, on_error: ->(message) { flunk message }) { |batch| batches << batch }
 
       assert batches.all? { |batch| batch.is_a?(Rufio::FuzzyCandidateBlock) }, "native=#{native}"

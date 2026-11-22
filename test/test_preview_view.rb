@@ -464,11 +464,11 @@ class TestPreviewView < Minitest::Test
                                 path: @csv_path)
   end
 
-  def test_slash_opens_the_sheet_list
+  def test_t_opens_the_sheet_list
     view = multi_sheet_view
     refute view.picker_open?, '最初は一覧を開いていないこと'
 
-    assert view.handle_key('/')
+    assert view.handle_key('t')
     assert view.picker_open?
     assert_equal %w[Sales Stock], view.picker.names, 'シート名を並べること'
     assert_equal 0, view.picker.index, '現在のシートを選んだ状態で開くこと'
@@ -477,14 +477,14 @@ class TestPreviewView < Minitest::Test
   def test_the_list_opens_on_the_current_sheet
     view = multi_sheet_view
     view.handle_key(']')
-    view.handle_key('/')
+    view.handle_key('t')
 
     assert_equal 1, view.picker.index
   end
 
   def test_the_list_moves_without_switching_sheets
     view = multi_sheet_view
-    view.handle_key('/')
+    view.handle_key('t')
 
     assert view.handle_key('j')
     assert_equal 1, view.picker.index
@@ -497,7 +497,7 @@ class TestPreviewView < Minitest::Test
 
   def test_the_list_moves_with_arrow_keys
     view = multi_sheet_view
-    view.handle_key('/')
+    view.handle_key('t')
 
     view.handle_key("\e[B")
     assert_equal 1, view.picker.index
@@ -507,7 +507,7 @@ class TestPreviewView < Minitest::Test
 
   def test_the_list_stops_at_the_ends
     view = multi_sheet_view
-    view.handle_key('/')
+    view.handle_key('t')
 
     view.handle_key('k')
     assert_equal 0, view.picker.index
@@ -518,7 +518,7 @@ class TestPreviewView < Minitest::Test
 
   def test_the_list_jumps_to_the_first_and_last_entry
     view = many_sheet_view
-    view.handle_key('/')
+    view.handle_key('t')
 
     view.handle_key('}')
     assert_equal 9, view.picker.index
@@ -528,7 +528,7 @@ class TestPreviewView < Minitest::Test
 
   def test_enter_opens_the_selected_sheet_and_closes_the_list
     view = multi_sheet_view
-    view.handle_key('/')
+    view.handle_key('t')
     view.handle_key('j')
 
     assert view.handle_key("\r")
@@ -540,7 +540,7 @@ class TestPreviewView < Minitest::Test
 
   def test_the_list_also_accepts_a_newline
     view = multi_sheet_view
-    view.handle_key('/')
+    view.handle_key('t')
     view.handle_key('j')
     view.handle_key("\n")
 
@@ -549,7 +549,7 @@ class TestPreviewView < Minitest::Test
 
   def test_escape_closes_the_list_and_keeps_the_sheet
     view = multi_sheet_view
-    view.handle_key('/')
+    view.handle_key('t')
     view.handle_key('j')
 
     assert view.handle_key("\e")
@@ -557,17 +557,17 @@ class TestPreviewView < Minitest::Test
     assert_equal 0, view.sheet_index, 'ESC では切り替えないこと'
   end
 
-  def test_slash_closes_the_list_again
+  def test_t_closes_the_list_again
     view = multi_sheet_view
-    view.handle_key('/')
-    assert view.handle_key('/')
+    view.handle_key('t')
+    assert view.handle_key('t')
 
     refute view.picker_open?
   end
 
   def test_the_list_swallows_other_keys
     view = multi_sheet_view
-    view.handle_key('/')
+    view.handle_key('t')
 
     assert view.handle_key('l'), '一覧を開いている間はキーを通さないこと'
     assert view.handle_key('Z')
@@ -577,10 +577,10 @@ class TestPreviewView < Minitest::Test
     assert_empty copied, '一覧を開いている間はコピーもしないこと'
   end
 
-  def test_slash_does_nothing_for_a_single_sheet_table
+  def test_t_does_nothing_for_a_single_sheet_table
     view = Rufio::PreviewView.build(@csv_path)
 
-    refute view.handle_key('/'), '1 枚しかない表では一覧を開かないこと'
+    refute view.handle_key('t'), '1 枚しかない表では一覧を開かないこと'
     refute view.picker_open?
   end
 
@@ -588,20 +588,20 @@ class TestPreviewView < Minitest::Test
     rebound = Rufio::ConfigLoader.default_keybinds.merge(move_down: 'n')
     Rufio::ConfigLoader.stub(:keybinds, rebound) do
       view = multi_sheet_view
-      view.handle_key('/')
+      view.handle_key('t')
       view.handle_key('n')
       assert_equal 1, view.picker.index
     end
   end
 
   def test_the_status_line_shows_the_list_hint
-    assert_includes multi_sheet_view.status_line, '/: list'
-    refute_includes Rufio::PreviewView.build(@csv_path).status_line, '/: list'
+    assert_includes multi_sheet_view.status_line, 't: list'
+    refute_includes Rufio::PreviewView.build(@csv_path).status_line, 't: list'
   end
 
   def test_the_status_line_shows_the_selected_entry_while_the_list_is_open
     view = multi_sheet_view
-    view.handle_key('/')
+    view.handle_key('t')
     view.handle_key('j')
 
     assert_includes view.status_line, '2/2 Stock'
@@ -610,13 +610,13 @@ class TestPreviewView < Minitest::Test
   end
 
   def test_the_list_title_uses_the_document_label
-    assert_equal 'Tables (10)', many_sheet_view.tap { |view| view.handle_key('/') }.picker_title
-    assert_equal 'Sheets (2)', multi_sheet_view.tap { |view| view.handle_key('/') }.picker_title
+    assert_equal 'Tables (10)', many_sheet_view.tap { |view| view.handle_key('t') }.picker_title
+    assert_equal 'Sheets (2)', multi_sheet_view.tap { |view| view.handle_key('t') }.picker_title
   end
 
   def test_the_list_rows_mark_the_current_sheet_and_the_selection
     view = multi_sheet_view
-    view.handle_key('/')
+    view.handle_key('t')
     view.handle_key('j')
     rows = view.picker_rows
 
@@ -630,14 +630,14 @@ class TestPreviewView < Minitest::Test
                Rufio::MemoryTableSheet.new(name: "bad\e[31mname", header: %w[a], rows: [%w[2]])]
     )
     view = Rufio::TablePreviewView.new(document, path: @csv_path)
-    view.handle_key('/')
+    view.handle_key('t')
 
     refute_includes view.picker_rows.last[:text], "\e", 'シート名の制御文字を無害化すること'
   end
 
   def test_the_list_scrolls_to_keep_the_selection_visible
     view = many_sheet_view
-    view.handle_key('/')
+    view.handle_key('t')
     view.picker.visible_rows = 3
 
     assert_equal %w[t1 t2 t3], view.picker_rows.map { |row| row[:text][2..] }
@@ -648,7 +648,7 @@ class TestPreviewView < Minitest::Test
 
   def test_the_wheel_moves_the_list_while_it_is_open
     view = many_sheet_view(30)
-    view.handle_key('/')
+    view.handle_key('t')
 
     assert view.scroll(1), 'ホイールは一覧の選択を動かすこと'
     assert_equal 1, view.picker.index
@@ -661,7 +661,7 @@ class TestPreviewView < Minitest::Test
 
   def test_reset_closes_the_list
     view = multi_sheet_view
-    view.handle_key('/')
+    view.handle_key('t')
     assert view.reset
 
     refute view.picker_open?
@@ -680,14 +680,14 @@ class TestPreviewView < Minitest::Test
 
   def test_the_list_opens_from_preview_mode
     handler = xlsx_handler
-    assert handler.handle_key('/')
+    assert handler.handle_key('t')
 
     assert handler.preview_view.picker_open?
   end
 
   def test_escape_closes_the_list_before_leaving_preview_mode
     handler = xlsx_handler
-    handler.handle_key('/')
+    handler.handle_key('t')
 
     assert handler.handle_key("\e")
     assert handler.preview_focused?, 'ESC は一覧を閉じるだけでプレビューは抜けないこと'
@@ -699,7 +699,7 @@ class TestPreviewView < Minitest::Test
 
   def test_choosing_from_the_list_switches_the_sheet
     handler = xlsx_handler
-    handler.handle_key('/')
+    handler.handle_key('t')
     handler.handle_key('j')
     handler.handle_key("\r")
 
@@ -905,7 +905,7 @@ class TestPreviewView < Minitest::Test
   def test_choosing_from_the_list_clears_the_selection
     view = multi_sheet_view
     view.handle_key(' ')
-    view.handle_key('/')
+    view.handle_key('t')
     view.handle_key('j')
     view.handle_key("\r")
 
@@ -922,7 +922,7 @@ class TestPreviewView < Minitest::Test
 
   def test_the_list_swallows_the_select_key
     view = multi_sheet_view
-    view.handle_key('/')
+    view.handle_key('t')
 
     assert view.handle_key(' ')
     assert_empty view.selected_columns, '一覧を開いている間はカラムを選ばないこと'
