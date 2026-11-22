@@ -93,7 +93,10 @@ class TestPreviewSearch < Minitest::Test
       view = view_for
       assert view.handle_key('S')
       assert view.search_prompt_open?
-      refute view.handle_key('/'), '既定キーは設定で置き換わること'
+
+      other = view_for
+      refute other.handle_key('/'), '既定キーは設定で置き換わること'
+      refute other.search_prompt_open?
     end
   end
 

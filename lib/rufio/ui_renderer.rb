@@ -25,6 +25,12 @@ module Rufio
     TABLE_FOOTER_MIN_HEIGHT = 5      # 表プレビューで最下行に情報行を出す最小の高さ
     TABLE_GRID_START_ROW = 2         # プレビューペインでグリッドが始まる行（0:ファイル名 1:情報）
     SHEET_LIST_START_ROW = 3         # シート一覧が始まる行（0:ファイル名 1:情報 2:一覧の見出し）
+    # プレビュー内検索（`/`）の一致の色。現在の一致だけ背景を変える
+    SEARCH_MATCH_FG = "\e[30m"
+    SEARCH_MATCH_BG = "\e[43m"
+    # 現在の一致（n / N で動かしている位置）。モードタブのシアンと区別する
+    CURRENT_MATCH_FG = "\e[30m\e[1m"
+    CURRENT_MATCH_BG = "\e[45m"
     # Space で選んだカラムの印（ファイル一覧の選択済みアイテムと同じ緑背景・黒文字）
     MARKED_COLUMN_COLOR = "\e[42m\e[30m"
     TAB_SEPARATOR = ">"            # タブ間セパレータ
@@ -336,20 +342,24 @@ module Rufio
       highlighted_wrapped_lines = nil
 
       if selected_entry && selected_entry[:type] == 'file'
-        if @last_preview_path != selected_entry[:path]
-          full_preview = @file_preview.preview_file(selected_entry[:path])
+        # プレビューモード中は、スクロールとファイル内検索（/）のために多めの行を読む
+        max_lines = fullscreen ? FilePreview::PREVIEW_MODE_MAX_LINES : FilePreview::DEFAULT_MAX_LINES
+        cache_entry = @preview_cache[selected_entry[:path]]
+        if @last_preview_path != selected_entry[:path] || cache_entry.nil? ||
+           (cache_entry[:max_lines] || 0) < max_lines
+          full_preview = @file_preview.preview_file(selected_entry[:path], max_lines: max_lines)
           preview_content = extract_preview_lines(full_preview)
           @preview_cache[selected_entry[:path]] = {
             content: preview_content,
             preview_data: full_preview,
+            max_lines: max_lines,
             highlighted: nil,
             wrapped: {},
             highlighted_wrapped: {}
           }
           @last_preview_path = selected_entry[:path]
         else
-          cache_entry = @preview_cache[selected_entry[:path]]
-          preview_content = cache_entry[:content] if cache_entry
+          preview_content = cache_entry[:content]
         end
 
         # 表プレビューはグリッドとして描くので、折り返しもハイライトも通さない
@@ -423,8 +433,14 @@ module Rufio
         table_status = table_status_text(table_document, table_layout, table_col_offset)
       end
 
-      # シート一覧（/）を開いている間は、グリッドの代わりに一覧を描く
+      # シート一覧（t）を開いている間は、グリッドの代わりに一覧を描く
       sheet_picker_title, sheet_picker_rows = sheet_picker_for(table_layout, height)
+
+      # テキストプレビューの `/` 検索: 折り返し後の行から一致行を求めてビューに渡す
+      search_query, search_match_rows = apply_text_search(
+        wrapped_lines, highlighted_wrapped_lines, height, safe_width,
+        selected_entry && @preview_cache[selected_entry[:path]]
+      )
 
       (0...height).each do |i|
         line_num = i + CONTENT_START_LINE
@@ -471,8 +487,13 @@ module Rufio
           display_line_index = i - 2 + scroll_offset
 
           if display_line_index < highlighted_wrapped_lines.length
-            draw_highlighted_line_to_buffer(screen, content_x, line_num,
-                                            highlighted_wrapped_lines[display_line_index], safe_width)
+            tokens = highlighted_wrapped_lines[display_line_index]
+            draw_highlighted_line_to_buffer(screen, content_x, line_num, tokens, safe_width)
+            if search_match_rows&.key?(display_line_index)
+              plain = " #{tokens.map { |token| token[:text] }.join}"
+              draw_text_matches_to_buffer(screen, content_x, line_num, plain, search_query,
+                                          search_match_rows[display_line_index], safe_width)
+            end
           else
             screen.put_string(content_x, line_num, ' ' * safe_width)
           end
@@ -491,6 +512,10 @@ module Rufio
           remaining_space = safe_width - TextUtils.display_width(content_to_print)
           content_to_print += ' ' * remaining_space if remaining_space > 0
           screen.put_string(content_x, line_num, content_to_print)
+          if search_match_rows&.key?(display_line_index)
+            draw_text_matches_to_buffer(screen, content_x, line_num, content_to_print, search_query,
+                                        search_match_rows[display_line_index], safe_width)
+          end
 
         else
           screen.put_string(content_x, line_num, ' ' * safe_width)
@@ -524,6 +549,64 @@ module Rufio
         sheet, safe_width, max_column_width: ConfigLoader.table_preview[:max_column_width]
       ))
       [document, layout, sheet]
+    end
+
+    # テキストプレビューの `/` 検索。一致行（折り返し後の行番号）をビューに渡し、
+    # 描画用に { 行番号 => 現在の一致か } を返す。
+    # 折り返しは幅に依存するため、一致行を求めるのは（幅を知っている）ここが担当する。
+    # @return [Array(String, Hash), Array(nil, nil)]
+    def apply_text_search(wrapped_lines, highlighted_lines, height, width, cache_entry)
+      view = @keybind_handler&.preview_view
+      return [nil, nil] unless view && !view.table?
+
+      query = view.search_query
+      view.visible_rows = [height - TABLE_GRID_START_ROW, 1].max
+      if query.nil? || query.empty?
+        view.apply_matches([])
+        return [nil, nil]
+      end
+
+      rows = -> { wrapped_lines || highlighted_lines&.map { |tokens| tokens.map { |token| token[:text] }.join } }
+      matches = cached_search_matches(cache_entry, query, width, rows)
+      view.apply_matches(matches)
+
+      current = view.current_match
+      [query, matches.each_with_object({}) { |index, map| map[index] = index == current }]
+    end
+
+    # 同じ検索語・同じ幅のあいだは一致行を数え直さない
+    def cached_search_matches(cache_entry, query, width, rows)
+      key = [query, width]
+      cache = cache_entry && (cache_entry[:search_matches] ||= {})
+      return cache[:matches] if cache && cache[:key] == key
+
+      needle = query.downcase
+      lines = rows.call || []
+      matches = lines.each_index.select { |index| lines[index].to_s.downcase.include?(needle) }
+      if cache
+        cache[:key] = key
+        cache[:matches] = matches
+      end
+      matches
+    end
+
+    # 画面に出した 1 行のうち、検索語に一致した部分だけを塗り替える
+    def draw_text_matches_to_buffer(screen, content_x, line_num, text, query, current, safe_width)
+      return if query.nil? || query.empty?
+
+      needle = query.downcase
+      lowered = text.downcase
+      offset = 0
+      background = current ? CURRENT_MATCH_BG : SEARCH_MATCH_BG
+      foreground = current ? CURRENT_MATCH_FG : SEARCH_MATCH_FG
+      while (found = lowered.index(needle, offset))
+        prefix_width = TextUtils.display_width(text[0, found])
+        break if prefix_width >= safe_width
+
+        matched = TextUtils.truncate_to_width(text[found, needle.length].to_s, safe_width - prefix_width)
+        screen.put_string(content_x + prefix_width, line_num, matched, fg: foreground, bg: background)
+        offset = found + needle.length
+      end
     end
 
     # シート一覧を開いているなら、見出しと描く行を返す（開いていなければ [nil, nil]）

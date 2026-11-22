@@ -280,12 +280,12 @@ class TestTablePreview < Minitest::Test
     assert_includes screen_text(screen, 24), 'R1C2 price'
   end
 
-  def test_text_preview_keeps_the_back_hint
+  def test_text_preview_keeps_the_scroll_hint
     screen, ui, handler = renderer_for(name: 'notes.txt')
     handler.focus_preview_pane
     ui.draw_screen(screen)
 
-    assert_includes screen_text(screen, 24), 'ESC: Back to files'
+    assert_includes screen_text(screen, 24), Rufio::TextPreviewView::SCROLL_HINT
   end
 
   def test_moving_right_scrolls_the_columns_into_view

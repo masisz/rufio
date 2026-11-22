@@ -76,7 +76,7 @@ class TestPreviewView < Minitest::Test
     refute view.table?
     assert_equal File.expand_path(@txt_path), view.copy_target,
                  'テキストプレビューの y はファイルパスをコピーする'
-    assert_equal Rufio::PreviewView::BACK_HINT, view.status_line
+    assert_equal Rufio::TextPreviewView::SCROLL_HINT, view.status_line
   end
 
   def test_text_view_ignores_unknown_keys
