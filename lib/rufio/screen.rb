@@ -49,6 +49,13 @@ module Rufio
     def put(x, y, char, fg: nil, bg: nil, width: nil)
       return if out_of_bounds?(x, y)
 
+      # 制御文字は端末を操作してしまうため、バッファに入れる前に空白へ置き換える
+      # （幅は置き換え後の文字で数え直す）
+      if TextUtils.control_char?(char)
+        char = TextUtils::CONTROL_CHAR_REPLACEMENT
+        width = nil
+      end
+
       # Phase1: Width is calculated once here (not in rendering loop)
       char_width = width || TextUtils.display_width(char)
       cell = @cells[y][x]
@@ -87,6 +94,9 @@ module Rufio
       # Phase1: ANSI stripping only once (minimal processing)
       # Only strip if the string contains ANSI codes
       clean_str = str.include?("\e") ? ColorHelper.strip_ansi(str) : str
+      # strip_ansi は色指定（\e[...m）しか落とさないので、残る制御文字をここで無害化する。
+      # ファイル名・ファイル内容・外部コマンドの出力が端末を操作するのを防ぐ最後の関門
+      clean_str = TextUtils.sanitize_for_display(clean_str)
 
       current_x = x
       clean_str.each_char do |char|

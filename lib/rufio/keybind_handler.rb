@@ -83,6 +83,16 @@ module Rufio
       @nav_controller.preview_scroll_offset
     end
 
+    # プレビューモード中のビュー（テキスト / 表）
+    def preview_view
+      @nav_controller.preview_view
+    end
+
+    # 表プレビューのセルカーソル（表でなければ nil）
+    def preview_cursor
+      @nav_controller.preview_cursor
+    end
+
     def filter_query
       @filter_manager.filter_query
     end
@@ -486,6 +496,7 @@ module Rufio
       when :create_dir      then @file_op_controller.create_directory
       when :move_selected   then @file_op_controller.move_selected_to_current
       when :copy_selected   then @file_op_controller.copy_selected_to_current
+      when :copy_to_clipboard then @file_op_controller.copy_paths_to_clipboard(current_entry)
       when :delete_selected then @file_op_controller.delete_selected_files
       when :select          then toggle_selection
       when :filter

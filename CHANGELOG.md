@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-22
+
+### Added
+- `.csv`, `.tsv` and `.tab` previews are shown as a grid instead of raw text: column letters with the header row, row numbers, the header kept in place while scrolling, and a last line with the row and column counts, the detected character encoding, any truncation and how many columns do not fit. Both the split pane and the fullscreen preview (`P`) use it
+- Character encoding detection for table previews (`Rufio::EncodingDetector`): UTF-8 and UTF-16 BOMs, UTF-8, CP932 and EUC-JP, so Shift_JIS CSV files no longer read as replacement characters. The byte limit is cut at the last newline so a multibyte character is never split
+- `TABLE_PREVIEW` in `config.rb` sets the table preview limits (`max_bytes` up to 1 MiB, `max_rows`, `max_columns`, `max_column_width`) and the `header`, `delimiter` (`'auto'` detects `;`) and `encoding` handling. Omitted or invalid values keep the defaults (64 KiB / 1000 / 256 / 32)
+- In preview mode (`P`) on a table file, `h`/`j`/`k`/`l` and the arrow keys move a cell cursor, `Ctrl+D`/`Ctrl+U` move one screen of rows, `g`/`}` jump to the first and last row and `0`/`$` to the first and last column. The grid scrolls vertically and horizontally to keep the cursor in view, the cursor cell is drawn in the selection colour, and the line under the file name shows the cell address and column name (`R3C2 price`). Cell movement follows the `move_up` / `move_down` / `navigate_parent` / `navigate_enter` keybinds
+- `.xlsx`, `.xlsm` and `.ods` files are previewed as a grid through the `roo` gem that was already a dependency, and SQLite databases are too when the `sqlite3` command is installed, recognised by the file's own signature whatever the extension (without the command they are left as before). `[` and `]` switch between a workbook's sheets or a database's tables, and only the sheet on screen is read, so the others cost nothing until they are opened. A spreadsheet over 10 MiB, or one that cannot be read, falls back to the ZIP entry list
+- `Y` copies the row under the cursor as one CSV line
+- The search screen (`s` / `/` / `F`) lays a table preview out as a grid fitted to its pane rather than printing the file's raw lines
+- `y` copies to the clipboard: the cell under the cursor in a table preview (the raw value, newlines inside a cell included), the file path in any other preview, and in the file list the paths of the selected files, or of the file under the cursor when nothing is selected, one per line. The result is shown in the preview's status line or at the bottom of the file list
+- `Rufio::Clipboard` runs `pbcopy`, `clip`, `wl-copy`, `xclip` or `xsel` when one is on `PATH`, and otherwise writes OSC 52, which reaches the terminal over SSH as well (wrapped for tmux and screen; tmux also needs `set-clipboard on`). Commands run through `argv` without a shell. `CLIPBOARD_COMMAND` in `config.rb` sets a command of your own, and `rufio -c` reports which one is used
+- `Rufio::PreviewView`: preview mode now delegates its keys, scroll position and status line to a view (`TextPreviewView` or `TablePreviewView`), so a further preview kind needs no change in `NavigationController` or `UIRenderer`. `Rufio::TableCursor` holds the cell position and the scroll offsets, and `TableLayout#offset_for` computes how far to scroll sideways
+- `Rufio::TableSource` and `Rufio::PreviewRegistry`: a table format implements `supports?` and `open` and returns sheets whose rows are read through `fetch_rows(offset, limit)`, so further formats (Excel, SQLite) need no change to the renderer. The plan is in `docs/csv_cell_preview_design_ja.md`
+
 ## [1.6.0] - 2026-11-22
 
 ### Added
@@ -21,7 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `FUZZY_SEARCH_CACHE` in `config.rb` changes the file list cache limits (`max_entries` up to 1,000,000, `max_roots` up to 16, `ttl` up to 86,400 seconds; `0` disables). Omitted or invalid values keep the defaults (200,000 / 4 / 300)
 
+### Security
+- Control characters are replaced with a space before anything is stored in the screen buffer (`Rufio::TextUtils.sanitize_for_display`, applied in `Screen#put` / `#put_string`). Previously only colour codes (`\e[…m`) were removed, so an `ESC` in a file name, a file's contents or a table cell reached the terminal: a cell or column name holding `\e]52;c;…\a` silently replaced the viewer's clipboard when the cursor moved onto the file, and `\e[2J` or `\e]0;…\a` could repaint the screen or the title. The table preview, the preview status lines, the file list and text previews all go through the one sanitizing step now
+- Text copied with `y` or `Y` loses its trailing newline and has control characters other than newline and tab replaced, so a cell cannot execute itself when pasted into a shell. A cell holding a newline is reported as `copied, 2 lines`, since the grid draws it on one line
+- SQLite databases are opened by absolute path, so a file named like an option (`-cmd`) cannot be read as one, and with `-safe` where the `sqlite3` command supports it, which refuses `writefile()`, `load_extension()` and `ATTACH`
+
 ### Changed
+- Table previews read up to 512 KiB of a `.csv` or `.tsv` instead of 64 KiB, and `TABLE_PREVIEW`'s `max_bytes` goes up to 4 MiB. Parsing now stops at `max_rows` rows rather than parsing everything that was read, so a wider limit does not cost more time: a 40-column CSV showed 147 rows in 2 ms before and 1000 rows in 14 ms now, where the old code needed 29 ms for the same rows. Cells are measured and drawn from their first 256 characters, which keeps a cell of several hundred thousand characters from slowing the layout
+
 - `s`, `/` and `F` no longer use fzf, and `rufio -c` no longer checks for it. The keybind actions are renamed to `file_search` / `file_search_alt`; the former `fzf_search` / `fzf_search_alt` names in `KEYBINDS` are still accepted as aliases (the new names win when both are set)
 - G mode file name search uses the same fuzzy matching as `s`: results are ranked, matched characters are highlighted and filtering runs in the background instead of on each keystroke in the UI thread. Content search stays literal. Exclusions, skipped counts and bookmark labels are unchanged
 - Fuzzy ranking no longer penalizes the distance from the start of the path, and the first character of the file name gets +8, so file names that start with the query rank first (e.g. `Rakefile` for `rakefile`, `gemspec.rb` for `gemspec`). Ruby and native scoring stay identical

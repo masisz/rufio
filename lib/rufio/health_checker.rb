@@ -21,6 +21,7 @@ module Rufio
         { name: ConfigLoader.message('health.rga'), method: :check_rga },
         { name: ConfigLoader.message('health.zoxide'), method: :check_zoxide },
         { name: ConfigLoader.message('health.bat'), method: :check_bat },
+        { name: ConfigLoader.message('health.clipboard'), method: :check_clipboard },
         { name: ConfigLoader.message('health.file_opener'), method: :check_file_opener }
       ]
 
@@ -132,6 +133,21 @@ module Rufio
           status: :warning,
           message: "bat #{ConfigLoader.message('health.tool_not_found')}",
           details: install_instruction_for('bat')
+        }
+      end
+    end
+
+    # y でコピーするときに使える手段を表示する。
+    # コマンドが無くても OSC 52 で動く可能性があるため、警告ではなく注意書きにする。
+    def check_clipboard
+      command = Clipboard.available_command
+      if command
+        { status: :ok, message: command.join(' '), details: nil }
+      else
+        {
+          status: :ok,
+          message: ConfigLoader.message('health.clipboard_osc52'),
+          details: ConfigLoader.message('health.clipboard_hint')
         }
       end
     end

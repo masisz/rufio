@@ -15,6 +15,12 @@ module Rufio
     ELLIPSIS_MIN_WIDTH = 3
     ELLIPSIS = '...'
 
+    # 端末制御シーケンスの除去用。C0（ESC / BEL / NUL / TAB など）と
+    # C1（U+0080〜U+009F。U+009B は 8 ビットの CSI）の両方を含む
+    CONTROL_CHAR_PATTERN = /[[:cntrl:]]/
+    CONTROL_CHAR_REPLACEMENT = ' '
+    INVALID_BYTE_REPLACEMENT = '?'
+
     # Line break constants
     BREAK_POINT_THRESHOLD = 0.5  # Break after 50% of max_width
 
@@ -35,6 +41,27 @@ module Rufio
           char.bytesize > MULTIBYTE_THRESHOLD ? FULLWIDTH_CHAR_WIDTH : HALFWIDTH_CHAR_WIDTH
         end
       end
+    end
+
+    # 端末へ出す前に、表示を壊す・端末を操作する文字を無害化する。
+    #
+    # ファイル名やファイル内容には ESC が入りうる。色指定（\e[...m）だけを落とす
+    # ColorHelper.strip_ansi では OSC（\e]52;... でクリップボードを書き換える等）や
+    # DCS、CSI の非 m シーケンスが通ってしまうため、制御文字そのものを置き換える。
+    #
+    # @param string [String]
+    # @return [String] 制御文字を空白に置き換え、不正バイトを除いた文字列
+    def sanitize_for_display(string)
+      text = string.to_s
+      text = text.scrub(INVALID_BYTE_REPLACEMENT) unless text.valid_encoding?
+      return text unless text.match?(CONTROL_CHAR_PATTERN)
+
+      text.gsub(CONTROL_CHAR_PATTERN, CONTROL_CHAR_REPLACEMENT)
+    end
+
+    # @return [Boolean] 制御文字を含むか（1 文字の判定にも使う）
+    def control_char?(char)
+      char.match?(CONTROL_CHAR_PATTERN)
     end
 
     # Calculate display width of a string

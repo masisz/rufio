@@ -20,6 +20,19 @@ module Rufio
     DEFAULT_FUZZY_SEARCH_CACHE = { max_entries: 200_000, max_roots: 4, ttl: 300 }.freeze
     MAX_FUZZY_SEARCH_CACHE = { max_entries: 1_000_000, max_roots: 16, ttl: 86_400 }.freeze
 
+    # 表プレビュー（CSV / TSV / Excel / SQLite）の読み込み上限と表示設定。
+    # max_bytes はテキスト形式（CSV / TSV）を読む量。max_rows 行で解析を打ち切るため、
+    # ここを広げても解析時間は増えない（読み込みと文字コード判定の分だけ増える）。
+    DEFAULT_TABLE_PREVIEW = {
+      max_bytes: 512 * 1024, max_rows: 1000, max_columns: 256, max_column_width: 32
+    }.freeze
+    MIN_TABLE_PREVIEW = {
+      max_bytes: 1024, max_rows: 1, max_columns: 1, max_column_width: 3
+    }.freeze
+    MAX_TABLE_PREVIEW = {
+      max_bytes: 4 * 1024 * 1024, max_rows: 100_000, max_columns: 4096, max_column_width: 200
+    }.freeze
+
     class << self
       def load_config
         @config ||= if File.exist?(CONFIG_PATH)
@@ -63,6 +76,7 @@ module Rufio
           create_dir:      'A',
           move_selected:   'm',
           copy_selected:   'c',
+          copy_to_clipboard: 'y',
           delete_selected: 'x',
           open_explorer:   'e',
           # 選択・検索
@@ -111,6 +125,32 @@ module Rufio
         current = user_keybinds.reject { |action, _| LEGACY_KEYBIND_ACTIONS.key?(action) }
         renamed = legacy.each_with_object({}) { |(action, key), map| map[LEGACY_KEYBIND_ACTIONS[action]] = key }
         default_keybinds.merge(renamed).merge(current)
+      end
+
+      # クリップボードへコピーするコマンド（文字列または argv 配列）。
+      # 未設定なら OS ごとの既定コマンド → OSC 52 の順で試す。
+      def clipboard_command
+        value = load_config[:clipboard_command]
+        return value if value.is_a?(String) && !value.empty?
+        return value if value.is_a?(Array) && value.all? { |item| item.is_a?(String) } && !value.empty?
+
+        nil
+      end
+
+      # 表プレビュー設定（整数は min..max に丸め、不正な値は既定値のまま）
+      def table_preview
+        values = load_config[:table_preview]
+        values = {} unless values.is_a?(Hash)
+
+        settings = DEFAULT_TABLE_PREVIEW.each_with_object({}) do |(key, default), acc|
+          value = values[key]
+          acc[key] = value.is_a?(Integer) ? value.clamp(MIN_TABLE_PREVIEW[key], MAX_TABLE_PREVIEW[key]) : default
+        end
+
+        settings[:header] = values[:header] != false
+        settings[:delimiter] = values[:delimiter].is_a?(String) ? values[:delimiter] : 'auto'
+        settings[:encoding] = values[:encoding].is_a?(String) ? values[:encoding] : 'auto'
+        settings
       end
 
       # 0 以上の整数だけを受け付け、上限を超える値は上限に丸める。不正な値は既定値のまま
@@ -314,7 +354,9 @@ module Rufio
           colors: safe_const_get(:COLORS, default_config[:colors]),
           keybinds: safe_const_get(:KEYBINDS, {}),
           global_search_excluded_extensions: safe_const_get(:GLOBAL_SEARCH_EXCLUDED_EXTENSIONS, []),
-          fuzzy_search_cache: safe_const_get(:FUZZY_SEARCH_CACHE, {})
+          fuzzy_search_cache: safe_const_get(:FUZZY_SEARCH_CACHE, {}),
+          table_preview: safe_const_get(:TABLE_PREVIEW, {}),
+          clipboard_command: safe_const_get(:CLIPBOARD_COMMAND, nil)
         }
 
         if Object.const_defined?(:LANGUAGE)
@@ -364,8 +406,10 @@ module Rufio
             preview: { hsl: [180, 60, 65] }
           },
           global_search_excluded_extensions: [],
-          keybinds: {},    # ユーザーの上書きのみ格納（デフォルトはdefault_keybindsを参照）
-          ui_options: {}   # ユーザーの上書きのみ格納（デフォルトはdefault_ui_optionsを参照）
+          keybinds: {},      # ユーザーの上書きのみ格納（デフォルトはdefault_keybindsを参照）
+          ui_options: {},    # ユーザーの上書きのみ格納（デフォルトはdefault_ui_optionsを参照）
+          table_preview: {},      # ユーザーの上書きのみ格納（デフォルトはDEFAULT_TABLE_PREVIEWを参照）
+          clipboard_command: nil  # 未設定なら OS 既定のコマンド → OSC 52
         }
       end
     end

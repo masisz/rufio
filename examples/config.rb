@@ -74,3 +74,26 @@ COMMAND_HISTORY_SIZE = 1000
 #
 # These files are automatically loaded by rufio.
 # You can edit them manually or manage via rufio's UI.
+
+# ========================================
+# Table Preview (.csv / .tsv / .tab)
+# ========================================
+# Limits and display settings for the grid preview.
+# Omitted or out-of-range values fall back to the defaults shown here.
+TABLE_PREVIEW = {
+  max_bytes: 512 * 1024,  # Bytes read from a .csv / .tsv (up to 4 MiB)
+  max_rows: 1000,         # Rows parsed
+  max_columns: 256,       # Columns parsed
+  max_column_width: 32,   # Display width of one column
+  header: true,           # Treat the first row as the header
+  delimiter: 'auto',      # 'auto' (extension, then ';' detection), ',', "\t", ';' ...
+  encoding: 'auto'        # 'auto' (BOM / UTF-8 / CP932 / EUC-JP), 'UTF-8', 'CP932' ...
+}.freeze
+
+# ========================================
+# Clipboard Command (y)
+# ========================================
+# Command that receives the copied text on stdin, as a string or an argv array.
+# Leave it unset to use pbcopy / clip / wl-copy / xclip / xsel when available,
+# and OSC 52 otherwise (works over SSH; in tmux also set -g set-clipboard on).
+# CLIPBOARD_COMMAND = ['xclip', '-selection', 'clipboard'].freeze

@@ -5,6 +5,7 @@ require_relative 'dialog_support'
 require_relative 'file_operations'
 require_relative 'dialog_renderer'
 require_relative 'logger'
+require_relative 'clipboard'
 
 module Rufio
   # ファイル操作専用コントローラ
@@ -30,6 +31,16 @@ module Rufio
       @terminal_ui = terminal_ui
     end
 
+    # 選択は「選択したディレクトリ」と対で保持されているため、そのディレクトリを基準に解決する
+    def selected_paths
+      return [] if @selection_manager.nil? || @selection_manager.empty?
+
+      source = @selection_manager.source_directory || @directory_listing&.current_path
+      return [] if source.nil?
+
+      @selection_manager.selected_items.map { |name| File.join(source, name) }
+    end
+
     def set_directory_listing(directory_listing)
       @directory_listing = directory_listing
     end
@@ -37,6 +48,7 @@ module Rufio
     # ============================
     # ファイル作成
     # ============================
+
 
     def create_file
       prompt_and_select_entry("Create File", "Enter file name:", "\e[32m", "\e[1;32m") do |path, name|
@@ -179,6 +191,26 @@ module Rufio
     end
 
     # ============================
+    # クリップボード
+    # ============================
+
+    # y: 選択中のファイルがあればその全パス、なければカーソル位置のパスをコピーする
+    # @param entry [Hash, nil] カーソル位置のエントリ
+    def copy_paths_to_clipboard(entry)
+      paths = selected_paths
+      paths = [entry[:path]] if paths.empty? && entry
+      paths = paths.compact.map { |path| File.expand_path(path) }
+      if paths.empty?
+        notify_clipboard('nothing to copy')
+        return false
+      end
+
+      method = Clipboard.copy(paths.join("\n"))
+      notify_clipboard(method ? "#{copied_label(paths)} copied (#{method})" : 'clipboard unavailable')
+      !method.nil? && method != false
+    end
+
+    # ============================
     # 終了確認
     # ============================
 
@@ -202,6 +234,15 @@ module Rufio
     end
 
     private
+
+    def copied_label(paths)
+      paths.length == 1 ? File.basename(paths.first) : "#{paths.length} paths"
+    end
+
+    def notify_clipboard(message)
+      status = @terminal_ui&.ui_renderer&.background_status
+      status ? status.notify(message) : false
+    end
 
     def prompt_and_select_entry(title, prompt, border_color, title_color)
       current_path = @directory_listing&.current_path || Dir.pwd
