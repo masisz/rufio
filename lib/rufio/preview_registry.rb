@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require_relative 'csv_table_source'
+require_relative 'xlsx_table_source'
+require_relative 'sqlite_table_source'
 
 require 'monitor'
 
@@ -13,7 +15,7 @@ module Rufio
   #   PreviewRegistry.register_table_source(XlsxTableSource)
   #   PreviewRegistry.register_table_source(SqliteTableSource)
   module PreviewRegistry
-    DEFAULT_TABLE_SOURCES = [CsvTableSource].freeze
+    DEFAULT_TABLE_SOURCES = [CsvTableSource, XlsxTableSource, SqliteTableSource].freeze
 
     # 同じファイルを二度パースしないための小さなキャッシュ（ファイル数）
     CACHE_LIMIT = 4

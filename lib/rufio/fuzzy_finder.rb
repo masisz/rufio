@@ -3,6 +3,7 @@
 require_relative 'text_utils'
 require_relative 'fuzzy_search'
 require_relative 'fuzzy_preview_loader'
+require_relative 'table_layout'
 
 module Rufio
   # s / / / F の内蔵検索画面。FuzzySearchSession の最新スナップショットを描画し、
@@ -286,7 +287,7 @@ module Rufio
         return
       end
 
-      lines = preview[:lines] || EMPTY
+      lines = table_preview_lines(preview, width, capacity) || preview[:lines] || EMPTY
       target = entry[:line_number] && entry[:line_number] - 1
       start = target ? (target - capacity / 2).clamp(0, [lines.length - capacity, 0].max) : 0
       lines[start, capacity].to_a.each_with_index do |line, index|
@@ -299,6 +300,26 @@ module Rufio
           write_at(screen, x, index + 3, text, width)
         end
       end
+    end
+
+    # 表プレビュー（.csv / .tsv / .xlsx ...）はプレビュー幅に合わせてグリッドを組み直す。
+    # FilePreview が返す lines は画面幅を知らないため、ここで作った方が収まりがよい。
+    def table_preview_lines(preview, width, capacity)
+      document = preview[:document]
+      return nil unless document
+
+      sheet = document.sheet
+      return nil if sheet.nil?
+
+      layout = TableLayout.build(sheet, width)
+      lines = []
+      lines << layout.header_line if sheet.header
+      sheet.fetch_rows(0, [capacity - lines.length, 0].max).each_with_index do |row, index|
+        lines << layout.row_line(index + 1, row)
+      end
+      lines
+    rescue StandardError
+      nil
     end
 
     def write_line(screen, y, text, width, color = nil)

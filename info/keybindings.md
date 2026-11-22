@@ -28,7 +28,7 @@ Complete reference of all keyboard shortcuts in **rufio**.
 
 `.zip` previews list the archive entries (size, method, modified time, name) without extracting them.
 
-`.csv`, `.tsv` and `.tab` previews show the file as a grid: column letters with the header row, row numbers, a fixed header while scrolling, and a last line with the row/column counts, the detected encoding and any truncation. `TABLE_PREVIEW` in `config.rb` changes the limits (`max_bytes`, `max_rows`, `max_columns`, `max_column_width`) and the `header`, `delimiter` and `encoding` handling.
+`.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm` and `.ods` previews, and SQLite databases when the `sqlite3` command is installed, show the file as a grid: column letters with the header row, row numbers, a fixed header while scrolling, and a last line with the row/column counts, the detected encoding and any truncation. `TABLE_PREVIEW` in `config.rb` changes the limits (`max_bytes`, `max_rows`, `max_columns`, `max_column_width`) and the `header`, `delimiter` and `encoding` handling.
 
 Text previews read at most the first 64 KiB. PDF bodies are not previewed, keeping file navigation responsive.
 
@@ -93,16 +93,20 @@ In the built-in search screen (`s`, `/`, `F`), type to fuzzy-filter, use **Up/Do
 - **Ctrl+D/U**: Page down/up
 - **ESC**: Back to the file list
 
-### Preview of a table (`.csv` / `.tsv` / `.tab`)
+### Preview of a table (`.csv` / `.tsv` / `.tab` / `.xlsx` / `.xlsm` / `.ods` / SQLite)
 - **h/j/k/l** or the **arrow keys**: Move the cell cursor. The grid scrolls, horizontally as well, to keep the cursor in view and the header row in place
 - **Ctrl+D/U**: Move one screen of rows
 - **g/}**: First / last row
 - **0/$**: First / last column of the row
 - **y**: Copy the cell under the cursor to the clipboard (the raw value, including any newlines inside it)
+- **Y**: Copy the whole row as one CSV line
+- **[/]**: Previous / next sheet, for a workbook's sheets or a database's tables
 - The line under the file name shows the cell address and the column name, e.g. `R3C2 price`, and the result of a copy
 - **ESC**: Back to the file list
 
 Cell movement follows the `move_up` / `move_down` / `navigate_parent` / `navigate_enter` keybinds, so rebinding `hjkl` applies here too.
+
+Only the sheet being shown is read, so a workbook's other sheets and a database's other tables cost nothing until you switch to them. A spreadsheet over 10 MiB, or one that cannot be read, falls back to the ZIP entry list.
 
 Copying uses `pbcopy`, `clip`, `wl-copy`, `xclip` or `xsel` when one is available, and OSC 52 otherwise, which also works over SSH if the terminal supports it (in tmux, `set -g set-clipboard on`). `CLIPBOARD_COMMAND` in `config.rb` sets your own command, and `rufio -c` reports which one is used.
 

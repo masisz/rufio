@@ -3,6 +3,7 @@
 require 'base64'
 require 'rbconfig'
 require_relative 'config_loader'
+require_relative 'command_locator'
 
 module Rufio
   # クリップボードへのコピー。
@@ -50,7 +51,7 @@ module Rufio
       def reset!
         @command_candidate = nil
         @resolved = false
-        @command_available = {}
+        CommandLocator.reset!
       end
 
       private
@@ -109,31 +110,8 @@ module Rufio
         !value.nil? && !value.empty?
       end
 
-      # PATH を直接見る（which を起動しない。Windows では PATHEXT も見る）
       def command_available?(name)
-        @command_available ||= {}
-        return @command_available[name] if @command_available.key?(name)
-
-        @command_available[name] = locate_command(name)
-      end
-
-      def locate_command(name)
-        return File.executable?(name) && !File.directory?(name) if name.include?(File::SEPARATOR)
-
-        extensions = if RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
-                       (ENV['PATHEXT'] || '.COM;.EXE;.BAT;.CMD').split(';')
-                     else
-                       ['']
-                     end
-
-        ENV.fetch('PATH', '').split(File::PATH_SEPARATOR).any? do |dir|
-          next false if dir.empty?
-
-          extensions.any? do |ext|
-            path = File.join(dir, "#{name}#{ext}")
-            File.executable?(path) && !File.directory?(path)
-          end
-        end
+        CommandLocator.available?(name)
       end
 
       def run_command(argv, text)

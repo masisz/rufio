@@ -1,7 +1,7 @@
 # 表プレビュー設計（CSV の行列表示 / hjkl セル移動 / y でコピー、将来の SQLite・Excel 対応を含む）
 
 対象バージョン: 1.7.0 想定（1.6.0 時点のコードを調査）
-ステータス: Phase 1・2・3 実装済み / Phase 4 は検討案
+ステータス: Phase 1〜4 実装済み
 
 ## 1. 目的とスコープ
 
@@ -339,7 +339,7 @@ Rufio::Clipboard.copy(text) # => :pbcopy | :clip | :wl_copy | :xclip | :xsel | :
 | 1 | **実装済み**: `TableSource` / `TableDocument` / `CsvTableSource` / `EncodingDetector`（CP932 含む）/ `TableLayout`、`PreviewRegistry`、`FilePreview` の type 追加、分割＋フルスクリーンのグリッド表示（カーソルなし） | 中〜大 |
 | 2 | **実装済み**: `PreviewView` プロトコルへの委譲、`TableCursor`、hjkl・ページ・`0`/`$`・`g`/`}`、2 行目のステータス、マウスホイール | 中 |
 | 3 | **実装済み**: `Clipboard`、`y`（セル／ファイルパス）、コピー結果表示、`HealthChecker`、設定項目、ドキュメント | 小〜中 |
-| 4 | `XlsxTableSource`、`SqliteTableSource`、シート切替（`[` / `]`）、`Y`（行コピー）、検索画面プレビューとの統合 | 中 |
+| 4 | **実装済み**: `XlsxTableSource`、`SqliteTableSource`、シート切替（`[` / `]`）、`Y`（行コピー）、検索画面プレビューとの統合 | 中 |
 
 Phase 1 単体でも「CSV が文字化けせず表で読める」価値が出る。Phase 3 の `y` は Files モードのパスコピーとセルコピーを同時に入れる。
 
@@ -363,8 +363,8 @@ fixture（`test/fixtures/`）: 全角混在、引用符、セル内改行、CP93
 ## 14. 未決事項
 
 1. **バイト上限**: 表プレビューだけ 64 KiB より広げるか（例: 256 KiB）。`fetch_rows` 方式なので後から広げられる
-2. **`Y`（行コピー）** を入れるか（`y` はセル、`Y` は CSV 1 行）
-3. **SQLite の読み取り手段**: `sqlite3` CLI 方式（推奨）か gem 追加か（Phase 4 着手時に決定）
+2. **SQLite の実機確認**: 実装は済んでいるが、この開発環境には `sqlite3` コマンドが無く、
+   偽のコマンドを差し込んだテストでしか検証できていない（9 章の実装記録を参照）
 
 ## 15. 決定済み事項
 
@@ -524,3 +524,52 @@ fixture（`test/fixtures/`）: 全角混在、引用符、セル内改行、CP93
 - `XlsxTableSource` / `SqliteTableSource`、シート切替（`[` / `]`）
 - `Y`（行全体を CSV 1 行としてコピー）
 - 検索画面のプレビューとの統合
+
+## 19. Phase 4 実装記録
+
+### 追加したファイル
+
+| ファイル | 内容 |
+|---|---|
+| `lib/rufio/xlsx_table_source.rb` | `.xlsx` / `.xlsm` / `.ods` を roo で読む。シートは表示するものだけ読む |
+| `lib/rufio/sqlite_table_source.rb` | `sqlite3` コマンドがあれば SQLite のテーブルを読む（argv 実行・読み取り専用・SELECT のみ） |
+| `lib/rufio/command_locator.rb` | PATH 上のコマンド検出（`Clipboard` と `SqliteTableSource` で共有） |
+| `test/support/xlsx_fixture.rb` | rubyzip だけで `.xlsx` / `.ods` を書くテスト用フィクスチャ |
+
+変更: `table_document.rb`（`LazyTableSheet` と `load_error`、親クラスがリーダー経由で値を見るように）、
+`table_preview_view.rb`（`[` / `]` のシート切替、`Y` の行コピー）、`preview_view.rb`（`sheet_index`、`copy_text`）、
+`ui_renderer.rb`（シート単位のレイアウトキャッシュと描画）、`file_preview.rb`（表として読めなかったときの
+フォールバックを ZIP → バイナリ → テキストの従来の流れに戻した）、`fuzzy_finder.rb`（検索画面のプレビューを
+ペイン幅に合わせたグリッドで描く）、`preview_registry.rb`（2 ソースの登録）。
+
+### 実装中に分かったこと
+
+1. **`Roo::OpenOffice` には `each_row_streaming` が無い**（`.xlsx` の `Roo::Excelx` だけが持つ API）。
+   最初の実装では `.ods` が必ず例外になり、黙って ZIP 表示に落ちていた。行番号で読む経路を用意して解決した。
+   ブロックから `break` を 1 段越えて投げると `LocalJumpError` になるため、
+   「ブロックが false を返したら止める」形に変えている
+2. **roo は数値セルで `xl/styles.xml` を要求する**。最初のフィクスチャは文字列セルだけだったため通っていたが、
+   数値セルを入れた途端に `Roo::FileNotFound` になった。フィクスチャに最小の styles.xml を足した
+3. **列の切り詰めは見出し行にも掛ける必要がある**。SQLite 側で見出し行を先に取り出してからデータ行だけを
+   切り詰めていたため、列数が行と食い違った（テストが検出）。CSV / Excel は元から全行に掛けていた
+4. **`.xlsx` が表として読めないときの戻り先はテキストではなく ZIP 一覧**。`.xlsx` は ZIP なので、
+   Phase 1 の「失敗したらテキスト」ではバイナリを文字として表示してしまう。
+   `FilePreview` のフォールバックを従来の流れ（ZIP → バイナリ → テキスト）に戻した
+5. **設定したコピーキーは `Y`（行コピー）より優先する**。`copy_to_clipboard` を `Y` に割り当てている場合に
+   行コピーが奪ってしまうため、ビューのキー処理の先頭で設定キーを見るようにした
+6. **SQLite のテーブル一覧は `-header` を付けない**ので出力に見出し行は入らない。
+   最初のテストデータに見出し行を入れていて、`name` というテーブルがあるものとして扱われていた
+
+### 動作確認
+
+- 新規テスト 2 ファイル（`test_xlsx_table_source.rb` 17 ケース / `test_sqlite_table_source.rb` 17 ケース）、
+  `test_preview_view.rb` に 5 ケース、`test_table_preview.rb` に 3 ケース追加
+- `rake test` 全体 1760 ケースで新たな失敗はなし（既存の 13 件は変更前から発生している別件）
+- tmux 上で `bin/rufio` を起動して確認: 3 シートの `.xlsx` が分割ペインと全画面でグリッド表示されること、
+  `]` / `[` でシートが切り替わり最下行が `2/3 Stock` になること、`Y` で `大阪,みかん,8` が
+  クリップボードコマンドへ渡ること、`y` でセル（`みかん`）が渡ること、
+  検索画面（`s`）のプレビューが `.csv` と `.xlsx` の両方でペイン幅に収まるグリッドになること
+- **SQLite だけは実機確認ができていない**。この開発環境に `sqlite3` コマンドが無く、
+  インストールも許可されていないため、偽のコマンドを差し込んだテスト（発行する SQL、識別子クォート、
+  CSV 出力の解釈、上限、失敗時の扱い）でしか検証していない。コマンドが無い環境では
+  `supports?` が false になり従来のバイナリ表示に戻るため、害はない

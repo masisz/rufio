@@ -45,7 +45,7 @@
 
 In a preview, `j/k` scroll, `Ctrl+D/U` page down/up and `ESC` returns to the file list.
 
-In a table preview (`.csv` / `.tsv` / `.tab`), `h/j/k/l` and the arrow keys move a cell cursor instead, `g/}` jump to the first and last row, `0/$` to the first and last column, `y` copies the cell under the cursor, and the line under the file name shows the cell address and column name (`R3C2 price`). The grid scrolls in both directions to keep the cursor visible.
+In a table preview, `h/j/k/l` and the arrow keys move a cell cursor instead, `g/}` jump to the first and last row, `0/$` to the first and last column, `y` copies the cell under the cursor, `Y` the whole row as a CSV line, `[`/`]` switch between a workbook's sheets or a database's tables, and the line under the file name shows the cell address and column name (`R3C2 price`). The grid scrolls in both directions to keep the cursor visible.
 
 Copying uses `pbcopy`, `clip`, `wl-copy`, `xclip` or `xsel` when available and OSC 52 otherwise; `CLIPBOARD_COMMAND` in `config.rb` overrides it and `rufio -c` shows which one is used.
 
@@ -53,7 +53,7 @@ Text previews read at most the first 64 KiB. PDF bodies are not previewed, keepi
 
 `.zip` previews list the archive entries (size, method, modified time, name) without extracting them.
 
-`.csv`, `.tsv` and `.tab` files are shown as a grid with column letters, the header row kept in place while you scroll, and a last line reporting the row and column counts, the detected character encoding and any truncation. UTF-8, UTF-16 (with BOM), CP932 and EUC-JP files are decoded automatically.
+`.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm` and `.ods` files, and SQLite databases when the `sqlite3` command is installed, are shown as a grid with column letters, the header row kept in place while you scroll, and a last line reporting the row and column counts, the detected character encoding and any truncation. UTF-8, UTF-16 (with BOM), CP932 and EUC-JP files are decoded automatically.
 
 ### File Selection & Bulk Operations
 

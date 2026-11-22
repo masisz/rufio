@@ -27,8 +27,13 @@ module Rufio
       raise NotImplementedError, "#{self.class} must implement fetch_rows"
     end
 
+    # 読み込みに失敗した理由（成功時は nil）
+    def load_error
+      nil
+    end
+
     def empty?
-      @row_count.zero?
+      row_count.zero?
     end
 
     # @return [Array<String>, nil] 1 行
@@ -60,7 +65,7 @@ module Rufio
 
     # ヘッダ行に表示する文字列（"A name" / ヘッダなしなら "A"）
     def column_title(index)
-      title = @header && @header[index]
+      title = header && header[index]
       title.nil? || title.empty? ? column_label(index) : "#{column_label(index)} #{title}"
     end
   end
@@ -80,6 +85,85 @@ module Rufio
       return [] if offset.negative? || limit <= 0
 
       @rows.slice(offset, limit) || []
+    end
+  end
+
+  # 行を必要になってから読むシート。Excel のシートや SQLite のテーブルのように
+  # 読み出しに時間がかかる形式向けで、表示するシートだけを読む。
+  #
+  # loader は { rows:, header:, row_truncated:, column_truncated: } を返す。
+  class LazyTableSheet < TableSheet
+    def initialize(name:, &loader)
+      super(name: name)
+      @loader = loader
+      @loaded = false
+      @load_error = nil
+    end
+
+    def fetch_rows(offset, limit)
+      load!
+      return [] if offset.negative? || limit <= 0
+
+      @rows.slice(offset, limit) || []
+    end
+
+    def header
+      load!
+      super
+    end
+
+    def row_count
+      load!
+      super
+    end
+
+    def column_count
+      load!
+      super
+    end
+
+    def row_truncated
+      load!
+      super
+    end
+
+    def column_truncated
+      load!
+      super
+    end
+
+    def load_error
+      load!
+      @load_error
+    end
+
+    def loaded?
+      @loaded
+    end
+
+    private
+
+    # 読めなかったシートは空として扱い、理由を load_error に残す。
+    # 描画中に呼ばれるため、ここで例外を出して UI を止めない。
+    def load!
+      return if @loaded
+
+      @loaded = true
+      apply(@loader.call || {})
+    rescue StandardError => e
+      apply({})
+      @load_error = e.message
+    end
+
+    def apply(result)
+      @rows = Array(result[:rows])
+      @header = result[:header]
+      @row_count = @rows.length
+      widths = @rows.map(&:length)
+      widths << @header.length if @header
+      @column_count = widths.max || 0
+      @row_truncated = result[:row_truncated] ? true : false
+      @column_truncated = result[:column_truncated] ? true : false
     end
   end
 
@@ -117,6 +201,7 @@ module Rufio
       parts << "#{target.column_count}#{'+' if target.column_truncated} cols"
       parts << @encoding unless @encoding == 'UTF-8'
       parts << 'byte limit reached' if @byte_truncated
+      parts << target.load_error if target.load_error
       parts.join('  ')
     end
   end

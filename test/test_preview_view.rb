@@ -182,6 +182,62 @@ class TestPreviewView < Minitest::Test
     assert_equal 11, view.cursor.row
   end
 
+  # === シート切替（[ / ]） ===
+
+  def multi_sheet_view
+    document = Rufio::TableDocument.new(
+      sheets: [
+        Rufio::MemoryTableSheet.new(name: 'Sales', header: %w[name price], rows: [%w[apple 120]]),
+        Rufio::MemoryTableSheet.new(name: 'Stock', header: %w[item count], rows: [%w[apple 30], %w[mikan 8]])
+      ]
+    )
+    Rufio::TablePreviewView.new(document, path: @csv_path)
+  end
+
+  def test_brackets_switch_sheets
+    view = multi_sheet_view
+    assert_equal 0, view.sheet_index
+
+    assert view.handle_key(']')
+    assert_equal 1, view.sheet_index
+    assert_equal 'Stock', view.sheet.name
+
+    assert view.handle_key('[')
+    assert_equal 0, view.sheet_index
+  end
+
+  def test_sheet_switching_stops_at_the_ends
+    view = multi_sheet_view
+    refute view.handle_key('['), '先頭シートより前には動かない'
+    view.handle_key(']')
+    refute view.handle_key(']'), '最終シートより後ろには動かない'
+  end
+
+  def test_switching_sheets_resets_the_cursor
+    view = multi_sheet_view
+    view.handle_key(']')
+    view.handle_key('j')
+    assert_equal 1, view.cursor.row
+
+    view.handle_key('[')
+    assert_equal 0, view.cursor.row, '切り替えたらカーソルは先頭セルに戻る'
+    assert_equal 1, view.cursor.row_count, 'カーソルは切り替え先のシートを見ること'
+  end
+
+  def test_sheet_hint_only_appears_with_several_sheets
+    assert_includes multi_sheet_view.status_line, '[/]: sheet'
+    refute_includes Rufio::PreviewView.build(@csv_path).status_line, '[/]: sheet'
+  end
+
+  def test_copy_uses_the_selected_sheet
+    view = multi_sheet_view
+    view.handle_key(']')
+    view.handle_key('l')
+
+    copied = capture_copy { view.handle_key('y') }
+    assert_equal ['30'], copied
+  end
+
   # === y: クリップボードへのコピー ===
 
   def capture_copy(result = :pbcopy)
@@ -249,9 +305,27 @@ class TestPreviewView < Minitest::Test
     Rufio::ConfigLoader.stub(:keybinds, rebound) do
       view = Rufio::PreviewView.build(@csv_path)
       copied = capture_copy { assert view.handle_key('Y') }
-      assert_equal ['apple'], copied
+      assert_equal ['apple'], copied, '設定したキーは行コピー（Y）より優先されること'
       refute view.handle_key('y')
     end
+  end
+
+  def test_capital_y_copies_the_whole_row_as_csv
+    view = Rufio::PreviewView.build(@csv_path)
+    view.handle_key('j')
+
+    copied = capture_copy { assert view.handle_key('Y') }
+    assert_equal ['みかん,150'], copied
+    assert_includes view.status_line, 'copied row (pbcopy)'
+  end
+
+  def test_capital_y_quotes_cells_that_need_it
+    path = File.join(@test_dir, 'quoted.csv')
+    File.write(path, %(name,note\napple,"red, sweet"\n))
+    view = Rufio::PreviewView.build(path)
+
+    copied = capture_copy { view.handle_key('Y') }
+    assert_equal ['apple,"red, sweet"'], copied, 'CSV として読み戻せる形でコピーすること'
   end
 
   # === NavigationController / KeybindHandler への委譲 ===

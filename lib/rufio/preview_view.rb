@@ -103,6 +103,11 @@ module Rufio
       false
     end
 
+    # 複数シートを持つ種別だけが 0 以外を返す
+    def sheet_index
+      0
+    end
+
     protected
 
     # コピー結果などの短い通知。次の操作まで表示し続ける
@@ -123,14 +128,19 @@ module Rufio
     end
 
     def perform_copy
-      target = copy_target
-      if target.nil? || target.to_s.empty?
+      copy_text(copy_target)
+    end
+
+    # @param label [String, nil] 通知に出す対象名（"row" など）
+    def copy_text(text, label: nil)
+      if text.nil? || text.to_s.empty?
         notice('nothing to copy')
         return true
       end
 
-      method = Clipboard.copy(target)
-      notice(method ? "copied (#{method})" : 'clipboard unavailable')
+      method = Clipboard.copy(text)
+      copied = ['copied', label].compact.join(' ')
+      notice(method ? "#{copied} (#{method})" : 'clipboard unavailable')
       true
     end
   end

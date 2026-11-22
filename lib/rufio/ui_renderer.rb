@@ -401,7 +401,7 @@ module Rufio
 
       content_x = fullscreen ? 0 : cursor_position + 1
 
-      table_document, table_layout = table_preview_for(selected_entry, safe_width)
+      table_document, table_layout, table_sheet = table_preview_for(selected_entry, safe_width)
       table_rows = nil
       table_status = nil
       table_cursor = nil
@@ -410,11 +410,11 @@ module Rufio
         table_cursor = @keybind_handler&.preview_cursor
         if table_cursor
           # カーソルが見えるように、表示できる行数を伝え、横スクロール量を決める
-          table_cursor.visible_rows = table_visible_rows(table_document, height)
+          table_cursor.visible_rows = table_visible_rows(table_sheet, height)
           table_cursor.column_offset = table_layout.offset_for(table_cursor.column, table_cursor.column_offset)
           table_col_offset = table_cursor.column_offset
         end
-        table_rows = table_document.sheet.fetch_rows(
+        table_rows = table_sheet.fetch_rows(
           @keybind_handler&.preview_scroll_offset || 0, [height, 1].max
         )
         table_status = table_status_text(table_document, table_layout, table_col_offset)
@@ -446,10 +446,10 @@ module Rufio
         elsif i >= 2 && table_layout
           # 行列（グリッド）プレビュー
           screen.put_string(content_x, line_num,
-                            table_line(table_layout, table_document, table_rows, table_status, i, height,
+                            table_line(table_layout, table_sheet, table_rows, table_status, i, height,
                                        table_col_offset))
-          draw_table_cursor_to_buffer(screen, content_x, line_num, table_layout, table_document,
-                                      table_cursor, table_rows, i, height)
+          draw_table_cursor_to_buffer(screen, content_x, line_num, table_layout, table_sheet,
+                                      table_cursor, table_rows, table_status, i, height)
 
         elsif i >= 2 && highlighted_wrapped_lines
           # シンタックスハイライト付きコンテンツ
@@ -488,37 +488,42 @@ module Rufio
     # 表プレビュー
     # ============================
 
-    # 表プレビューのレイアウトを取得する（幅ごとにキャッシュ）
-    # @return [Array(TableDocument, TableLayout)] 表でなければ [nil, nil]
+    # 表プレビューのレイアウトを取得する（シートと幅の組ごとにキャッシュ）。
+    # プレビューモード中はビューが選んでいるシートを使う。
+    # @return [Array(TableDocument, TableLayout, TableSheet)] 表でなければ [nil, nil, nil]
     def table_preview_for(selected_entry, safe_width)
-      return [nil, nil] unless selected_entry && selected_entry[:type] == 'file' && safe_width > 0
+      return [nil, nil, nil] unless selected_entry && selected_entry[:type] == 'file' && safe_width > 0
 
       cache_entry = @preview_cache[selected_entry[:path]]
       preview_data = cache_entry && cache_entry[:preview_data]
-      return [nil, nil] unless preview_data && preview_data[:type] == 'table'
+      return [nil, nil, nil] unless preview_data && preview_data[:type] == 'table'
 
-      document = preview_data[:document]
-      sheet = document&.sheet
-      return [nil, nil] unless sheet
+      view = @keybind_handler&.preview_view
+      document = view&.table? ? view.document : preview_data[:document]
+      sheet_index = view&.table? ? view.sheet_index : 0
+      sheet = document&.sheet(sheet_index)
+      return [nil, nil, nil] unless sheet
 
       cache_entry[:table_layout] ||= {}
-      layout = (cache_entry[:table_layout][safe_width] ||= TableLayout.build(
+      key = [document.object_id, sheet_index, safe_width]
+      layout = (cache_entry[:table_layout][key] ||= TableLayout.build(
         sheet, safe_width, max_column_width: ConfigLoader.table_preview[:max_column_width]
       ))
-      [document, layout]
+      [document, layout, sheet]
     end
 
     # グリッドでデータ行として使える行数（ヘッダ行と最下行の情報行を除く）
-    def table_visible_rows(document, height)
+    def table_visible_rows(sheet, height)
       rows = height - TABLE_GRID_START_ROW
-      rows -= 1 if document.sheet.header
+      rows -= 1 if sheet.header
       rows -= 1 if height >= TABLE_FOOTER_MIN_HEIGHT
       [rows, 1].max
     end
 
-    # 最下行に出す情報（行数・列数・文字コード・切り詰め・隠れている列数）
+    # 最下行に出す情報（シート名・行数・列数・文字コード・切り詰め・隠れている列数）
     def table_status_text(document, layout, col_offset = 0)
-      parts = [document.status_line]
+      view = @keybind_handler&.preview_view
+      parts = [document.status_line(view&.table? ? view.sheet_index : 0)]
       hidden = layout.hidden_column_count(col_offset)
       # 狭いペインでも最下行に収まるよう短く書く
       parts << "+#{hidden} hidden" if hidden.positive?
@@ -526,10 +531,10 @@ module Rufio
     end
 
     # ペイン内 i 行目（i >= 2）に描くグリッド 1 行分の文字列
-    def table_line(layout, document, rows, status, index, height, col_offset = 0)
+    def table_line(layout, sheet, rows, status, index, height, col_offset = 0)
       return TextUtils.pad_string_to_width(status, layout.width) if table_footer_row?(status, index, height)
 
-      data_index = table_data_index(document, index)
+      data_index = table_data_index(sheet, index)
       return layout.header_line(col_offset) if data_index.nil?
 
       row = rows && rows[data_index]
@@ -540,11 +545,11 @@ module Rufio
     end
 
     # カーソルのあるセルだけを反転色で上書きする
-    def draw_table_cursor_to_buffer(screen, content_x, line_num, layout, document, cursor, rows, index, height)
+    def draw_table_cursor_to_buffer(screen, content_x, line_num, layout, sheet, cursor, rows, status, index, height)
       return if cursor.nil? || cursor.empty?
-      return if table_footer_row?(table_status_text(document, layout, cursor.column_offset), index, height)
+      return if table_footer_row?(status, index, height)
 
-      data_index = table_data_index(document, index)
+      data_index = table_data_index(sheet, index)
       return if data_index.nil?
       return unless cursor.row - cursor.row_offset == data_index
 
@@ -558,11 +563,11 @@ module Rufio
     end
 
     # @return [Integer, nil] 表示中のデータ行の添字。ヘッダ行なら nil
-    def table_data_index(document, index)
+    def table_data_index(sheet, index)
       grid_row = index - TABLE_GRID_START_ROW
-      return nil if document.sheet.header && grid_row.zero?
+      return nil if sheet.header && grid_row.zero?
 
-      document.sheet.header ? grid_row - 1 : grid_row
+      sheet.header ? grid_row - 1 : grid_row
     end
 
     def table_footer_row?(status, index, height)

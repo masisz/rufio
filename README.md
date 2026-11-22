@@ -38,9 +38,10 @@ rufio brings finding files, running scripts, and checking results together in on
 
 - **Vim-like Key Bindings**: Intuitive navigation
 - **Real-time Preview**: Instantly display file contents with syntax highlighting (via `bat`), including `.zip` entry lists
-- **CSV as a Grid**: `.csv`, `.tsv` and `.tab` files are shown as rows and columns, with the header row fixed while scrolling and automatic decoding of UTF-8, UTF-16, CP932 and EUC-JP
+- **Tables as a Grid**: `.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm`, `.ods` and SQLite databases (with the `sqlite3` command) are shown as rows and columns, with the header row fixed while scrolling and automatic decoding of UTF-8, UTF-16, CP932 and EUC-JP
+- **Sheets and Tables**: `[` and `]` switch between a workbook's sheets or a database's tables, and only the one on screen is read
 - **Move Between Cells**: In preview mode (`P`), `hjkl` moves a cell cursor through the grid, which scrolls in both directions to follow it
-- **Copy with `y`**: Copies the cell under the cursor, or the current and selected file paths in the file list, using your clipboard command or OSC 52 over SSH
+- **Copy with `y`**: Copies the cell under the cursor (`Y` for the whole row), or the current and selected file paths in the file list, using your clipboard command or OSC 52 over SSH
 - **Fast Search**: Built-in fuzzy file name search, rga content search, plus built-in search across all bookmarks that also reads PDF, Excel and PowerPoint
 - **ZIP Archives**: Extract or compress selected items as a background job
 - **Jump to a Path**: Paste any path into `:cd`

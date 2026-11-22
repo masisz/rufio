@@ -4,11 +4,14 @@ require 'minitest/autorun'
 require 'fileutils'
 require 'tmpdir'
 require_relative '../lib/rufio'
+require_relative 'support/xlsx_fixture'
 
 # 表プレビューの統合テスト
 # FilePreview が 'table' を返すこと、UIRenderer がグリッドを描画すること、
 # 表として読めない場合にテキストプレビューへ戻ること
 class TestTablePreview < Minitest::Test
+  include XlsxFixture
+
   CSV_CONTENT = <<~CSV
     name,price,stock
     apple,120,30
@@ -326,6 +329,57 @@ class TestTablePreview < Minitest::Test
     ui.draw_screen(screen)
 
     assert_includes screen_text(screen, 24), 'copied (pbcopy)'
+  end
+
+  # === Excel（複数シート） ===
+
+  def test_xlsx_is_previewed_as_a_grid
+    path = File.join(@test_dir, 'book.xlsx')
+    write_xlsx(path, [['Sales', [%w[name price], ['apple', 120]]],
+                      ['Stock', [%w[item count], ['apple', 30]]]])
+
+    screen, ui, handler = renderer_for(name: 'book.xlsx')
+    handler.focus_preview_pane
+    ui.draw_screen(screen)
+    text = screen_text(screen, 24)
+
+    assert_includes text, 'A name'
+    assert_includes text, 'apple'
+    assert_includes text, '1/2 Sales'
+  end
+
+  def test_switching_sheets_redraws_the_grid
+    path = File.join(@test_dir, 'book.xlsx')
+    write_xlsx(path, [['Sales', [%w[name price], ['apple', 120]]],
+                      ['Stock', [%w[item count], ['mikan', 30]]]])
+
+    screen, ui, handler = renderer_for(name: 'book.xlsx')
+    handler.focus_preview_pane
+    ui.draw_screen(screen)
+    refute_includes screen_text(screen, 24), 'A item'
+
+    handler.handle_key(']')
+    screen.clear
+    ui.draw_screen(screen)
+    text = screen_text(screen, 24)
+
+    assert_includes text, 'A item', '切り替えたシートの見出しを描くこと'
+    assert_includes text, 'mikan'
+    assert_includes text, '2/2 Stock'
+  end
+
+  def test_an_unparsable_xlsx_falls_back_to_the_zip_listing
+    path = File.join(@test_dir, 'broken.xlsx')
+    # 中身は ZIP だが Excel として読めないファイル
+    Zip::OutputStream.open(path) do |zip|
+      zip.put_next_entry('hello.txt')
+      zip.write('not a spreadsheet')
+    end
+
+    preview = @file_preview.preview_file(path)
+
+    assert_equal 'archive', preview[:type], '表として読めなければ ZIP のエントリ一覧に戻すこと'
+    assert(preview[:lines].any? { |line| line.include?('hello.txt') })
   end
 
   def test_narrow_pane_reports_hidden_columns
