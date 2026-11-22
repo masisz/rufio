@@ -130,12 +130,17 @@ module Rufio
     end
 
     # マウスホイールなど、キー以外からの縦移動もセルカーソルを動かす
+    # （シート一覧を開いている間は一覧の選択を動かす）
     def scroll(delta)
+      return @picker.move(delta) if picker_open?
+
       clear_notice
       @cursor.move(rows: delta)
     end
 
     def page(delta)
+      return @picker.page(delta) if picker_open?
+
       @cursor.page(delta)
     end
 

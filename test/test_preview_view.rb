@@ -646,6 +646,19 @@ class TestPreviewView < Minitest::Test
     assert_equal 9, view.picker.index
   end
 
+  def test_the_wheel_moves_the_list_while_it_is_open
+    view = many_sheet_view(30)
+    view.handle_key('/')
+
+    assert view.scroll(1), 'ホイールは一覧の選択を動かすこと'
+    assert_equal 1, view.picker.index
+    assert_equal 0, view.cursor.row, '裏のセルカーソルは動かないこと'
+
+    view.page(1)
+    assert_equal 1 + view.picker.visible_rows, view.picker.index
+    assert_equal 0, view.cursor.row
+  end
+
   def test_reset_closes_the_list
     view = multi_sheet_view
     view.handle_key('/')
