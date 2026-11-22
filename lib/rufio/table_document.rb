@@ -65,6 +65,24 @@ module Rufio
       label
     end
 
+    # `/` の絞り込みで条件に書ける列名（見出しが無ければ A, B, ...）
+    def filter_columns
+      Array.new(column_count) do |index|
+        title = header && header[index]
+        title.nil? || title.to_s.empty? ? column_label(index) : title.to_s
+      end
+    end
+
+    # `/` の絞り込み。既定は読み込み済みの行を Ruby 側で判定する
+    # （SQLite のように読み込み側で絞り込める形式は差し替える）
+    # @param query [TableQuery]
+    # @return [TableSheet]
+    def filter(query)
+      rows = fetch_rows(0, row_count).select { |row| query.matches?(row, filter_columns) }
+      MemoryTableSheet.new(name: name, header: header, rows: rows,
+                           row_truncated: row_truncated, column_truncated: column_truncated)
+    end
+
     # ヘッダ行に表示する文字列（"A name" / ヘッダなしなら "A"）。
     # 見出しはファイル由来なので、端末制御シーケンスを無害化してから返す。
     def column_title(index)
@@ -97,12 +115,31 @@ module Rufio
   # 読み出しに時間がかかる形式向けで、表示するシートだけを読む。
   #
   # loader は { rows:, header:, row_truncated:, column_truncated: } を返す。
+  #
+  # filter に Proc を渡すと、`/` の絞り込みを読み込み側に任せられる（SQLite は
+  # WHERE 付きの SELECT を発行するので、読み込み上限より後ろの行も探せる）。
   class LazyTableSheet < TableSheet
-    def initialize(name:, &loader)
+    def initialize(name:, filter: nil, &loader)
       super(name: name)
       @loader = loader
+      @filter_loader = filter
       @loaded = false
       @load_error = nil
+    end
+
+    # 読み込み側で絞り込めるならそちらに任せ、できなければ Ruby 側で判定する
+    def filter(query)
+      return super if @filter_loader.nil?
+
+      loader = @filter_loader
+      # 1 件も残らないと見出しが返らないことがあるので、読み込み済みの見出しを引き継ぐ
+      # （列が消えてグリッドの枠まで無くならないようにする）
+      fallback_header = header
+      LazyTableSheet.new(name: name, filter: loader) do
+        result = loader.call(query) || {}
+        result[:header] ||= fallback_header
+        result
+      end
     end
 
     def fetch_rows(offset, limit)
@@ -205,8 +242,9 @@ module Rufio
     end
 
     # 画面最下行に出す情報（行数・列数・文字コード・切り詰め）
-    def status_line(index = 0)
-      target = sheet(index)
+    # @param target [TableSheet, nil] 絞り込み後のシートなど、index のシート以外を使うとき
+    def status_line(index = 0, target = nil)
+      target ||= sheet(index)
       return nil unless target
 
       # シート名・テーブル名・読み込みエラー文はファイルや外部コマンド由来なので無害化する

@@ -430,7 +430,7 @@ module Rufio
         table_rows = table_sheet.fetch_rows(
           @keybind_handler&.preview_scroll_offset || 0, [height, 1].max
         )
-        table_status = table_status_text(table_document, table_layout, table_col_offset)
+        table_status = table_status_text(table_document, table_layout, table_sheet, table_col_offset)
       end
 
       # シート一覧（t）を開いている間は、グリッドの代わりに一覧を描く
@@ -540,11 +540,12 @@ module Rufio
       view = @keybind_handler&.preview_view
       document = view&.table? ? view.document : preview_data[:document]
       sheet_index = view&.table? ? view.sheet_index : 0
-      sheet = document&.sheet(sheet_index)
+      # 絞り込み（`/`）中はビューが持つシートを描く
+      sheet = view&.table? ? view.sheet : document&.sheet(sheet_index)
       return [nil, nil, nil] unless sheet
 
       cache_entry[:table_layout] ||= {}
-      key = [document.object_id, sheet_index, safe_width]
+      key = [document.object_id, sheet.object_id, safe_width]
       layout = (cache_entry[:table_layout][key] ||= TableLayout.build(
         sheet, safe_width, max_column_width: ConfigLoader.table_preview[:max_column_width]
       ))
@@ -644,9 +645,9 @@ module Rufio
     end
 
     # 最下行に出す情報（シート名・行数・列数・文字コード・切り詰め・隠れている列数）
-    def table_status_text(document, layout, col_offset = 0)
+    def table_status_text(document, layout, sheet, col_offset = 0)
       view = @keybind_handler&.preview_view
-      parts = [document.status_line(view&.table? ? view.sheet_index : 0)]
+      parts = [document.status_line(view&.table? ? view.sheet_index : 0, sheet)]
       hidden = layout.hidden_column_count(col_offset)
       # 狭いペインでも最下行に収まるよう短く書く
       parts << "+#{hidden} hidden" if hidden.positive?

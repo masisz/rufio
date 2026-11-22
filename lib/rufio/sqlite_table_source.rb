@@ -3,6 +3,7 @@
 require 'csv'
 require_relative 'table_source'
 require_relative 'table_document'
+require_relative 'table_query'
 require_relative 'command_locator'
 
 module Rufio
@@ -37,7 +38,9 @@ module Rufio
         raise TableSource::ParseError, 'no tables' if tables.empty?
 
         sheets = tables.map do |table|
-          LazyTableSheet.new(name: table) { load_table(path, table, limits, options) }
+          # `/` の絞り込みは WHERE 付きの SELECT を発行し直す（読み込み上限より後ろも探す）
+          filter = ->(query) { load_table(path, table, limits, options, query) }
+          LazyTableSheet.new(name: table, filter: filter) { load_table(path, table, limits, options) }
         end
 
         TableDocument.new(sheets: sheets, encoding: 'UTF-8', label: File.basename(path.to_s),
@@ -89,9 +92,11 @@ module Rufio
         raise TableSource::ParseError, e.message
       end
 
-      def load_table(path, table, limits, options)
+      def load_table(path, table, limits, options, filter = nil)
         # 上限 + 1 行だけ取り、全体の件数を数える COUNT(*) は発行しない
-        sql = "SELECT * FROM #{quote_identifier(table)} LIMIT #{limits.max_rows + 1};"
+        sql = +"SELECT * FROM #{quote_identifier(table)}"
+        sql << " WHERE #{where_clause(filter)}" if filter
+        sql << " LIMIT #{limits.max_rows + 1};"
         parsed = CSV.parse(query(path, sql, header: true))
 
         # 列の切り詰めは見出し行にも掛ける（掛け忘れると列数が行とずれる）
@@ -146,6 +151,54 @@ module Rufio
       # テーブル名は識別子クォートする（SQL を文字列連結で組まない）
       def quote_identifier(name)
         %("#{name.to_s.gsub('"', '""')}")
+      end
+
+      # TableQuery の条件を WHERE 句にする。
+      # 列名は TableQuery が実在する列に解決済みで、ここで識別子クォートする。
+      # 演算子は TableQuery が許可したものだけ、値は常にリテラルとして引用する。
+      def where_clause(filter)
+        parts = filter.conditions.map { |condition| condition_sql(condition, filter.columns) }
+        raise TableSource::ParseError, 'no condition' if parts.empty?
+
+        parts.join(' AND ')
+      end
+
+      def condition_sql(condition, columns)
+        if condition.column.nil?
+          targets = Array(columns)
+          raise TableSource::ParseError, 'no columns to search' if targets.empty?
+
+          "(#{targets.map { |column| like_sql(column, condition.value) }.join(' OR ')})"
+        elsif condition.operator == TableQuery::LIKE
+          "(#{like_sql(condition.column, condition.value)})"
+        else
+          "(#{quote_identifier(condition.column)} #{operator_sql(condition.operator)} " \
+            "#{value_sql(condition.value)})"
+        end
+      end
+
+      def like_sql(column, pattern)
+        "#{quote_identifier(column)} LIKE #{quote_string(pattern)}"
+      end
+
+      # 許可した演算子だけを通す（!= は SQLite の <> に揃える）
+      def operator_sql(operator)
+        raise TableSource::ParseError, "unsupported operator: #{operator}" unless
+          TableQuery::OPERATORS.include?(operator)
+
+        operator == '!=' ? '<>' : operator
+      end
+
+      # 数値はそのまま、それ以外は文字列リテラルとして引用する
+      def value_sql(value)
+        text = value.to_s
+        return text if text.match?(/\A-?\d+(\.\d+)?\z/)
+
+        quote_string(text)
+      end
+
+      def quote_string(value)
+        "'#{value.to_s.gsub("'", "''")}'"
       end
     end
   end

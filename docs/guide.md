@@ -72,6 +72,10 @@ The right pane previews the selected file. Code is highlighted when `bat` is ins
 | `y` | Copy the file path to the clipboard |
 | `ESC` | Back to the file list |
 
+### Searching inside a preview (`/`)
+
+`/` in a preview searches the previewed file. Type to jump to the first match from where you are, `Enter` keeps the search, `n` and `N` move to the next and previous match (wrapping around), and `ESC` clears it (a second `ESC` leaves the preview). Every match is highlighted and the current one is drawn in a different colour. Preview mode reads up to 20,000 lines of the first 64 KiB of the file, so the search covers what the preview can show.
+
 ### Tables as a Grid
 
 `.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm` and `.ods` files, and SQLite databases when the `sqlite3` command is installed, are shown as rows and columns:
@@ -97,6 +101,7 @@ In preview mode the cell cursor moves:
 | `g` / `}` | First / last row |
 | `0` / `$` | First / last column |
 | `Space` | Select / unselect the column under the cursor |
+| `/` | Filter the rows (see below) |
 | `y` | Copy the cell under the cursor, or the cursor row's selected columns joined with commas |
 | `Y` | Copy the whole row as one CSV line |
 | `[` / `]` | Previous / next sheet, for a workbook's sheets or a database's tables |
@@ -104,6 +109,23 @@ In preview mode the cell cursor moves:
 | `ESC` | Back to the file list |
 
 `Space` marks the column under the cursor the way a selected file is marked, and the line under the file name lists the selection (`cols A,C`). With columns selected, `y` copies the cursor row's cells from those columns, in column order, joined with commas as one CSV line (`apple,30`), so a cell holding a comma or a newline is quoted. `Y` still copies the whole row, and switching sheets clears the selection.
+
+### Filtering rows (`/`)
+
+`/` in a table preview filters its rows. Write conditions separated by commas:
+
+| Input | Means |
+|-------|-------|
+| `price > 100` | A comparison (`=`, `!=`, `<>`, `>`, `>=`, `<`, `<=`); numeric when both sides are numbers |
+| `name a%` | `LIKE 'a%'`: `%` is any text, `_` is one character |
+| `name apple` | `LIKE '%apple%'`: matches anywhere in the column |
+| `note "red, sweet"` | Quote a value to keep its commas and spaces |
+| `apple` | No column named: searched in every column |
+| `price > 100, name a%` | Several conditions, all of which must match |
+
+Column names ignore case and the column letters (`A`, `B`, …) work too. `Enter` applies the filter, and the line under the file name shows it (`filter: price > 100 (2 rows)`). `ESC` clears the filter; a second `ESC` leaves the preview. Switching sheets clears it as well.
+
+For a SQLite table the conditions become a read-only `SELECT ... WHERE` run inside the database, so the filter finds rows past the preview's row limit. Values are always passed as quoted literals and the column names are resolved against the table's own columns, so the input cannot become SQL of its own. A spreadsheet or CSV is filtered in Ruby over the rows that were read.
 
 `t` lists a workbook's sheets or a database's tables, with `>` beside the one on screen; `Ctrl+D`/`Ctrl+U` page through a long list and `g`/`}` jump to its first and last entry. A file with a single sheet has no list.
 

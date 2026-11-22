@@ -44,7 +44,7 @@ rufio brings finding files, running scripts, and checking results together in on
 - **Move Between Cells**: In preview mode (`P`), `hjkl` moves a cell cursor through the grid, which scrolls in both directions to follow it
 - **Pick Columns**: `Space` selects columns, and `y` then copies the cursor row's selected columns joined with commas
 - **Copy with `y`**: Copies the cell under the cursor (`Y` for the whole row), or the current and selected file paths in the file list, using your clipboard command or OSC 52 over SSH
-- **One Search Key**: `/` searches where you are: the file list searches the directory tree by name (fuzzy) or contents (also reading PDF, Excel and PowerPoint), a preview searches inside the file, and a table preview filters its rows
+- **One Search Key**: `/` searches where you are. The file list searches the directory tree by name (fuzzy) or contents (also reading PDF, Excel and PowerPoint); a preview searches inside the file (`n`/`N` between matches); a table preview filters its rows with `price > 100, name a%`, and for a SQLite table that runs as a read-only `SELECT ... WHERE` inside the database
 - **ZIP Archives**: Extract or compress selected items as a background job
 - **Jump to a Path**: Paste any path into `:cd`
 - **Bookmarks**: Quick access to frequently used directories

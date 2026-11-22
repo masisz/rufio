@@ -81,7 +81,7 @@ class TestTableSearch < Minitest::Test
   # === CSV の絞り込み（Ruby 側で判定） ===
 
   def test_enter_applies_the_filter
-    view = filter(view_for, 'price > 100')
+    view = filter(view_for, 'price > 130')
 
     assert_equal %w[みかん melon], names(view)
     assert_equal 2, view.sheet.row_count
@@ -101,7 +101,7 @@ class TestTableSearch < Minitest::Test
   end
 
   def test_the_cursor_starts_at_the_first_matching_row
-    view = filter(view_for, 'price > 100')
+    view = filter(view_for, 'price > 130')
 
     assert_equal 0, view.cursor.row
     assert_equal 'みかん', view.copy_target
@@ -115,9 +115,9 @@ class TestTableSearch < Minitest::Test
   end
 
   def test_the_status_line_shows_the_filter
-    view = filter(view_for, 'price > 100')
+    view = filter(view_for, 'price > 130')
 
-    assert_includes view.status_line, 'filter: price > 100'
+    assert_includes view.status_line, 'filter: price > 130'
     assert_includes view.status_line, '2 rows'
   end
 
@@ -135,7 +135,7 @@ class TestTableSearch < Minitest::Test
   def test_escape_while_typing_cancels_the_filter
     view = view_for
     view.handle_key('/')
-    'price > 100'.each_char { |char| view.handle_key(char) }
+    'price > 130'.each_char { |char| view.handle_key(char) }
 
     assert view.handle_key("\e")
     refute view.search_prompt_open?
@@ -144,7 +144,7 @@ class TestTableSearch < Minitest::Test
   end
 
   def test_escape_clears_the_filter_before_leaving_preview
-    view = filter(view_for, 'price > 100')
+    view = filter(view_for, 'price > 130')
 
     assert view.handle_key("\e"), 'まず絞り込みを解除すること'
     assert_equal 4, view.sheet.row_count
@@ -153,7 +153,7 @@ class TestTableSearch < Minitest::Test
   end
 
   def test_the_filter_survives_cursor_movement
-    view = filter(view_for, 'price > 100')
+    view = filter(view_for, 'price > 130')
     view.handle_key('j')
 
     assert_equal 2, view.sheet.row_count
@@ -162,7 +162,7 @@ class TestTableSearch < Minitest::Test
   end
 
   def test_copying_uses_the_filtered_rows
-    view = filter(view_for, 'price > 100')
+    view = filter(view_for, 'price > 130')
     copied = []
     Rufio::Clipboard.stub(:copy, ->(text) { copied << text; :pbcopy }) { view.handle_key('Y') }
 
@@ -170,7 +170,7 @@ class TestTableSearch < Minitest::Test
   end
 
   def test_reset_clears_the_filter
-    view = filter(view_for, 'price > 100')
+    view = filter(view_for, 'price > 130')
     assert view.reset
 
     assert_nil view.search_query
@@ -200,6 +200,67 @@ class TestTableSearch < Minitest::Test
     assert_equal 1, view.sheet.row_count
   end
 
+  # === 描画（UIRenderer） ===
+
+  def renderer_for(name, width: 100, height: 14)
+    screen = Rufio::Screen.new(width, height)
+    listing = Rufio::DirectoryListing.new(@dir)
+    handler = Rufio::KeybindHandler.new
+    handler.set_directory_listing(listing)
+    ui = Rufio::UIRenderer.new(screen_width: width, screen_height: height,
+                               keybind_handler: handler, directory_listing: listing,
+                               file_preview: Rufio::FilePreview.new)
+    handler.select_index(listing.list_entries.index { |entry| entry[:name] == name })
+    assert handler.focus_preview_pane
+    [screen, ui, handler]
+  end
+
+  def screen_text(screen, height)
+    (0...height).map { |y| Rufio::ColorHelper.strip_ansi(screen.row(y)) }.join("\n")
+  end
+
+  def test_the_grid_shows_only_the_matching_rows
+    screen, ui, handler = renderer_for('sales.csv')
+    handler.handle_key('/')
+    'price > 130'.each_char { |char| handler.handle_key(char) }
+    handler.handle_key("\r")
+    ui.draw_screen(screen)
+    text = screen_text(screen, 14)
+
+    assert_includes text, 'みかん'
+    assert_includes text, 'melon'
+    refute_includes text, 'banana', '条件に合わない行は描かないこと'
+    refute_includes text, 'apple'
+    assert_includes text, 'filter: price > 130'
+    assert_includes text, '2 rows', '最下行の件数も絞り込み後にすること'
+  end
+
+  def test_the_query_is_shown_while_typing_in_the_grid
+    screen, ui, handler = renderer_for('sales.csv')
+    handler.handle_key('/')
+    'pri'.each_char { |char| handler.handle_key(char) }
+    ui.draw_screen(screen)
+
+    assert_includes screen_text(screen, 14), '/pri'
+  end
+
+  def test_clearing_the_filter_redraws_every_row
+    screen, ui, handler = renderer_for('sales.csv')
+    handler.handle_key('/')
+    'price > 130'.each_char { |char| handler.handle_key(char) }
+    handler.handle_key("\r")
+    ui.draw_screen(screen)
+    handler.handle_key("\e")
+    screen.clear
+    ui.draw_screen(screen)
+    text = screen_text(screen, 14)
+
+    assert_includes text, 'apple'
+    assert_includes text, 'banana'
+    refute_includes text, 'filter:'
+    assert handler.preview_focused?
+  end
+
   # === SQLite（SQL を内部で実行） ===
 
   def sqlite3_or_skip
@@ -207,6 +268,8 @@ class TestTableSearch < Minitest::Test
   end
 
   def database
+    return @database if @database
+
     path = File.join(@dir, 'shop.db')
     IO.popen(['sqlite3', path], 'w') do |io|
       io.write(<<~SQL)
@@ -217,16 +280,16 @@ class TestTableSearch < Minitest::Test
         INSERT INTO products VALUES (4, 'melon', 300.0, 'green');
       SQL
     end
-    path
+    @database = path
   end
 
   def test_a_database_table_is_filtered_with_sql
     sqlite3_or_skip
-    view = filter(view_for(database), 'price > 100')
+    view = filter(view_for(database), 'price > 130')
 
     assert_equal %w[みかん melon], view.sheet.fetch_rows(0, 10).map { |row| row[1] }
     assert_equal 2, view.sheet.row_count
-    assert_includes view.status_line, 'filter: price > 100'
+    assert_includes view.status_line, 'filter: price > 130'
   end
 
   def test_a_database_filter_runs_a_select_with_a_where_clause
@@ -238,8 +301,9 @@ class TestTableSearch < Minitest::Test
       original.call(argv)
     end
 
-    filter(view_for(database), 'price > 100, name m%')
-    filtered = queries.select { |sql| sql.include?('WHERE') }
+    view = filter(view_for(database), 'price > 100, name m%')
+    view.sheet.row_count # 絞り込みの SELECT は行を読むときに走る
+    filtered = queries.select { |sql| sql.include?('WHERE') && sql.include?('FROM "products"') }
 
     refute_empty filtered, 'WHERE 付きの SELECT を発行すること'
     sql = filtered.last
@@ -262,6 +326,22 @@ class TestTableSearch < Minitest::Test
     other = filter(view_for(database), "name o'brien")
     assert_equal 0, other.sheet.row_count
     assert_nil other.sheet.load_error
+  end
+
+  def test_a_database_filter_with_no_matches_keeps_the_columns
+    sqlite3_or_skip
+    view = filter(view_for(database), 'name zzz')
+
+    assert_equal 0, view.sheet.row_count
+    assert_equal %w[id name price note], view.sheet.header, '1 件も残らなくても列は残すこと'
+    assert_includes view.status_line, '0 rows'
+  end
+
+  def test_the_prompt_starts_empty_even_with_a_filter_applied
+    view = filter(view_for, 'price > 130')
+    view.handle_key('/')
+
+    assert_equal '', view.search_query, '前の条件に続けて打ち足さないこと'
   end
 
   def test_a_database_filter_reaches_rows_past_the_row_limit

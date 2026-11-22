@@ -43,15 +43,17 @@
 | `A` | Create new directory |
 | `y` | Copy the current or selected paths to the clipboard |
 
-In a preview, `j/k` scroll, `Ctrl+D/U` page down/up and `ESC` returns to the file list.
+In a preview, `j/k` scroll, `Ctrl+D/U` page down/up and `ESC` returns to the file list. `/` searches inside the file: type to jump to the first match, `Enter` keeps it, `n` / `N` move between matches and `ESC` clears the search (another `ESC` leaves the preview). Matches are highlighted, the current one in a different colour.
 
-In a table preview, `h/j/k/l` and the arrow keys move a cell cursor instead, `g/}` jump to the first and last row, `0/$` to the first and last column, `Space` selects the column under the cursor (its cells are marked like a selected file), `y` copies the cell under the cursor, or the cursor row's selected columns joined with commas when any column is selected, `Y` the whole row as a CSV line, `[`/`]` switch between a workbook's sheets or a database's tables, `t` opens the list of sheets or tables (`j`/`k` to move, `Enter` to open the selected one, `ESC` to close), and the line under the file name shows the cell address and column name (`R3C2 price`). The grid scrolls in both directions to keep the cursor visible.
+In a table preview, `h/j/k/l` and the arrow keys move a cell cursor instead, `g/}` jump to the first and last row, `0/$` to the first and last column, `Space` selects the column under the cursor (its cells are marked like a selected file), `y` copies the cell under the cursor, or the cursor row's selected columns joined with commas when any column is selected, `Y` the whole row as a CSV line, `[`/`]` switch between a workbook's sheets or a database's tables, `t` opens the list of sheets or tables (`j`/`k` to move, `Enter` to open the selected one, `ESC` to close), `/` filters the rows (see below), and the line under the file name shows the cell address and column name (`R3C2 price`). The grid scrolls in both directions to keep the cursor visible.
 
 Copying uses `pbcopy`, `clip`, `wl-copy`, `xclip` or `xsel` when available and OSC 52 otherwise; `CLIPBOARD_COMMAND` in `config.rb` overrides it and `rufio -c` shows which one is used.
 
 Text previews read at most the first 64 KiB. PDF bodies are not previewed, keeping file navigation responsive.
 
 `.zip` previews list the archive entries (size, method, modified time, name) without extracting them.
+
+`/` in a table preview filters its rows. Write conditions separated by commas: `price > 100, name a%` keeps the rows where price is over 100 and the name starts with `a`. A term without a column (`apple`) is searched in every column, `=`, `!=`, `<>`, `>`, `>=`, `<` and `<=` compare (numerically when both sides are numbers), and anything else matches with `LIKE`: `a%` and `a_c` use the wildcards as written, a plain word matches anywhere in the column. Quote a value to keep its commas and spaces (`note "red, sweet"`). Column names ignore case, and the column letters (`A`, `B`, …) work too. `Enter` applies the filter and the line under the file name shows it (`filter: price > 100 (2 rows)`), `ESC` clears it. For a SQLite table the filter runs as a read-only `SELECT ... WHERE` inside the database, so it finds rows past the preview's row limit; a spreadsheet or CSV is filtered over the rows that were read.
 
 `.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm` and `.ods` files, and SQLite databases when the `sqlite3` command is installed (recognised by the file's own signature, whatever its extension), are shown as a grid with column letters, the header row kept in place while you scroll, and a last line reporting the row and column counts, the detected character encoding and any truncation. UTF-8, UTF-16 (with BOM), CP932 and EUC-JP files are decoded automatically. A `.csv` or `.tsv` is read up to 512 KiB.
 

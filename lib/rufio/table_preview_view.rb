@@ -3,6 +3,7 @@
 require 'csv'
 require_relative 'table_cursor'
 require_relative 'sheet_picker'
+require_relative 'table_query'
 require_relative 'text_utils'
 require_relative 'config_loader'
 
@@ -10,7 +11,7 @@ module Rufio
   # 行列（グリッド）プレビュー。セルカーソルを持ち、hjkl で移動する。
   # 形式（CSV / 将来の Excel・SQLite）には依存せず、TableDocument だけを見る。
   class TablePreviewView < PreviewView
-    MOVE_HINT = 'hjkl: move  Space: col  y: copy  ESC: back'
+    MOVE_HINT = 'hjkl: move  Space: col  /: filter  y: copy  ESC: back'
     SHEET_HINT = '[ ]: sheet  t: list'
     PICKER_HINT = 'j/k: move  Enter: open  ESC: cancel'
     # シート一覧を開くキー（`/` はプレビュー内検索に使うため `t`（table））
@@ -29,6 +30,21 @@ module Rufio
       @cursor = TableCursor.new(sheet)
       @picker = nil
       @selected_columns = []
+      clear_filter
+    end
+
+    # 表示しているシート（`/` で絞り込んでいればその結果）
+    def sheet
+      @filtered_sheet || @document.sheet(@sheet_index)
+    end
+
+    # `/` の入力中はその文字列、確定後は適用中の条件（どちらでもなければ nil）
+    def search_query
+      @prompt ? @prompt.query : @filter_text
+    end
+
+    def search_prompt_open?
+      !@prompt.nil?
     end
 
     # Space で選んだカラム（列の順に並べる）
@@ -44,18 +60,15 @@ module Rufio
       true
     end
 
-    def sheet
-      @document.sheet(@sheet_index)
-    end
-
     def row_offset
       @cursor.row_offset
     end
 
     def reset
-      @cursor.reset
       close_sheet_list
+      clear_filter
       clear_columns
+      @cursor = TableCursor.new(sheet)
       clear_notice
       true
     end
@@ -102,8 +115,11 @@ module Rufio
     end
 
     def handle_key(key)
-      # 一覧を開いている間はすべてのキーを一覧で扱う（裏のセルカーソルを動かさない）
+      # 一覧・入力欄を開いている間は、すべてのキーをそちらで扱う
       return handle_picker_key(key) if picker_open?
+      return handle_prompt_key(key) if search_prompt_open?
+      return open_filter_prompt if key == ConfigLoader.keybinds[:search]
+      return clear_filter if key == "\e" && filtering?
 
       # 設定されたコピーキー（既定 y）は共通処理に渡す。Y に再割り当てされていても
       # 行コピーより設定が優先される
@@ -138,9 +154,10 @@ module Rufio
       return false if index == @sheet_index
 
       @sheet_index = index
-      @cursor = TableCursor.new(sheet)
-      # 列の並びはシートごとに違うので、選択は持ち越さない
+      # 列の並びも中身もシートごとに違うので、選択と絞り込みは持ち越さない
+      clear_filter
       clear_columns
+      @cursor = TableCursor.new(sheet)
       true
     end
 
@@ -164,9 +181,10 @@ module Rufio
     # 一覧を開いている間は、選んでいるシートと一覧の操作ヒントを出す
     def status_line
       return picker_status_line if picker_open?
+      return prompt_status_line if search_prompt_open?
 
       hint = @document.sheet_count > 1 ? "#{MOVE_HINT}  #{SHEET_HINT}" : MOVE_HINT
-      [cell_address, selected_columns_label, notice_text || hint].compact.join('  |  ')
+      [cell_address, selected_columns_label, filter_label, notice_text || hint].compact.join('  |  ')
     end
 
     # y でコピーする値（表示用に畳む前の生のセル値）。
@@ -181,6 +199,69 @@ module Rufio
     end
 
     private
+
+    # `/`: 絞り込み条件の入力を始める（毎回空から。ESC で元の表示に戻る）
+    def open_filter_prompt
+      clear_notice
+      @filter_error = nil
+      @prompt = SearchPrompt.new
+      true
+    end
+
+    # 入力中のキーはすべて入力欄で扱う（裏のセルカーソルを動かさない）
+    def handle_prompt_key(key)
+      case @prompt.handle_key(key)
+      when :changed then @filter_error = nil
+      when :submitted then apply_filter
+      when :cancelled then @prompt = nil
+      end
+      true
+    end
+
+    # 入力を条件として読み、シートを絞り込む。読めなければ入力欄を開いたままにする
+    def apply_filter
+      text = @prompt.query.to_s.strip
+      return clear_filter if text.empty?
+
+      source = @document.sheet(@sheet_index)
+      query = TableQuery.parse(text, source.filter_columns)
+      filtered = query ? source.filter(query) : nil
+      @prompt = nil
+      @filter_error = nil
+      @filter_text = text
+      @filtered_sheet = filtered
+      @cursor = TableCursor.new(sheet)
+      true
+    rescue TableQuery::Error, TableSource::ParseError => e
+      @filter_error = e.message
+      true
+    end
+
+    def filtering?
+      !@filter_text.nil?
+    end
+
+    def clear_filter
+      @prompt = nil
+      @filter_text = nil
+      @filter_error = nil
+      had_filter = !@filtered_sheet.nil?
+      @filtered_sheet = nil
+      @cursor = TableCursor.new(sheet) if had_filter
+      true
+    end
+
+    # 例: "/price > 100_" / 読めなかったときは理由を添える
+    def prompt_status_line
+      [+"/#{@prompt.query}_", @filter_error].compact.join('  |  ')
+    end
+
+    # 例: "filter: price > 100 (2 rows)"
+    def filter_label
+      return nil unless filtering?
+
+      "filter: #{TextUtils.sanitize_for_display(@filter_text)} (#{sheet.row_count} rows)"
+    end
 
     # 一覧のキー。扱わないキーも含めて必ず true を返し、裏の表に通さない
     def handle_picker_key(key)

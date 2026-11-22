@@ -79,6 +79,20 @@ class TestInfoDocs < Minitest::Test
     end
   end
 
+  # プレビューモードの / は、テキストならファイル内検索、表なら行の絞り込み
+  def test_docs_describe_the_preview_searches
+    root = File.expand_path('..', __dir__)
+    { 'info/help.md' => ['searches inside the file', 'filters its rows', 'price > 100'],
+      'info/keybindings.md' => ['Search inside the file', 'Filter the rows', 'price > 100'],
+      'docs/guide.md' => ['Searching inside a preview', 'Filtering rows', 'price > 100'],
+      'docs/guide_ja.md' => ['プレビュー内の検索', '行の絞り込み', 'price > 100'],
+      'README.md' => ['price > 100'],
+      'README_ja.md' => ['price > 100'] }.each do |name, words|
+      doc = File.read(File.join(root, name))
+      words.each { |word| assert_includes doc, word, name }
+    end
+  end
+
   # Tab / Shift+Tab のブックマーク巡回は削除した
   def test_docs_do_not_describe_bookmark_cycling
     root = File.expand_path('..', __dir__)

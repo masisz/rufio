@@ -85,7 +85,8 @@ ZIP extraction and compression run as background jobs. Check progress in Jobs mo
 - **y**: Copy the file path to the clipboard
 - **j/k**: Scroll preview
 - **Ctrl+D/U**: Page down/up
-- **ESC**: Back to the file list
+- **/**: Search inside the file. Type to jump to the first match, `Enter` keeps it, **n** / **N** move to the next / previous match (wrapping around), `ESC` clears the search. Matches are highlighted, the current one in a different colour
+- **ESC**: Back to the file list (clears a search first)
 
 ### Preview of a table (`.csv` / `.tsv` / `.tab` / `.xlsx` / `.xlsm` / `.ods` / SQLite)
 - **h/j/k/l** or the **arrow keys**: Move the cell cursor. The grid scrolls, horizontally as well, to keep the cursor in view and the header row in place
@@ -96,6 +97,7 @@ ZIP extraction and compression run as background jobs. Check progress in Jobs mo
 - **y**: Copy the cell under the cursor to the clipboard (the raw value, including any newlines inside it). With columns selected, it copies the cursor row's selected columns instead, joined with commas as one CSV line (`apple,30`), in column order
 - **Y**: Copy the whole row as one CSV line
 - **[/]**: Previous / next sheet, for a workbook's sheets or a database's tables
+- **/**: Filter the rows. `price > 100, name a%` means price over 100 and a name starting with `a`; a term without a column is searched in every column. `Enter` applies it, `ESC` clears it. A SQLite table is filtered with a read-only `SELECT ... WHERE` inside the database, so rows past the preview's row limit are found too
 - **t**: Open the list of sheets or tables. `j`/`k` or the arrow keys move, `Ctrl+D/U` page, `g/}` jump to the first and last entry, `Enter` opens the selected one, `ESC` or `/` closes the list. `>` marks the sheet on screen. A single-sheet file has no list
 - The line under the file name shows the cell address and the column name, e.g. `R3C2 price`, and the result of a copy
 - **ESC**: Back to the file list
