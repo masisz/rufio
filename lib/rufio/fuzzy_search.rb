@@ -64,14 +64,48 @@ module Rufio
       self
     end
 
-    def query(text, limit: 100)
+    # 「候補 NUL」を連結した 1 本のバイト列をそのまま登録する（add(packed.split("\0")) と同じ結果）。
+    # 候補ごとの Ruby 文字列を作らないので、件数が多いときは add より速い。
+    def add_packed(packed)
+      @mutex.synchronize do
+        ensure_open!
+        raise ArgumentError, 'Expected packed candidates' unless packed.is_a?(String)
+        next if packed.empty?
+        raise ArgumentError, 'Packed candidates must end with NUL' unless packed.end_with?("\0")
+
+        if native?
+          # UTF-8 と長さは Zig 側が全件を確認し、1 件でも不正なら何も登録しない
+          check_status(@api.core_fuzzy_add(@handle, packed, packed.bytesize))
+        else
+          strings = packed.b.split("\0".b, -1)
+          strings.pop
+          prepared = strings.map { |text| prepare(validate_text(text.force_encoding(Encoding::UTF_8), MAX_CANDIDATE_BYTES)) }
+          @candidates.concat(prepared)
+        end
+      end
+      self
+    end
+
+    # positions: 一致位置を求める上位の件数（既定は limit）。それより後の結果の :positions は nil になり、
+    # 表示するときに FuzzySearch.positions で求める（同じ結果になる）。
+    def query(text, limit: 100, positions: nil)
       @mutex.synchronize do
         ensure_open!
         text = validate_text(text, MAX_QUERY_BYTES)
         raise ArgumentError, 'Invalid result limit' unless limit.is_a?(Integer) && limit.between?(0, MAX_RESULTS)
 
-        native? ? query_native(text, limit) : query_ruby(text, limit)
+        positions = limit if positions.nil?
+        raise ArgumentError, 'Invalid position limit' unless positions.is_a?(Integer) && positions >= 0
+
+        positions = [positions, limit].min
+        native? ? query_native(text, limit, positions) : query_ruby(text, limit, positions)
       end
+    end
+
+    # text の中で query が一致する位置（UTF-8 の先頭バイトオフセット）。query の結果と同じ位置を返す。
+    # 一致しなければ nil
+    def self.positions(text, query)
+      (@position_engine ||= new(native: false)).send(:positions_for, text, query)
     end
 
     def close
@@ -120,6 +154,11 @@ module Rufio
         rescue Fiddle::DLError
           nil # 1.6.0 development builds before narrowing
         end
+        begin
+          extern 'int32_t core_fuzzy_query_positions(uint64_t, const char*, size_t, uint32_t, uint32_t)'
+        rescue Fiddle::DLError
+          nil # 1.6.0 development builds before position limits: every result gets positions
+        end
       end
     rescue Fiddle::DLError
       nil
@@ -130,8 +169,13 @@ module Rufio
       raise NoMemoryError, 'Native fuzzy search allocation failed' if status != 0
     end
 
-    def query_native(text, limit)
-      check_status(@api.core_fuzzy_query(@handle, text, text.bytesize, limit))
+    def query_native(text, limit, position_limit)
+      status = if position_limit < limit && @api.respond_to?(:core_fuzzy_query_positions)
+                 @api.core_fuzzy_query_positions(@handle, text, text.bytesize, limit, position_limit)
+               else
+                 @api.core_fuzzy_query(@handle, text, text.bytesize, limit)
+               end
+      check_status(status)
       length = Fiddle::Pointer.malloc(Fiddle::SIZEOF_SIZE_T, Fiddle::RUBY_FREE)
       pointer = @api.core_fuzzy_results(@handle, length)
       bytes = length[0, Fiddle::SIZEOF_SIZE_T].unpack1(Fiddle::SIZEOF_SIZE_T == 8 ? 'Q' : 'L')
@@ -139,9 +183,9 @@ module Rufio
       @scanned = @api.respond_to?(:core_fuzzy_scanned) ? @api.core_fuzzy_scanned(@handle) : nil
       @total_matches, count = data.unpack('Q<L<')
       offset = 12
-      Array.new(count) do
+      Array.new(count) do |rank|
         id, score, size = data.byteslice(offset, 20).unpack('Q<q<L<')
-        positions = data.byteslice(offset + 20, size * 4).unpack('L<*')
+        positions = size.zero? && !text.empty? && rank >= position_limit ? nil : data.byteslice(offset + 20, size * 4).unpack('L<*')
         offset += 20 + size * 4
         { id: id, score: score, positions: positions }
       end
@@ -163,7 +207,7 @@ module Rufio
       bonuses = chars.each_index.map do |i|
         boundary = i.zero? || SEPARATORS.include?(chars[i - 1]) ||
                    (chars[i - 1].between?(97, 122) && chars[i].between?(65, 90))
-        16 + (i >= basename ? 8 : 0) + (boundary ? 8 : 0)
+        16 + (i >= basename ? 8 : 0) + (boundary ? 8 : 0) + (i == basename ? 8 : 0)
       end
       [chars.map { |c| fold(c) }, offsets, bonuses]
     end
@@ -196,7 +240,7 @@ module Rufio
           next unless chars[i] == char
 
           if row.zero?
-            current[i] = bonuses[i] - i
+            current[i] = bonuses[i]
           else
             value = prefix_score == NEGATIVE ? NEGATIVE : prefix_score - i + 1
             source = prefix_index
@@ -234,7 +278,17 @@ module Rufio
       matched == small.length
     end
 
-    def query_ruby(text, limit)
+    def positions_for(text, query)
+      raise ArgumentError, 'Expected UTF-8 text' unless text.is_a?(String) && query.is_a?(String)
+
+      folded = query.codepoints.map { |c| fold(c) }
+      return [] if folded.empty?
+
+      matched = score(prepare(text), folded, trace: true)
+      matched && matched[1]
+    end
+
+    def query_ruby(text, limit, position_limit)
       query = text.codepoints.map { |c| fold(c) }
       narrow = @previous_query && !query.empty? && subsequence?(@previous_query, query)
       ids = narrow ? @previous_ids + (@previous_count...@candidates.length).to_a : (0...@candidates.length)
@@ -265,7 +319,9 @@ module Rufio
         @previous_ids = matched_ids
         @previous_count = @candidates.length
       end
-      best.each { |item| item[:positions] = score(@candidates[item[:id]], query, trace: true)[1] }
+      best.each_with_index do |item, rank|
+        item[:positions] = rank < position_limit || query.empty? ? score(@candidates[item[:id]], query, trace: true)[1] : nil
+      end
     end
   end
 end

@@ -132,8 +132,11 @@ class TestNativeContentSearch < Minitest::Test
     cache = Rufio::NativeContentSearch::Cache.new
     uncached = engine_matches(nil)
     assert_equal uncached, engine_matches(cache)
+    # 格納中の検索はキャッシュを使わない（結果は同じ）
     assert_equal uncached, engine_matches(cache)
+    cache.wait_for_fill
     assert_operator cache.cached_bytes, :>, 0
+    assert_equal uncached, engine_matches(cache)
     assert_equal engine_matches(nil, 'needle'), engine_matches(cache, 'needle')
   ensure
     cache&.close
@@ -142,6 +145,8 @@ class TestNativeContentSearch < Minitest::Test
   def test_cache_revalidates_changed_deleted_and_new_files
     cache = Rufio::NativeContentSearch::Cache.new
     engine_matches(cache)
+    cache.wait_for_fill
+    refute_equal 0, cache.cached_bytes
     path = File.join(@a, 'first.txt')
     File.write(path, "changed\nno hit\n")
     File.write(File.join(@b, 'second.txt'), "WORLD again\nno match\nworld twice\n") # 同サイズでの書き換え
@@ -158,6 +163,7 @@ class TestNativeContentSearch < Minitest::Test
   def test_cache_respects_memory_budget
     cache = Rufio::NativeContentSearch::Cache.new(max_bytes: 0)
     assert_equal engine_matches(nil), engine_matches(cache)
+    cache.wait_for_fill
     assert_equal engine_matches(nil), engine_matches(cache)
     assert_equal 0, cache.cached_bytes
   ensure
@@ -266,5 +272,61 @@ class TestNativeContentSearch < Minitest::Test
     all_actual = run_filename_search(true, '')
     assert_equal all_expected, all_actual
     refute(all_actual.first.any? { |_, rel, _| rel.include?('nested.rb') })
+  end
+end
+
+# 初回の検索ではキャッシュへ格納せず、完了後に別スレッドで格納する
+class TestNativeContentCacheFill < Minitest::Test
+  def setup
+    skip 'Zig content search is not available' unless Rufio::NativeContentSearch.available?
+    @dir = Dir.mktmpdir('rufio_cache_fill')
+    20.times { |i| File.write(File.join(@dir, "f#{i}.txt"), "line one\nworld #{i}\n") }
+    File.binwrite(File.join(@dir, 'bin.dat'), "world\0binary")
+  end
+
+  def teardown
+    FileUtils.rm_rf(@dir) if @dir
+  end
+
+  def run_search(cache, query = 'world')
+    engine = Rufio::NativeContentSearch.new(roots: [@dir], query: query, cache: cache)
+    lines = []
+    engine.each_event { |event| lines << [File.basename(event[2]), event[3]] if event[0] == :match }
+    lines.sort
+  ensure
+    engine&.close
+  end
+
+  def test_cache_is_filled_after_the_search_and_used_by_the_next_one
+    cache = Rufio::NativeContentSearch::Cache.new
+    expected = run_search(nil)
+    assert_equal 20, expected.length
+    assert_equal expected, run_search(cache)
+    cache.wait_for_fill
+    filled = cache.cached_bytes
+    assert_equal 20 * "line one\nworld 0\n".bytesize + 10 * 1, filled # f10..f19 は 1 バイト長い
+    assert_equal expected, run_search(cache)
+    assert_equal filled, cache.cached_bytes
+  ensure
+    cache&.close
+  end
+
+  def test_files_changed_before_the_next_search_are_read_again
+    cache = Rufio::NativeContentSearch::Cache.new
+    run_search(cache)
+    cache.wait_for_fill
+    sleep 0.01
+    File.write(File.join(@dir, 'f3.txt'), "replaced\nWORLD changed\n")
+    assert_equal run_search(nil), run_search(cache)
+    assert_includes run_search(cache), ['f3.txt', 2]
+  ensure
+    cache&.close
+  end
+
+  def test_close_while_filling_does_not_hang
+    cache = Rufio::NativeContentSearch::Cache.new
+    run_search(cache)
+    cache.close
+    assert_equal 0, cache.cached_bytes
   end
 end

@@ -107,6 +107,12 @@ module Rufio
         @files_available == true
       end
 
+      # ファイル一覧を相対パスのラベル列で返す API（1.6.0 で追加）
+      def labels_available?
+        load! unless @loaded
+        @labels_available == true
+      end
+
       # ZIP データ処理 API（古いライブラリには存在しない）
       def zip_available?
         load! unless @loaded
@@ -130,12 +136,23 @@ module Rufio
         extern 'uint64_t core_cache_create(uint64_t)'
         extern 'uint64_t core_cache_bytes(uint64_t)'
         extern 'void core_cache_destroy(uint64_t)'
+        begin
+          extern 'void core_cache_wait(uint64_t)'
+        rescue Fiddle::DLError
+          nil # 1.6.0 より前: 検索中にキャッシュへ格納するので待つものがない
+        end
         @search_available = true
         begin
           extern 'uint64_t core_files_create(const char*, size_t, const char*, size_t, uint32_t)'
           @files_available = true
         rescue Fiddle::DLError
           @files_available = false
+        end
+        begin
+          extern 'uint64_t core_files_labels_create(const char*, size_t, const char*, size_t, uint32_t)'
+          @labels_available = @files_available
+        rescue Fiddle::DLError
+          @labels_available = false # 1.6.0 開発版より前のライブラリ
         end
       rescue Fiddle::DLError => e
         warn "Zig content search unavailable: #{e.message}" if ENV['RUFIO_DEBUG']

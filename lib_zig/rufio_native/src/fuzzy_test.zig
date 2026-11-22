@@ -178,3 +178,35 @@ test "candidate storage stays close to the UTF-8 size" {
     // At most twice the text (list growth) plus a small fixed cost per candidate.
     try std.testing.expect(engine.storageBytes() <= text_bytes * 2 + engine.count() * 32);
 }
+
+test "position-limited queries rank identically and omit positions after the limit" {
+    var full = fuzzy.Engine.init(std.testing.allocator);
+    defer full.deinit();
+    var limited = fuzzy.Engine.init(std.testing.allocator);
+    defer limited.deinit();
+    const batch = "src/search_controller.rb\x00lib/sc.rb\x00docs/s_c_notes.md\x00test/scope_check.rb\x00";
+    try full.add(batch);
+    try limited.add(batch);
+    try full.query("sc", 10);
+    try limited.queryPositions("sc", 10, 2);
+    try std.testing.expectEqual(full.total, limited.total);
+    try std.testing.expectEqualSlices(fuzzy.Match, full.matches.items, limited.matches.items);
+    // Each record: id u64, score i64, count u32, positions; after 12 header bytes.
+    var a: usize = 12;
+    var b: usize = 12;
+    for (0..full.matches.items.len) |rank| {
+        const count = std.mem.readInt(u32, full.output.items[a + 16 ..][0..4], .little);
+        const limited_count = std.mem.readInt(u32, limited.output.items[b + 16 ..][0..4], .little);
+        try std.testing.expectEqualSlices(u8, full.output.items[a..][0..16], limited.output.items[b..][0..16]);
+        if (rank < 2) {
+            try std.testing.expectEqual(count, limited_count);
+            try std.testing.expectEqualSlices(u8, full.output.items[a + 20 ..][0 .. count * 4], limited.output.items[b + 20 ..][0 .. count * 4]);
+        } else {
+            try std.testing.expectEqual(@as(u32, 0), limited_count);
+        }
+        a += 20 + count * 4;
+        b += 20 + limited_count * 4;
+    }
+    try std.testing.expectEqual(full.output.items.len, a);
+    try std.testing.expectEqual(limited.output.items.len, b);
+}
