@@ -72,6 +72,7 @@ lib/rufio/native/*.bundle
 
 # Backup files
 *.bak
+*.sync
 *~
 
 # Logs
