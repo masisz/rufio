@@ -706,4 +706,236 @@ class TestPreviewView < Minitest::Test
     assert_equal 1, handler.preview_view.sheet_index
     assert_equal 'Stock', handler.preview_view.sheet.name
   end
+
+  # === カラム選択（Space）と選択カラムのコピー ===
+
+  def test_space_selects_the_column_under_the_cursor
+    view = Rufio::PreviewView.build(@csv_path)
+
+    assert_empty view.selected_columns
+    assert view.handle_key(' ')
+    assert_equal [0], view.selected_columns
+    assert view.column_selected?(0)
+    refute view.column_selected?(1)
+  end
+
+  def test_space_again_unselects_the_column
+    view = Rufio::PreviewView.build(@csv_path)
+    view.handle_key(' ')
+    assert view.handle_key(' ')
+
+    assert_empty view.selected_columns
+    refute view.column_selected?(0)
+  end
+
+  def test_several_columns_can_be_selected
+    view = Rufio::PreviewView.build(@csv_path)
+    view.handle_key(' ')
+    view.handle_key('l')
+    view.handle_key(' ')
+
+    assert_equal [0, 1], view.selected_columns
+  end
+
+  def test_space_follows_a_rebound_select_key
+    rebound = Rufio::ConfigLoader.default_keybinds.merge(select: 'v')
+    Rufio::ConfigLoader.stub(:keybinds, rebound) do
+      view = Rufio::PreviewView.build(@csv_path)
+      assert view.handle_key('v')
+      assert_equal [0], view.selected_columns
+      refute view.handle_key(' '), '既定キーは設定で置き換わること'
+    end
+  end
+
+  def test_selecting_a_column_keeps_the_cell_cursor
+    view = Rufio::PreviewView.build(@csv_path)
+    view.handle_key('j')
+    view.handle_key(' ')
+
+    assert_equal 1, view.cursor.row, 'Space ではカーソルを動かさないこと'
+    assert_equal [0], view.selected_columns
+  end
+
+  def test_moving_the_cursor_keeps_the_selection
+    view = Rufio::PreviewView.build(@csv_path)
+    view.handle_key(' ')
+    view.handle_key('j')
+    view.handle_key('l')
+
+    assert_equal [0], view.selected_columns
+  end
+
+  def test_space_does_nothing_without_columns
+    path = File.join(@test_dir, 'empty.csv')
+    File.write(path, '')
+    view = Rufio::PreviewView.build(path)
+
+    refute view.handle_key(' ') if view.table?
+    assert_empty view.selected_columns if view.table?
+  end
+
+  def test_y_copies_the_selected_columns_of_the_cursor_row
+    view = Rufio::PreviewView.build(@csv_path)
+    view.handle_key(' ')
+    view.handle_key('l')
+    view.handle_key(' ')
+
+    copied = capture_copy { assert view.handle_key('y') }
+    assert_equal ['apple,120'], copied, '選択カラムをカンマ区切りで連結すること'
+    assert_includes view.status_line, 'copied 2 cols (pbcopy)'
+  end
+
+  def test_the_copied_row_follows_the_cursor
+    view = Rufio::PreviewView.build(@csv_path)
+    view.handle_key(' ')
+    view.handle_key('l')
+    view.handle_key(' ')
+    view.handle_key('j')
+
+    copied = capture_copy { view.handle_key('y') }
+    assert_equal ['みかん,150'], copied
+  end
+
+  def test_the_selected_columns_are_copied_in_column_order
+    view = Rufio::PreviewView.build(@csv_path)
+    view.handle_key('l')
+    view.handle_key(' ')
+    view.handle_key('h')
+    view.handle_key(' ')
+
+    copied = capture_copy { view.handle_key('y') }
+    assert_equal ['apple,120'], copied, '選んだ順ではなく列の順に並べること'
+  end
+
+  def test_one_selected_column_copies_that_column_not_the_cursor_cell
+    view = Rufio::PreviewView.build(@csv_path)
+    view.handle_key('l')
+    view.handle_key(' ')
+    view.handle_key('h')
+
+    copied = capture_copy { view.handle_key('y') }
+    assert_equal ['120'], copied, '選択があればカーソル位置の列ではなく選択列をコピーすること'
+    assert_includes view.status_line, 'copied 1 cols (pbcopy)'
+  end
+
+  def test_cells_that_need_quoting_are_quoted
+    path = File.join(@test_dir, 'quoted.csv')
+    File.write(path, %(name,note\napple,"red, sweet"\n))
+    view = Rufio::PreviewView.build(path)
+    view.handle_key(' ')
+    view.handle_key('l')
+    view.handle_key(' ')
+
+    copied = capture_copy { view.handle_key('y') }
+    assert_equal ['apple,"red, sweet"'], copied, 'CSV として読み戻せる形でコピーすること'
+  end
+
+  def test_a_missing_cell_becomes_an_empty_field
+    path = File.join(@test_dir, 'ragged.csv')
+    File.write(path, "a,b,c\n1\n")
+    view = Rufio::PreviewView.build(path)
+    view.handle_key(' ')
+    view.handle_key('l')
+    view.handle_key(' ')
+    view.handle_key('l')
+    view.handle_key(' ')
+
+    copied = capture_copy { view.handle_key('y') }
+    assert_equal ['1,,'], copied
+  end
+
+  def test_y_without_a_selection_still_copies_the_cell
+    view = Rufio::PreviewView.build(@csv_path)
+    view.handle_key('l')
+
+    copied = capture_copy { view.handle_key('y') }
+    assert_equal ['120'], copied
+  end
+
+  def test_capital_y_still_copies_the_whole_row
+    view = Rufio::PreviewView.build(@csv_path)
+    view.handle_key(' ')
+
+    copied = capture_copy { view.handle_key('Y') }
+    assert_equal ['apple,120'], copied, 'Y は選択に関係なく行全体をコピーすること'
+    assert_includes view.status_line, 'copied row (pbcopy)'
+  end
+
+  def test_y_on_a_table_without_rows_copies_the_path
+    path = File.join(@test_dir, 'header_only.csv')
+    File.write(path, "a,b\n")
+    view = Rufio::PreviewView.build(path)
+    view.handle_key(' ')
+
+    copied = capture_copy { view.handle_key('y') }
+    assert_equal [File.expand_path(path)], copied
+  end
+
+  def test_the_status_line_lists_the_selected_columns
+    view = Rufio::PreviewView.build(@csv_path)
+    refute_includes view.status_line, 'cols'
+
+    view.handle_key(' ')
+    view.handle_key('l')
+    view.handle_key(' ')
+    assert_includes view.status_line, 'cols A,B'
+    assert_includes view.status_line, 'Space: col'
+  end
+
+  def test_the_status_line_shortens_a_long_selection
+    sheet = Rufio::MemoryTableSheet.new(name: 'wide', header: ('a'..'h').to_a,
+                                        rows: [('1'..'8').to_a])
+    view = Rufio::TablePreviewView.new(Rufio::TableDocument.new(sheets: [sheet]), path: @csv_path)
+    8.times do
+      view.handle_key(' ')
+      view.handle_key('l')
+    end
+
+    assert_includes view.status_line, 'cols A,B,C,D +4'
+  end
+
+  def test_switching_sheets_clears_the_selection
+    view = multi_sheet_view
+    view.handle_key(' ')
+    view.handle_key(']')
+
+    assert_empty view.selected_columns, 'シートを切り替えたら選択は残さないこと'
+  end
+
+  def test_choosing_from_the_list_clears_the_selection
+    view = multi_sheet_view
+    view.handle_key(' ')
+    view.handle_key('/')
+    view.handle_key('j')
+    view.handle_key("\r")
+
+    assert_empty view.selected_columns
+  end
+
+  def test_reset_clears_the_selection
+    view = Rufio::PreviewView.build(@csv_path)
+    view.handle_key(' ')
+    assert view.reset
+
+    assert_empty view.selected_columns
+  end
+
+  def test_the_list_swallows_the_select_key
+    view = multi_sheet_view
+    view.handle_key('/')
+
+    assert view.handle_key(' ')
+    assert_empty view.selected_columns, '一覧を開いている間はカラムを選ばないこと'
+  end
+
+  def test_selected_columns_reach_the_view_from_preview_mode
+    handler = handler_for('sales.csv')
+    handler.focus_preview_pane
+
+    assert handler.handle_key(' ')
+    assert_equal [0], handler.preview_view.selected_columns
+
+    copied = capture_copy { handler.handle_key('y') }
+    assert_equal ['apple'], copied
+  end
 end

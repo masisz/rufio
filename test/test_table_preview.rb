@@ -462,4 +462,60 @@ class TestTablePreview < Minitest::Test
     assert_includes text, 'items'
     assert_includes text, 'sales'
   end
+
+  # === カラム選択（Space）の描画 ===
+
+  # 選択マーク色（ファイル一覧の選択済みアイテムと同じ緑背景・黒文字）で
+  # 描かれた文字だけを集める
+  def marked_text(screen, width, height)
+    (0...height).flat_map do |y|
+      (0...width).map do |x|
+        cell = screen.get_cell(x, y)
+        cell && cell[:fg] == Rufio::UIRenderer::MARKED_COLUMN_COLOR ? cell[:char] : nil
+      end
+    end.compact.join
+  end
+
+  def test_a_selected_column_is_marked
+    screen, ui, handler = renderer_for
+    handler.focus_preview_pane
+    handler.handle_key(' ')
+    ui.draw_screen(screen)
+
+    marked = marked_text(screen, 100, 24)
+    assert_includes marked, 'name', '選択したカラムの見出しに印を付けること'
+    assert_includes marked, 'みかん', 'そのカラムのセルにも印を付けること'
+    refute_includes marked, 'price', '選んでいないカラムには印を付けないこと'
+    refute_includes marked, '150'
+  end
+
+  def test_the_cursor_cell_stays_visible_in_a_selected_column
+    screen, ui, handler = renderer_for
+    handler.focus_preview_pane
+    handler.handle_key(' ')
+    ui.draw_screen(screen)
+
+    assert_includes highlighted_text(screen, 100, 24), 'apple',
+                    '選択カラムの中でもカーソルセルは反転表示のままであること'
+  end
+
+  def test_unselecting_removes_the_mark
+    screen, ui, handler = renderer_for
+    handler.focus_preview_pane
+    handler.handle_key(' ')
+    handler.handle_key(' ')
+    screen.clear
+    ui.draw_screen(screen)
+
+    assert_empty marked_text(screen, 100, 24)
+  end
+
+  def test_the_status_line_lists_the_selected_columns
+    screen, ui, handler = renderer_for
+    handler.focus_preview_pane
+    handler.handle_key(' ')
+    ui.draw_screen(screen)
+
+    assert_includes screen_text(screen, 24), 'cols A'
+  end
 end
