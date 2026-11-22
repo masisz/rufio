@@ -274,6 +274,21 @@ class TestPreviewView < Minitest::Test
     assert_includes view.status_line, 'copied (pbcopy)'
   end
 
+  def test_the_notice_reports_the_line_count_for_a_multiline_cell
+    # グリッドは改行を空白に畳んで表示するので、コピー内容が複数行だと分かるようにする
+    path = File.join(@test_dir, 'multi.csv')
+    File.write(path, %(item,note\n"echo hi\nrm -rf ~/x",ok\n))
+    view = Rufio::PreviewView.build(path)
+
+    capture_copy { view.handle_key('y') }
+    assert_includes view.status_line, 'copied, 2 lines (pbcopy)'
+
+    view.handle_key('l')
+    capture_copy { view.handle_key('y') }
+    assert_includes view.status_line, 'copied (pbcopy)'
+    refute_includes view.status_line, 'lines'
+  end
+
   def test_y_reports_a_failed_copy
     view = Rufio::PreviewView.build(@csv_path)
     capture_copy(false) { view.handle_key('y') }

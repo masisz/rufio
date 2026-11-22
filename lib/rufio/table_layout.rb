@@ -150,7 +150,8 @@ module Rufio
     def header_line(col_offset = 0)
       line = ' ' * @gutter_width
       visible_columns(col_offset).each do |index|
-        line += CELL_PREFIX + TextUtils.pad_string_to_width(@sheet.column_title(index), column_width(index)) + CELL_SUFFIX
+        title = TextUtils.sanitize_for_display(@sheet.column_title(index))
+        line += CELL_PREFIX + TextUtils.pad_string_to_width(title, column_width(index)) + CELL_SUFFIX
       end
       fit(close(line))
     end
@@ -188,14 +189,15 @@ module Rufio
       end
     end
 
-    # 表示用の正規化。セル内の改行・タブは幅計算を壊すのでスペースに畳む。
+    # 表示用の正規化。セル内の改行・タブは幅計算を壊し、エスケープシーケンスは
+    # 端末を操作してしまうため、制御文字をまとめて空白に置き換える。
     # y でコピーする値は元のまま（TableSheet 側が保持している）。
     def normalize(value)
       return '' if value.nil?
 
       text = value.to_s
       text = text[0, CELL_SCAN_LIMIT] if text.length > CELL_SCAN_LIMIT
-      text.gsub(/[\r\n\t]+/, ' ')
+      TextUtils.sanitize_for_display(text)
     end
 
     def close(line)

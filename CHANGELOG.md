@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `FUZZY_SEARCH_CACHE` in `config.rb` changes the file list cache limits (`max_entries` up to 1,000,000, `max_roots` up to 16, `ttl` up to 86,400 seconds; `0` disables). Omitted or invalid values keep the defaults (200,000 / 4 / 300)
 
+### Security
+- Control characters are replaced with a space before anything is stored in the screen buffer (`Rufio::TextUtils.sanitize_for_display`, applied in `Screen#put` / `#put_string`). Previously only colour codes (`\e[…m`) were removed, so an `ESC` in a file name, a file's contents or a table cell reached the terminal: a cell or column name holding `\e]52;c;…\a` silently replaced the viewer's clipboard when the cursor moved onto the file, and `\e[2J` or `\e]0;…\a` could repaint the screen or the title. The table preview, the preview status lines, the file list and text previews all go through the one sanitizing step now
+- Text copied with `y` or `Y` loses its trailing newline and has control characters other than newline and tab replaced, so a cell cannot execute itself when pasted into a shell. A cell holding a newline is reported as `copied, 2 lines`, since the grid draws it on one line
+- SQLite databases are opened by absolute path, so a file named like an option (`-cmd`) cannot be read as one, and with `-safe` where the `sqlite3` command supports it, which refuses `writefile()`, `load_extension()` and `ATTACH`
+
 ### Changed
 - Table previews read up to 512 KiB of a `.csv` or `.tsv` instead of 64 KiB, and `TABLE_PREVIEW`'s `max_bytes` goes up to 4 MiB. Parsing now stops at `max_rows` rows rather than parsing everything that was read, so a wider limit does not cost more time: a 40-column CSV showed 147 rows in 2 ms before and 1000 rows in 14 ms now, where the old code needed 29 ms for the same rows. Cells are measured and drawn from their first 256 characters, which keeps a cell of several hundred thousand characters from slowing the layout
 

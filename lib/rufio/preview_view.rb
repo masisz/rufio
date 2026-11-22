@@ -139,9 +139,16 @@ module Rufio
       end
 
       method = Clipboard.copy(text)
-      copied = ['copied', label].compact.join(' ')
-      notice(method ? "#{copied} (#{method})" : 'clipboard unavailable')
+      notice(method ? "#{copied_label(text, label)} (#{method})" : 'clipboard unavailable')
       true
+    end
+
+    # グリッドは改行を空白に畳んで表示するため、コピーした内容が複数行なら
+    # 画面の見た目と違うことが分かるよう行数を出す
+    def copied_label(text, label)
+      copied = ['copied', label].compact.join(' ')
+      lines = text.to_s.sub(/[\r\n]+\z/, '').lines.length
+      lines > 1 ? "#{copied}, #{lines} lines" : copied
     end
   end
 

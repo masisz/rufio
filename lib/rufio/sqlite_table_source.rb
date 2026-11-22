@@ -55,11 +55,21 @@ module Rufio
         @runner ||= method(:run_command)
       end
 
+      # -safe を付けられるか（古い sqlite3 は知らないオプションで失敗する）。
+      # プロセス内で 1 度だけ確認する
+      def safe_mode_supported?
+        return @safe_mode_supported unless @safe_mode_supported.nil?
+
+        _output, ok = runner.call([COMMAND, '-safe', '-csv', ':memory:', 'SELECT 1;'])
+        @safe_mode_supported = ok
+      end
+
       attr_writer :runner
 
       def reset!
         @runner = nil
         @command_available = nil
+        @safe_mode_supported = nil
         CommandLocator.reset!
       end
 
@@ -103,8 +113,12 @@ module Rufio
 
       def query(path, sql, header:)
         argv = [COMMAND, '-readonly', '-csv']
+        # -safe は writefile() / load_extension() / ATTACH などを拒否する（sqlite3 3.34+）。
+        # 読み取り専用の SELECT しか発行しないため、この機能に失うものはない
+        argv << '-safe' if safe_mode_supported?
         argv << '-header' if header
-        argv += [path.to_s, sql]
+        # SECURITY.md の方針どおり、'-' で始まるパスがオプションと解釈されないようにする
+        argv += [File.expand_path(path.to_s), sql]
 
         output, ok = runner.call(argv)
         raise TableSource::ParseError, "#{COMMAND} failed" unless ok

@@ -40,6 +40,11 @@ class TestSqliteTableSource < Minitest::Test
     Rufio::SqliteTableSource.open(@path, **kwargs)
   end
 
+  # -safe を使えるかの確認（:memory: への問い合わせ）を除いた、実データへの問い合わせ
+  def queries
+    @calls.reject { |argv| argv.include?(':memory:') }
+  end
+
   # === supports? ===
 
   def test_not_supported_without_the_sqlite3_command
@@ -83,12 +88,54 @@ class TestSqliteTableSource < Minitest::Test
   def test_opens_the_database_read_only_and_as_csv
     with_runner({ 'sqlite_master' => TABLE_LIST }) { open_db }
 
-    argv = @calls.first
+    argv = queries.first
     assert_equal 'sqlite3', argv[0]
     assert_includes argv, '-readonly'
     assert_includes argv, '-csv'
     assert_equal @path, argv[-2]
     assert_includes argv.last, 'FROM sqlite_master'
+  end
+
+  # === 安全側の既定（-safe と絶対パス） ===
+
+  def test_safe_mode_is_checked_once_and_then_used
+    with_runner({ 'sqlite_master' => TABLE_LIST, 'FROM' => ROWS }) do
+      open_db.sheet(0).row_count
+      open_db.sheet(0).row_count
+    end
+
+    probes = @calls.select { |argv| argv.include?(':memory:') }
+    assert_equal 1, probes.length, '-safe の確認はプロセスで 1 度だけ'
+    assert_equal %w[sqlite3 -safe -csv :memory: SELECT\ 1;], probes.first.map(&:to_s)
+    queries.each { |argv| assert_includes argv, '-safe', "#{argv.inspect} に -safe が入ること" }
+  end
+
+  def test_safe_mode_is_dropped_when_the_command_does_not_support_it
+    # 古い sqlite3 は -safe を知らず、確認が失敗する
+    Rufio::SqliteTableSource.runner = lambda do |argv|
+      @calls << argv
+      argv.include?(':memory:') ? ['', false] : [TABLE_LIST, true]
+    end
+
+    Rufio::SqliteTableSource.stub(:command_available?, true) { open_db }
+
+    refute_includes queries.first, '-safe', '使えないときは付けないこと'
+    assert_includes queries.first, '-readonly'
+  ensure
+    Rufio::SqliteTableSource.reset!
+  end
+
+  def test_the_database_path_is_absolute_so_a_dash_is_not_an_option
+    with_runner({ 'sqlite_master' => TABLE_LIST }) do
+      Dir.chdir(@dir) do
+        File.binwrite('-weird.db', "SQLite format 3\x00#{'x' * 32}")
+        Rufio::SqliteTableSource.open('-weird.db')
+      end
+    end
+
+    path_argument = queries.first[-2]
+    assert path_argument.start_with?('/'), "#{path_argument.inspect} が絶対パスであること"
+    refute path_argument.start_with?('-')
   end
 
   def test_table_query_is_a_select_with_a_limit
@@ -132,9 +179,9 @@ class TestSqliteTableSource < Minitest::Test
   def test_tables_are_queried_only_when_used
     document = with_runner({ 'sqlite_master' => TABLE_LIST, 'FROM' => ROWS }) do
       doc = open_db
-      assert_equal 1, @calls.length, 'テーブル一覧だけを引くこと'
+      assert_equal 1, queries.length, 'テーブル一覧だけを引くこと'
       doc.sheet(0).row_count
-      assert_equal 2, @calls.length
+      assert_equal 2, queries.length
       doc
     end
 
@@ -213,10 +260,10 @@ class TestSqliteTableSource < Minitest::Test
   end
 
   def test_a_table_that_fails_to_read_is_empty_instead_of_raising
-    calls = 0
-    Rufio::SqliteTableSource.runner = lambda do |_argv|
-      calls += 1
-      calls == 1 ? [TABLE_LIST, true] : ['', false]
+    Rufio::SqliteTableSource.runner = lambda do |argv|
+      sql = argv.last
+      ok = argv.include?(':memory:') || sql.include?('sqlite_master')
+      [ok ? TABLE_LIST : '', ok]
     end
 
     Rufio::SqliteTableSource.stub(:command_available?, true) do

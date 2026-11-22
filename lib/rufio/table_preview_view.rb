@@ -2,6 +2,7 @@
 
 require 'csv'
 require_relative 'table_cursor'
+require_relative 'text_utils'
 require_relative 'config_loader'
 
 module Rufio
@@ -114,7 +115,10 @@ module Rufio
 
       title = sheet.header && sheet.header[@cursor.column]
       address = "R#{@cursor.row + 1}C#{@cursor.column + 1}"
-      title.nil? || title.empty? ? address : "#{address} #{title}"
+      return address if title.nil? || title.empty?
+
+      # 見出しはファイル由来。ここは幅が広く長い文字列が入るため必ず無害化する
+      "#{address} #{TextUtils.sanitize_for_display(title)}"
     end
 
     # キーバインド設定（hjkl の変更に追従する）と固定キーから操作を決める

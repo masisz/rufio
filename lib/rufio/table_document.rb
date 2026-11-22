@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative 'text_utils'
+
 module Rufio
   # 表プレビューの 1 シート。
   # CSV は 1 枚、Excel はシート、SQLite はテーブルがそれぞれこれに対応する。
@@ -63,10 +65,13 @@ module Rufio
       label
     end
 
-    # ヘッダ行に表示する文字列（"A name" / ヘッダなしなら "A"）
+    # ヘッダ行に表示する文字列（"A name" / ヘッダなしなら "A"）。
+    # 見出しはファイル由来なので、端末制御シーケンスを無害化してから返す。
     def column_title(index)
       title = header && header[index]
-      title.nil? || title.empty? ? column_label(index) : "#{column_label(index)} #{title}"
+      return column_label(index) if title.nil? || title.empty?
+
+      "#{column_label(index)} #{TextUtils.sanitize_for_display(title)}"
     end
   end
 
@@ -195,13 +200,14 @@ module Rufio
       target = sheet(index)
       return nil unless target
 
+      # シート名・テーブル名・読み込みエラー文はファイルや外部コマンド由来なので無害化する
       parts = []
-      parts << "#{index + 1}/#{sheet_count} #{target.name}" if sheet_count > 1
+      parts << "#{index + 1}/#{sheet_count} #{TextUtils.sanitize_for_display(target.name)}" if sheet_count > 1
       parts << "#{target.row_count}#{'+' if target.row_truncated} rows"
       parts << "#{target.column_count}#{'+' if target.column_truncated} cols"
       parts << @encoding unless @encoding == 'UTF-8'
       parts << 'byte limit reached' if @byte_truncated
-      parts << target.load_error if target.load_error
+      parts << TextUtils.sanitize_for_display(target.load_error) if target.load_error
       parts.join('  ')
     end
   end

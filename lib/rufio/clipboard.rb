@@ -18,6 +18,11 @@ module Rufio
     MAX_BYTES = 100 * 1024
     # OSC 52 で多くの端末が受け取れる上限の目安
     OSC52_MAX_BYTES = 74_994
+    # コピー時に落とす末尾の改行
+    TRAILING_NEWLINES = /[\r\n]+\z/.freeze
+    # 改行とタブ以外の制御文字。セルの値としては意味を持たない一方、貼り付け先の端末を
+    # 操作しうる（ブラケットペーストが無効な端末では ESC がそのまま解釈される）
+    UNSAFE_CONTROL_CHARS = /[[:cntrl:]&&[^\n\t]]+/.freeze
 
     Candidate = Struct.new(:name, :argv, keyword_init: true)
 
@@ -27,7 +32,10 @@ module Rufio
       def copy(text, out: $stdout)
         return false if text.nil?
 
-        payload = text.to_s
+        # 末尾の改行は、シェルに貼り付けた瞬間にそのまま実行される原因になるため落とす。
+        # 途中の改行は値そのものなので残す（複数行だと分かるよう呼び出し側が件数を出す）。
+        # 改行・タブ以外の制御文字は、貼り付け先の端末を操作しうるので空白に置き換える
+        payload = sanitize(text.to_s)
         return false if payload.empty? || payload.bytesize > MAX_BYTES
 
         candidate = command_candidate
@@ -55,6 +63,11 @@ module Rufio
       end
 
       private
+
+      def sanitize(text)
+        trimmed = text.sub(TRAILING_NEWLINES, '')
+        trimmed.match?(UNSAFE_CONTROL_CHARS) ? trimmed.gsub(UNSAFE_CONTROL_CHARS, ' ') : trimmed
+      end
 
       def command_candidate
         return @command_candidate if @resolved

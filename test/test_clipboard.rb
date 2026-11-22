@@ -178,6 +178,50 @@ class TestClipboard < Minitest::Test
     assert_empty out.string
   end
 
+  # === 貼り付け時の実行を防ぐ ===
+
+  def test_trailing_newline_is_removed
+    # 末尾の改行が残っていると、シェルに貼り付けた瞬間に実行される
+    out = StringIO.new
+    Rufio::Clipboard.copy("rm -rf ~/important\n", out: out)
+    payload = Base64.strict_decode64(out.string[/;c;([^\a]+)/, 1])
+
+    assert_equal 'rm -rf ~/important', payload.force_encoding('UTF-8')
+  end
+
+  def test_interior_newlines_are_kept
+    out = StringIO.new
+    Rufio::Clipboard.copy("first\nsecond\r\n", out: out)
+    payload = Base64.strict_decode64(out.string[/;c;([^\a]+)/, 1]).force_encoding('UTF-8')
+
+    assert_equal "first\nsecond", payload, 'セルの中身は保つが末尾だけ落とす'
+  end
+
+  def test_only_newlines_is_nothing_to_copy
+    out = StringIO.new
+    refute Rufio::Clipboard.copy("\n\n", out: out)
+    assert_empty out.string
+  end
+
+  def test_control_characters_other_than_newline_are_replaced
+    # 貼り付け先の端末を操作しうるため、ESC などは空白にする
+    out = StringIO.new
+    Rufio::Clipboard.copy("x\e]52;c;cHduZWQ=\ay", out: out)
+    payload = Base64.strict_decode64(out.string[/;c;([^\a]+)/, 1]).force_encoding('UTF-8')
+
+    refute_includes payload, "\e"
+    refute_includes payload, "\a"
+    assert_includes payload, 'x'
+  end
+
+  def test_tabs_are_kept
+    out = StringIO.new
+    Rufio::Clipboard.copy("a\tb", out: out)
+    payload = Base64.strict_decode64(out.string[/;c;([^\a]+)/, 1]).force_encoding('UTF-8')
+
+    assert_equal "a\tb", payload
+  end
+
   # === 入力の検証 ===
 
   def test_nothing_is_copied_for_empty_input
