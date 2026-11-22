@@ -339,8 +339,9 @@ Rufio::Clipboard.copy(text) # => :pbcopy | :clip | :wl_copy | :xclip | :xsel | :
 | 1 | **実装済み**: `TableSource` / `TableDocument` / `CsvTableSource` / `EncodingDetector`（CP932 含む）/ `TableLayout`、`PreviewRegistry`、`FilePreview` の type 追加、分割＋フルスクリーンのグリッド表示（カーソルなし） | 中〜大 |
 | 2 | **実装済み**: `PreviewView` プロトコルへの委譲、`TableCursor`、hjkl・ページ・`0`/`$`・`g`/`}`、2 行目のステータス、マウスホイール | 中 |
 | 3 | **実装済み**: `Clipboard`、`y`（セル／ファイルパス）、コピー結果表示、`HealthChecker`、設定項目、ドキュメント | 小〜中 |
-| 4 | **実装済み**: `XlsxTableSource`、`SqliteTableSource`、シート切替（`[` / `]`）、`Y`（行コピー）、検索画面プレビューとの統合 | 中 |
-| 5 | **実装済み**: シート／テーブル一覧（`/`、`SheetPicker`・`TableDocument#sheet_label`）。名前だけで出せるので、選ぶまでテーブルを読まない | 小 |
+| 4 | **実装済み**: `XlsxTableSource`、`SqliteTableSource`、シート切替（`[` / `]`）、`Y`（行コピー） | 中 |
+| 5 | **実装済み**: シート／テーブル一覧（`t`、`SheetPicker`・`TableDocument#sheet_label`）。名前だけで出せるので、選ぶまでテーブルを読まない | 小 |
+| 6 | **実装済み**: カラム選択（`Space`）と選択カラムのコピー（`y`）、行の絞り込み（`/`、`TableQuery`・`TableSheet#filter`）。SQLite は WHERE 付きの `SELECT` を発行し直すので読み込み上限より後ろの行も探せる | 中 |
 
 Phase 1 単体でも「CSV が文字化けせず表で読める」価値が出る。Phase 3 の `y` は Files モードのパスコピーとセルコピーを同時に入れる。
 
