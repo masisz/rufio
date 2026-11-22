@@ -1,7 +1,7 @@
 # 表プレビュー設計（CSV の行列表示 / hjkl セル移動 / y でコピー、将来の SQLite・Excel 対応を含む）
 
 対象バージョン: 1.7.0 想定（1.6.0 時点のコードを調査）
-ステータス: Phase 1・2 実装済み / Phase 3 以降は検討案
+ステータス: Phase 1・2・3 実装済み / Phase 4 は検討案
 
 ## 1. 目的とスコープ
 
@@ -338,7 +338,7 @@ Rufio::Clipboard.copy(text) # => :pbcopy | :clip | :wl_copy | :xclip | :xsel | :
 |---|---|---|
 | 1 | **実装済み**: `TableSource` / `TableDocument` / `CsvTableSource` / `EncodingDetector`（CP932 含む）/ `TableLayout`、`PreviewRegistry`、`FilePreview` の type 追加、分割＋フルスクリーンのグリッド表示（カーソルなし） | 中〜大 |
 | 2 | **実装済み**: `PreviewView` プロトコルへの委譲、`TableCursor`、hjkl・ページ・`0`/`$`・`g`/`}`、2 行目のステータス、マウスホイール | 中 |
-| 3 | `Clipboard`、`y`（セル／ファイルパス）、コピー結果表示、`HealthChecker`、設定項目、ドキュメント | 小〜中 |
+| 3 | **実装済み**: `Clipboard`、`y`（セル／ファイルパス）、コピー結果表示、`HealthChecker`、設定項目、ドキュメント | 小〜中 |
 | 4 | `XlsxTableSource`、`SqliteTableSource`、シート切替（`[` / `]`）、`Y`（行コピー）、検索画面プレビューとの統合 | 中 |
 
 Phase 1 単体でも「CSV が文字化けせず表で読める」価値が出る。Phase 3 の `y` は Files モードのパスコピーとセルコピーを同時に入れる。
@@ -363,9 +363,8 @@ fixture（`test/fixtures/`）: 全角混在、引用符、セル内改行、CP93
 ## 14. 未決事項
 
 1. **バイト上限**: 表プレビューだけ 64 KiB より広げるか（例: 256 KiB）。`fetch_rows` 方式なので後から広げられる
-2. **OSC 52 の扱い**: 未対応端末で無言失敗するため、常に有効にするか設定で明示有効化にするか
-3. **`Y`（行コピー）** を入れるか（`y` はセル、`Y` は CSV 1 行）
-4. **SQLite の読み取り手段**: `sqlite3` CLI 方式（推奨）か gem 追加か（Phase 4 着手時に決定）
+2. **`Y`（行コピー）** を入れるか（`y` はセル、`Y` は CSV 1 行）
+3. **SQLite の読み取り手段**: `sqlite3` CLI 方式（推奨）か gem 追加か（Phase 4 着手時に決定）
 
 ## 15. 決定済み事項
 
@@ -373,6 +372,9 @@ fixture（`test/fixtures/`）: 全角混在、引用符、セル内改行、CP93
 - **CP932 自動判定は Phase 1 に含める**（BOM・UTF-8・CP932・EUC-JP の順で判定、設定で上書き可）
 - プレビュー表示は `TableSource` / `PreviewView` / `PreviewRegistry` の 3 つの拡張点を設け、**SQLite・Excel を「ソースの追加」だけで足せる**構造にする
 - ヘッダ行は既定で 1 行目を見出し扱い（`header: false` で無効化）
+- **OSC 52 は既定で有効**にする（コマンドが見つからないときのフォールバック）。未対応端末では無言で失敗するため、
+  「どの手段でコピーしたか」を必ず画面に出し、`rufio -c` でも確認できるようにする
+- キーバインドのアクション名は `copy_cell` ではなく **`copy_to_clipboard`**（セルだけでなくパスもコピーするため）
 
 ## 16. Phase 1 実装記録
 
@@ -466,3 +468,59 @@ fixture（`test/fixtures/`）: 全角混在、引用符、セル内改行、CP93
   `Clipboard.copy(view.copy_target)` を呼ぶだけでよい
 - Files / Config モードの `y`（ファイルパスのコピー）は `KeybindHandler#dispatch` に `:copy_cell` を足す
 - コピー結果の表示は 2 行目のステータス（`TablePreviewView#status_line`）に差し込む場所がある
+
+## 18. Phase 3 実装記録
+
+### 追加したファイル
+
+| ファイル | 内容 |
+|---|---|
+| `lib/rufio/clipboard.rb` | OS コマンド（pbcopy / clip / wl-copy / xclip / xsel）→ OSC 52 の順で試すコピー。`available_method` / `available_command` はヘルスチェック用 |
+
+変更: `preview_view.rb`（共通の `y` 処理と通知、`copy_target` の既定をファイルパスに）、
+`table_preview_view.rb`（セル値のコピー、ステータス行への結果表示）、
+`file_operation_controller.rb`（`copy_paths_to_clipboard`、選択パスの解決）、
+`keybind_handler.rb`（`:copy_to_clipboard` の dispatch）、
+`background_status.rb`（`notify` で即時操作の通知を出せるように）、
+`config_loader.rb`（`copy_to_clipboard: 'y'`、`CLIPBOARD_COMMAND`）、
+`health_checker.rb` と `config.rb`（クリップボードの検出とメッセージ）、`help_menu.rb`。
+
+### 設計からの変更点
+
+1. **アクション名を `copy_to_clipboard` にした**。設計では `copy_cell` だったが、表プレビュー以外では
+   ファイルパスをコピーするため、名前と挙動が合わなくなる。`copy_selected`（ファイルのコピー）とも区別できる
+2. **テキストプレビューの `y` もファイルパスのコピーにした**。Files モードと同じ意味にそろえた方が覚えやすく、
+   「`y` はカーソルが指す一番細かいものをコピーする（表ならセル、それ以外はパス）」という一つの規則になる。
+   ヒント行も `y: copy path  ESC: Back to files` に変えた
+3. **コピー結果の通知を時間で消さず、次の操作まで出し続けるようにした**。設計では 1.5 秒表示としていたが、
+   メインループは必要なときだけ再描画するため、時間で消す方式では消えるタイミングが再描画に依存してしまう。
+   移動キーやホイールで通知を消す方式なら時計に依存せず、テストも書ける
+4. **Files モードの通知は `BackgroundStatus#notify` に相乗りさせた**。ジョブ完了通知と同じ経路（最下行に 3 秒）で、
+   新しい表示機構を増やさずに済む
+5. **コマンドの存在確認は `which` を起動せず PATH を直接見る**ことにした（Windows では `PATHEXT` も見る）。
+   既存の `HealthChecker` は `system("which ...")` を使っているが、これはキー入力ごとに走る処理であり、
+   プロセス起動を避けたい。Windows に `which` がないという問題もない
+6. **`Wayland` / `X11` のセッションがないときはコマンドを試さない**。SSH 越しの Linux では
+   `DISPLAY` も `WAYLAND_DISPLAY` もないため、いきなり OSC 52 に進むのが正しい
+7. **サイズ上限を 2 段にした**。全体で 100 KiB、OSC 52 では base64 後の長さで 74,994 バイト
+
+### 動作確認
+
+- 新規テスト `test_clipboard.rb` 18 ケース（プラットフォーム別の候補、設定コマンド、**シェルを経由しないこと**、
+  OSC 52 の文字列と tmux / screen のラップ、サイズ上限、ヘルスチェック用の API）、
+  `test_preview_view.rb` に 12 ケース、`test_table_preview.rb` に 1 ケース追加
+- `rake test` 全体で新たな失敗はなし（既存の 13 件は変更前から発生している別件）
+- tmux 上で `bin/rufio` を起動し、`CLIPBOARD_COMMAND` に標準入力をファイルへ書くスクリプトを設定して確認:
+  CSV のセル（`R2C3` の `果物`）が余計な改行なしでそのままコマンドへ渡ること、
+  テキストプレビューの `y` がファイルパスを渡すこと、
+  Files モードで 2 件選択して `y` を押すと 2 行のパスが渡ること、
+  ステータス行が `copied (configured)` になること、
+  Files モードでは最下行に `data.tsv copied (configured)` が出て 3 秒後に消えること
+- `rufio -c` にクリップボードの行が出ること（この環境ではコマンドがないため
+  `OSC 52 (no clipboard command found)` と導入方法を表示）
+
+### 残っている作業（Phase 4）
+
+- `XlsxTableSource` / `SqliteTableSource`、シート切替（`[` / `]`）
+- `Y`（行全体を CSV 1 行としてコピー）
+- 検索画面のプレビューとの統合

@@ -67,11 +67,12 @@ class TestPreviewView < Minitest::Test
     assert_equal 0, view.row_offset
   end
 
-  def test_text_view_has_no_cursor_and_nothing_to_copy
+  def test_text_view_copies_the_file_path
     view = Rufio::PreviewView.build(@txt_path)
     assert_nil view.cursor
-    assert_nil view.copy_target
     refute view.table?
+    assert_equal File.expand_path(@txt_path), view.copy_target,
+                 'テキストプレビューの y はファイルパスをコピーする'
     assert_equal Rufio::PreviewView::BACK_HINT, view.status_line
   end
 
@@ -181,6 +182,78 @@ class TestPreviewView < Minitest::Test
     assert_equal 11, view.cursor.row
   end
 
+  # === y: クリップボードへのコピー ===
+
+  def capture_copy(result = :pbcopy)
+    copied = []
+    Rufio::Clipboard.stub(:copy, ->(text) { copied << text; result }) { yield }
+    copied
+  end
+
+  def test_y_copies_the_cell_under_the_cursor
+    view = Rufio::PreviewView.build(@csv_path)
+    view.handle_key('j')
+    view.handle_key('l')
+
+    copied = capture_copy { assert view.handle_key('y') }
+    assert_equal ['150'], copied
+    assert_includes view.status_line, 'copied (pbcopy)'
+  end
+
+  def test_y_copies_the_raw_cell_value
+    path = File.join(@test_dir, 'quoted.csv')
+    File.write(path, %(name,note\napple,"two\nlines"\n))
+    view = Rufio::PreviewView.build(path)
+    view.handle_key('l')
+
+    copied = capture_copy { view.handle_key('y') }
+    assert_equal ["two\nlines"], copied, '表示用に畳む前の値をコピーすること'
+  end
+
+  def test_y_in_a_text_preview_copies_the_path
+    view = Rufio::PreviewView.build(@txt_path)
+    copied = capture_copy { assert view.handle_key('y') }
+
+    assert_equal [File.expand_path(@txt_path)], copied
+    assert_includes view.status_line, 'copied (pbcopy)'
+  end
+
+  def test_y_reports_a_failed_copy
+    view = Rufio::PreviewView.build(@csv_path)
+    capture_copy(false) { view.handle_key('y') }
+
+    assert_includes view.status_line, 'clipboard unavailable'
+  end
+
+  def test_the_copy_notice_disappears_on_the_next_move
+    view = Rufio::PreviewView.build(@csv_path)
+    capture_copy { view.handle_key('y') }
+    assert_includes view.status_line, 'copied'
+
+    view.handle_key('j')
+    refute_includes view.status_line, 'copied'
+    assert_includes view.status_line, 'hjkl'
+  end
+
+  def test_y_on_a_table_without_data_copies_the_path
+    path = File.join(@test_dir, 'header_only.csv')
+    File.write(path, "a,b\n")
+    view = Rufio::PreviewView.build(path)
+
+    copied = capture_copy { view.handle_key('y') }
+    assert_equal [File.expand_path(path)], copied
+  end
+
+  def test_y_follows_a_rebound_copy_key
+    rebound = Rufio::ConfigLoader.default_keybinds.merge(copy_to_clipboard: 'Y')
+    Rufio::ConfigLoader.stub(:keybinds, rebound) do
+      view = Rufio::PreviewView.build(@csv_path)
+      copied = capture_copy { assert view.handle_key('Y') }
+      assert_equal ['apple'], copied
+      refute view.handle_key('y')
+    end
+  end
+
   # === NavigationController / KeybindHandler への委譲 ===
 
   def handler_for(name)
@@ -248,6 +321,35 @@ class TestPreviewView < Minitest::Test
     assert table.reset
     assert_equal [0, 0, 0, 0],
                  [table.cursor.row, table.cursor.column, table.row_offset, table.cursor.column_offset]
+  end
+
+  def test_preview_mode_y_reaches_the_view
+    handler = handler_for('sales.csv')
+    handler.focus_preview_pane
+    handler.handle_key('l')
+
+    copied = capture_copy { assert handler.handle_key('y') }
+    assert_equal ['120'], copied
+  end
+
+  def test_files_mode_y_copies_the_current_path
+    handler = handler_for('sales.csv')
+    copied = capture_copy { assert handler.handle_key('y') }
+
+    assert_equal [File.expand_path(@csv_path)], copied
+  end
+
+  def test_files_mode_y_copies_every_selected_path
+    handler = handler_for('sales.csv')
+    handler.handle_key(' ') # 選択
+    index = handler.get_active_entries.index { |entry| entry[:name] == 'notes.txt' }
+    handler.select_index(index)
+    handler.handle_key(' ')
+
+    copied = capture_copy { handler.handle_key('y') }
+    assert_equal 1, copied.length
+    lines = copied.first.split("\n")
+    assert_equal [File.expand_path(@csv_path), File.expand_path(@txt_path)].sort, lines.sort
   end
 
   def test_mouse_wheel_moves_the_cell_cursor

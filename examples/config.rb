@@ -89,3 +89,11 @@ TABLE_PREVIEW = {
   delimiter: 'auto',      # 'auto' (extension, then ';' detection), ',', "\t", ';' ...
   encoding: 'auto'        # 'auto' (BOM / UTF-8 / CP932 / EUC-JP), 'UTF-8', 'CP932' ...
 }.freeze
+
+# ========================================
+# Clipboard Command (y)
+# ========================================
+# Command that receives the copied text on stdin, as a string or an argv array.
+# Leave it unset to use pbcopy / clip / wl-copy / xclip / xsel when available,
+# and OSC 52 otherwise (works over SSH; in tmux also set -g set-clipboard on).
+# CLIPBOARD_COMMAND = ['xclip', '-selection', 'clipboard'].freeze

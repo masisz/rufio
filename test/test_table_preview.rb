@@ -319,6 +319,15 @@ class TestTablePreview < Minitest::Test
     assert_includes screen_text(screen, 24), 'A a'
   end
 
+  def test_status_line_reports_a_copy
+    screen, ui, handler = renderer_for
+    handler.focus_preview_pane
+    Rufio::Clipboard.stub(:copy, :pbcopy) { handler.handle_key('y') }
+    ui.draw_screen(screen)
+
+    assert_includes screen_text(screen, 24), 'copied (pbcopy)'
+  end
+
   def test_narrow_pane_reports_hidden_columns
     screen, ui, = renderer_for(width: 60)
     ui.draw_screen(screen)

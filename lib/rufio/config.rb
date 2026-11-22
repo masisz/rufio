@@ -66,6 +66,11 @@ module Rufio
       'health.rga' => 'rga (content search)',
       'health.zoxide' => 'zoxide (directory history)',
       'health.bat' => 'bat (syntax highlight)',
+      'health.clipboard' => 'Clipboard (y to copy)',
+      'health.clipboard_osc52' => 'OSC 52 (no clipboard command found)',
+      'health.clipboard_hint' => 'Install pbcopy, wl-copy, xclip or xsel for a local clipboard, ' \
+                                 'or set CLIPBOARD_COMMAND. Over SSH, OSC 52 needs terminal support ' \
+                                 '(in tmux also set-clipboard on)',
       'health.file_opener' => 'System file opener',
       'health.summary' => 'Summary:',
       'health.ok' => 'OK',

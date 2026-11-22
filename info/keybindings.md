@@ -24,6 +24,7 @@ Complete reference of all keyboard shortcuts in **rufio**.
 | `d` | Delete file or directory (with confirmation) |
 | `a` | Create new file |
 | `A` | Create new directory |
+| `y` | Copy the path of the current file to the clipboard |
 
 `.zip` previews list the archive entries (size, method, modified time, name) without extracting them.
 
@@ -39,6 +40,7 @@ Text previews read at most the first 64 KiB. PDF bodies are not previewed, keepi
 | `m` | Move selected items to current directory |
 | `c` | Copy selected items to current directory |
 | `x` | Delete selected items |
+| `y` | Copy every selected path to the clipboard (one per line) |
 | `z` | Extract selected `.zip` files (each into `<name>/`) / compress selected items into one `.zip` |
 
 ZIP extraction and compression run as background jobs. Check progress in Jobs mode (`J`).
@@ -86,6 +88,7 @@ In the built-in search screen (`s`, `/`, `F`), type to fuzzy-filter, use **Up/Do
 
 ### Preview
 - **P**: Open fullscreen file preview (hides the file list)
+- **y**: Copy the file path to the clipboard
 - **j/k**: Scroll preview
 - **Ctrl+D/U**: Page down/up
 - **ESC**: Back to the file list
@@ -95,10 +98,13 @@ In the built-in search screen (`s`, `/`, `F`), type to fuzzy-filter, use **Up/Do
 - **Ctrl+D/U**: Move one screen of rows
 - **g/}**: First / last row
 - **0/$**: First / last column of the row
-- The line under the file name shows the cell address and the column name, e.g. `R3C2 price`
+- **y**: Copy the cell under the cursor to the clipboard (the raw value, including any newlines inside it)
+- The line under the file name shows the cell address and the column name, e.g. `R3C2 price`, and the result of a copy
 - **ESC**: Back to the file list
 
 Cell movement follows the `move_up` / `move_down` / `navigate_parent` / `navigate_enter` keybinds, so rebinding `hjkl` applies here too.
+
+Copying uses `pbcopy`, `clip`, `wl-copy`, `xclip` or `xsel` when one is available, and OSC 52 otherwise, which also works over SSH if the terminal supports it (in tmux, `set -g set-clipboard on`). `CLIPBOARD_COMMAND` in `config.rb` sets your own command, and `rufio -c` reports which one is used.
 
 ### Filter Mode
 - **Any character**: Add to filter query

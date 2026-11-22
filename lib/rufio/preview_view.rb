@@ -3,6 +3,7 @@
 require_relative 'preview_registry'
 require_relative 'table_source'
 require_relative 'config_loader'
+require_relative 'clipboard'
 
 module Rufio
   # プレビューモード中の「見え方」と「キー操作」をまとめた層。
@@ -19,17 +20,19 @@ module Rufio
   #   copy_target  y でコピーする文字列（nil ならコピー対象なし）
   #   cursor       セルカーソル（持たない種別は nil）
   class PreviewView
-    BACK_HINT = 'ESC: Back to files'
+    BACK_HINT = 'y: copy path  ESC: Back to files'
+
+    attr_reader :path
 
     class << self
       # @param path [String] プレビュー対象
       # @return [PreviewView] 表として読めれば TablePreviewView、それ以外は TextPreviewView
       def build(path)
         document = load_table(path)
-        document ? TablePreviewView.new(document) : TextPreviewView.new
+        document ? TablePreviewView.new(document, path: path) : TextPreviewView.new(path: path)
       rescue StandardError
         # プレビューのために操作を止めない。表として読めなければテキスト扱い
-        TextPreviewView.new
+        TextPreviewView.new(path: path)
       end
 
       private
@@ -54,6 +57,11 @@ module Rufio
       end
     end
 
+    def initialize(path: nil)
+      @path = path
+      @notice = nil
+    end
+
     def row_offset
       0
     end
@@ -63,8 +71,11 @@ module Rufio
       false
     end
 
-    def handle_key(_key)
-      false
+    # 種別ごとのキーを先に処理し、ここでは共通のキー（y: コピー）だけを扱う
+    def handle_key(key)
+      return false unless copy_key?(key)
+
+      perform_copy
     end
 
     def scroll(_delta)
@@ -79,8 +90,9 @@ module Rufio
       BACK_HINT
     end
 
+    # y でコピーする文字列。表プレビューはセルの値、それ以外はファイルパス
     def copy_target
-      nil
+      @path && File.expand_path(@path)
     end
 
     def cursor
@@ -90,6 +102,37 @@ module Rufio
     def table?
       false
     end
+
+    protected
+
+    # コピー結果などの短い通知。次の操作まで表示し続ける
+    def notice_text
+      @notice
+    end
+
+    def notice(text)
+      @notice = text
+    end
+
+    def clear_notice
+      @notice = nil
+    end
+
+    def copy_key?(key)
+      key == ConfigLoader.keybinds[:copy_to_clipboard]
+    end
+
+    def perform_copy
+      target = copy_target
+      if target.nil? || target.to_s.empty?
+        notice('nothing to copy')
+        return true
+      end
+
+      method = Clipboard.copy(target)
+      notice(method ? "copied (#{method})" : 'clipboard unavailable')
+      true
+    end
   end
 
   # 従来のテキスト／コードプレビュー（行単位のスクロールのみ）
@@ -98,13 +141,14 @@ module Rufio
 
     attr_reader :row_offset
 
-    def initialize
+    def initialize(path: nil)
       super
       @row_offset = 0
     end
 
     def reset
       @row_offset = 0
+      clear_notice
       true
     end
 
@@ -114,11 +158,16 @@ module Rufio
       when 'k', "\e[A" then scroll(-1)
       when "\x04" then page(1)   # Ctrl+D
       when "\x15" then page(-1)  # Ctrl+U
-      else false
+      else super
       end
     end
 
+    def status_line
+      notice_text || BACK_HINT
+    end
+
     def scroll(delta)
+      clear_notice
       @row_offset = [@row_offset + delta, 0].max
       true
     end

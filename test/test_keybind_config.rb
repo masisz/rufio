@@ -44,6 +44,10 @@ class TestKeybindConfig < Minitest::Test
     assert_equal 'R', Rufio::ConfigLoader.default_keybinds[:refresh]
   end
 
+  def test_default_keybinds_copy_to_clipboard_is_y
+    assert_equal 'y', Rufio::ConfigLoader.default_keybinds[:copy_to_clipboard]
+  end
+
   def test_default_keybinds_quit_is_q
     assert_equal 'q', Rufio::ConfigLoader.default_keybinds[:quit]
   end

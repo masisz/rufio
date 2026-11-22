@@ -16,6 +16,13 @@ module Rufio
       @expires_at = nil
     end
 
+    # 即時操作の結果など、短い通知を出す（DISPLAY_DURATION 秒後に自動で消える）。
+    def notify(message, now: Time.now)
+      @message = message
+      @expires_at = now + DISPLAY_DURATION
+      true
+    end
+
     # 描画に関わる状態が変化した場合だけ true を返す。
     def update(executor, now: Time.now)
       changed = expire(now)

@@ -74,6 +74,7 @@ module Rufio
           create_dir:      'A',
           move_selected:   'm',
           copy_selected:   'c',
+          copy_to_clipboard: 'y',
           delete_selected: 'x',
           open_explorer:   'e',
           # 選択・検索
@@ -122,6 +123,16 @@ module Rufio
         current = user_keybinds.reject { |action, _| LEGACY_KEYBIND_ACTIONS.key?(action) }
         renamed = legacy.each_with_object({}) { |(action, key), map| map[LEGACY_KEYBIND_ACTIONS[action]] = key }
         default_keybinds.merge(renamed).merge(current)
+      end
+
+      # クリップボードへコピーするコマンド（文字列または argv 配列）。
+      # 未設定なら OS ごとの既定コマンド → OSC 52 の順で試す。
+      def clipboard_command
+        value = load_config[:clipboard_command]
+        return value if value.is_a?(String) && !value.empty?
+        return value if value.is_a?(Array) && value.all? { |item| item.is_a?(String) } && !value.empty?
+
+        nil
       end
 
       # 表プレビュー設定（整数は min..max に丸め、不正な値は既定値のまま）
@@ -342,7 +353,8 @@ module Rufio
           keybinds: safe_const_get(:KEYBINDS, {}),
           global_search_excluded_extensions: safe_const_get(:GLOBAL_SEARCH_EXCLUDED_EXTENSIONS, []),
           fuzzy_search_cache: safe_const_get(:FUZZY_SEARCH_CACHE, {}),
-          table_preview: safe_const_get(:TABLE_PREVIEW, {})
+          table_preview: safe_const_get(:TABLE_PREVIEW, {}),
+          clipboard_command: safe_const_get(:CLIPBOARD_COMMAND, nil)
         }
 
         if Object.const_defined?(:LANGUAGE)
@@ -394,7 +406,8 @@ module Rufio
           global_search_excluded_extensions: [],
           keybinds: {},      # ユーザーの上書きのみ格納（デフォルトはdefault_keybindsを参照）
           ui_options: {},    # ユーザーの上書きのみ格納（デフォルトはdefault_ui_optionsを参照）
-          table_preview: {}  # ユーザーの上書きのみ格納（デフォルトはDEFAULT_TABLE_PREVIEWを参照）
+          table_preview: {},      # ユーザーの上書きのみ格納（デフォルトはDEFAULT_TABLE_PREVIEWを参照）
+          clipboard_command: nil  # 未設定なら OS 既定のコマンド → OSC 52
         }
       end
     end

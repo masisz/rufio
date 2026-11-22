@@ -496,6 +496,7 @@ module Rufio
       when :create_dir      then @file_op_controller.create_directory
       when :move_selected   then @file_op_controller.move_selected_to_current
       when :copy_selected   then @file_op_controller.copy_selected_to_current
+      when :copy_to_clipboard then @file_op_controller.copy_paths_to_clipboard(current_entry)
       when :delete_selected then @file_op_controller.delete_selected_files
       when :select          then toggle_selection
       when :filter

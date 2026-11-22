@@ -7,12 +7,12 @@ module Rufio
   # 行列（グリッド）プレビュー。セルカーソルを持ち、hjkl で移動する。
   # 形式（CSV / 将来の Excel・SQLite）には依存せず、TableDocument だけを見る。
   class TablePreviewView < PreviewView
-    MOVE_HINT = 'hjkl: move  ESC: back'
+    MOVE_HINT = 'hjkl: move  y: copy  ESC: back'
 
     attr_reader :document, :cursor, :sheet_index
 
-    def initialize(document, sheet_index: 0)
-      super()
+    def initialize(document, sheet_index: 0, path: nil)
+      super(path: path)
       @document = document
       @sheet_index = sheet_index
       @cursor = TableCursor.new(sheet)
@@ -32,11 +32,16 @@ module Rufio
 
     def reset
       @cursor.reset
+      clear_notice
       true
     end
 
     def handle_key(key)
-      case action_for(key)
+      action = action_for(key)
+      return super if action.nil?
+
+      clear_notice
+      case action
       when :down         then @cursor.move(rows: 1)
       when :up           then @cursor.move(rows: -1)
       when :left         then @cursor.move(columns: -1)
@@ -47,12 +52,12 @@ module Rufio
       when :last_row     then @cursor.last_row
       when :first_column then @cursor.first_column
       when :last_column  then @cursor.last_column
-      else false
       end
     end
 
     # マウスホイールなど、キー以外からの縦移動もセルカーソルを動かす
     def scroll(delta)
+      clear_notice
       @cursor.move(rows: delta)
     end
 
@@ -60,14 +65,16 @@ module Rufio
       @cursor.page(delta)
     end
 
-    # 例: "R3C2 price  |  hjkl: move  ESC: back"
+    # 例: "R3C2 price  |  hjkl: move  y: copy  ESC: back"
+    # コピー直後は操作ヒントの代わりに結果を出す
     def status_line
-      [cell_address, MOVE_HINT].compact.join('  |  ')
+      [cell_address, notice_text || MOVE_HINT].compact.join('  |  ')
     end
 
-    # y でコピーする値（表示用に畳む前の生のセル値）
+    # y でコピーする値（表示用に畳む前の生のセル値）。
+    # データ行がなければファイルパスを返す（テキストプレビューと同じ扱い）
     def copy_target
-      return nil if @cursor.empty?
+      return super if @cursor.empty?
 
       @cursor.value
     end

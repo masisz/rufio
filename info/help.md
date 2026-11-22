@@ -41,10 +41,13 @@
 | `d` | Delete file or directory (with confirmation) |
 | `a` | Create new file |
 | `A` | Create new directory |
+| `y` | Copy the current or selected paths to the clipboard |
 
 In a preview, `j/k` scroll, `Ctrl+D/U` page down/up and `ESC` returns to the file list.
 
-In a table preview (`.csv` / `.tsv` / `.tab`), `h/j/k/l` and the arrow keys move a cell cursor instead, `g/}` jump to the first and last row, `0/$` to the first and last column, and the line under the file name shows the cell address and column name (`R3C2 price`). The grid scrolls in both directions to keep the cursor visible.
+In a table preview (`.csv` / `.tsv` / `.tab`), `h/j/k/l` and the arrow keys move a cell cursor instead, `g/}` jump to the first and last row, `0/$` to the first and last column, `y` copies the cell under the cursor, and the line under the file name shows the cell address and column name (`R3C2 price`). The grid scrolls in both directions to keep the cursor visible.
+
+Copying uses `pbcopy`, `clip`, `wl-copy`, `xclip` or `xsel` when available and OSC 52 otherwise; `CLIPBOARD_COMMAND` in `config.rb` overrides it and `rufio -c` shows which one is used.
 
 Text previews read at most the first 64 KiB. PDF bodies are not previewed, keeping file navigation responsive.
 
