@@ -21,8 +21,8 @@ class TestInfoDocs < Minitest::Test
       assert_includes doc, '| `e` | Open current directory in file explorer |', name
       assert_includes doc, '| `s` | Fuzzy search file names |', name
       assert_includes doc, '| `/` | Fuzzy search file names (same as `s`) |', name
-      assert_includes doc, '| `Tab` | Cycle to next bookmark (Files mode) |', name
-      assert_includes doc, '| `Shift+Tab` | Cycle to previous bookmark (Files mode) |', name
+      refute_includes doc, 'Cycle to next bookmark', name
+      refute_includes doc, 'Cycle to previous bookmark', name
       refute_includes doc, 'Switch mode: Files -> Logs -> Jobs -> Help', name
     end
   end
@@ -48,10 +48,33 @@ class TestInfoDocs < Minitest::Test
     doc = read('welcome.md')
     assert_includes doc, '| `G` | Global search across bookmarks |'
     assert_includes doc, '| `C` | Config mode |'
-    assert_includes doc, '| `Tab` | Next bookmark |'
+    refute_includes doc, 'Next bookmark'
     refute_includes doc, 'Switch mode (Files / Logs / Jobs / Help)'
     refute_includes doc, 'enter **Help Mode** where you can browse'
   end
+  # 表プレビューの / はシート／テーブル一覧を開く
+  def test_docs_describe_the_table_list_key
+    root = File.expand_path('..', __dir__)
+    { 'info/help.md' => 'the list of sheets or tables',
+      'info/keybindings.md' => 'the list of sheets or tables',
+      'docs/guide.md' => 'the list of sheets or tables',
+      'docs/guide_ja.md' => 'シート／テーブル一覧',
+      'README.md' => 'the list of sheets or tables',
+      'README_ja.md' => 'シート／テーブル一覧' }.each do |name, phrase|
+      assert_includes File.read(File.join(root, name)), phrase, name
+    end
+  end
+
+  # Tab / Shift+Tab のブックマーク巡回は削除した
+  def test_docs_do_not_describe_bookmark_cycling
+    root = File.expand_path('..', __dir__)
+    %w[info/help.md info/keybindings.md info/welcome.md
+       docs/guide.md docs/guide_ja.md README.md README_ja.md].each do |name|
+      doc = File.read(File.join(root, name))
+      refute_match(/Cycle to (next|previous) bookmark|[Nn]ext bookmark|次 \/ 前のブックマーク|次のブックマーク/, doc, name)
+    end
+  end
+
   # s / / / F は内蔵の検索画面を使う。fzf は不要になった
   def test_docs_do_not_require_fzf
     %w[help.md keybindings.md welcome.md].each do |name|

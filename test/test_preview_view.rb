@@ -4,10 +4,13 @@ require 'minitest/autorun'
 require 'fileutils'
 require 'tmpdir'
 require_relative '../lib/rufio'
+require_relative 'support/xlsx_fixture'
 
 # PreviewView プロトコル: テキストと表のビューが同じ約束を満たし、
 # プレビューモード中のキーがビューに委譲されること
 class TestPreviewView < Minitest::Test
+  include XlsxFixture
+
   PROTOCOL = %i[row_offset reset handle_key scroll page status_line copy_target cursor table?].freeze
 
   def setup
@@ -225,8 +228,8 @@ class TestPreviewView < Minitest::Test
   end
 
   def test_sheet_hint_only_appears_with_several_sheets
-    assert_includes multi_sheet_view.status_line, '[/]: sheet'
-    refute_includes Rufio::PreviewView.build(@csv_path).status_line, '[/]: sheet'
+    assert_includes multi_sheet_view.status_line, '[ ]: sheet'
+    refute_includes Rufio::PreviewView.build(@csv_path).status_line, '[ ]: sheet'
   end
 
   def test_copy_uses_the_selected_sheet
@@ -449,5 +452,245 @@ class TestPreviewView < Minitest::Test
     assert_equal 1, handler.preview_cursor.row
     handler.scroll_preview_up
     assert_equal 0, handler.preview_cursor.row
+  end
+
+  # === テーブル／シート一覧（/） ===
+
+  def many_sheet_view(count = 10)
+    sheets = (1..count).map do |i|
+      Rufio::MemoryTableSheet.new(name: "t#{i}", header: %w[a], rows: [["v#{i}"]])
+    end
+    Rufio::TablePreviewView.new(Rufio::TableDocument.new(sheets: sheets, sheet_label: 'Tables'),
+                                path: @csv_path)
+  end
+
+  def test_slash_opens_the_sheet_list
+    view = multi_sheet_view
+    refute view.picker_open?, '最初は一覧を開いていないこと'
+
+    assert view.handle_key('/')
+    assert view.picker_open?
+    assert_equal %w[Sales Stock], view.picker.names, 'シート名を並べること'
+    assert_equal 0, view.picker.index, '現在のシートを選んだ状態で開くこと'
+  end
+
+  def test_the_list_opens_on_the_current_sheet
+    view = multi_sheet_view
+    view.handle_key(']')
+    view.handle_key('/')
+
+    assert_equal 1, view.picker.index
+  end
+
+  def test_the_list_moves_without_switching_sheets
+    view = multi_sheet_view
+    view.handle_key('/')
+
+    assert view.handle_key('j')
+    assert_equal 1, view.picker.index
+    assert_equal 0, view.sheet_index, '選ぶまではシートを切り替えないこと'
+    assert_equal 'Sales', view.sheet.name
+
+    assert view.handle_key('k')
+    assert_equal 0, view.picker.index
+  end
+
+  def test_the_list_moves_with_arrow_keys
+    view = multi_sheet_view
+    view.handle_key('/')
+
+    view.handle_key("\e[B")
+    assert_equal 1, view.picker.index
+    view.handle_key("\e[A")
+    assert_equal 0, view.picker.index
+  end
+
+  def test_the_list_stops_at_the_ends
+    view = multi_sheet_view
+    view.handle_key('/')
+
+    view.handle_key('k')
+    assert_equal 0, view.picker.index
+    view.handle_key('j')
+    view.handle_key('j')
+    assert_equal 1, view.picker.index
+  end
+
+  def test_the_list_jumps_to_the_first_and_last_entry
+    view = many_sheet_view
+    view.handle_key('/')
+
+    view.handle_key('}')
+    assert_equal 9, view.picker.index
+    view.handle_key('g')
+    assert_equal 0, view.picker.index
+  end
+
+  def test_enter_opens_the_selected_sheet_and_closes_the_list
+    view = multi_sheet_view
+    view.handle_key('/')
+    view.handle_key('j')
+
+    assert view.handle_key("\r")
+    refute view.picker_open?, '選んだら一覧は閉じること'
+    assert_equal 1, view.sheet_index
+    assert_equal 'Stock', view.sheet.name
+    assert_equal 0, view.cursor.row, 'カーソルは切り替え先の先頭セルに戻ること'
+  end
+
+  def test_the_list_also_accepts_a_newline
+    view = multi_sheet_view
+    view.handle_key('/')
+    view.handle_key('j')
+    view.handle_key("\n")
+
+    assert_equal 1, view.sheet_index
+  end
+
+  def test_escape_closes_the_list_and_keeps_the_sheet
+    view = multi_sheet_view
+    view.handle_key('/')
+    view.handle_key('j')
+
+    assert view.handle_key("\e")
+    refute view.picker_open?
+    assert_equal 0, view.sheet_index, 'ESC では切り替えないこと'
+  end
+
+  def test_slash_closes_the_list_again
+    view = multi_sheet_view
+    view.handle_key('/')
+    assert view.handle_key('/')
+
+    refute view.picker_open?
+  end
+
+  def test_the_list_swallows_other_keys
+    view = multi_sheet_view
+    view.handle_key('/')
+
+    assert view.handle_key('l'), '一覧を開いている間はキーを通さないこと'
+    assert view.handle_key('Z')
+    assert_equal 0, view.cursor.column, '裏のセルカーソルは動かないこと'
+
+    copied = capture_copy { assert view.handle_key('y') }
+    assert_empty copied, '一覧を開いている間はコピーもしないこと'
+  end
+
+  def test_slash_does_nothing_for_a_single_sheet_table
+    view = Rufio::PreviewView.build(@csv_path)
+
+    refute view.handle_key('/'), '1 枚しかない表では一覧を開かないこと'
+    refute view.picker_open?
+  end
+
+  def test_the_list_follows_rebound_move_keys
+    rebound = Rufio::ConfigLoader.default_keybinds.merge(move_down: 'n')
+    Rufio::ConfigLoader.stub(:keybinds, rebound) do
+      view = multi_sheet_view
+      view.handle_key('/')
+      view.handle_key('n')
+      assert_equal 1, view.picker.index
+    end
+  end
+
+  def test_the_status_line_shows_the_list_hint
+    assert_includes multi_sheet_view.status_line, '/: list'
+    refute_includes Rufio::PreviewView.build(@csv_path).status_line, '/: list'
+  end
+
+  def test_the_status_line_shows_the_selected_entry_while_the_list_is_open
+    view = multi_sheet_view
+    view.handle_key('/')
+    view.handle_key('j')
+
+    assert_includes view.status_line, '2/2 Stock'
+    assert_includes view.status_line, 'Enter: open'
+    assert_includes view.status_line, 'ESC: cancel'
+  end
+
+  def test_the_list_title_uses_the_document_label
+    assert_equal 'Tables (10)', many_sheet_view.tap { |view| view.handle_key('/') }.picker_title
+    assert_equal 'Sheets (2)', multi_sheet_view.tap { |view| view.handle_key('/') }.picker_title
+  end
+
+  def test_the_list_rows_mark_the_current_sheet_and_the_selection
+    view = multi_sheet_view
+    view.handle_key('/')
+    view.handle_key('j')
+    rows = view.picker_rows
+
+    assert_equal ['> Sales', '  Stock'], rows.map { |row| row[:text] }
+    assert_equal [false, true], rows.map { |row| row[:selected] }
+  end
+
+  def test_the_list_rows_sanitize_the_sheet_name
+    document = Rufio::TableDocument.new(
+      sheets: [Rufio::MemoryTableSheet.new(name: "ok", header: %w[a], rows: [%w[1]]),
+               Rufio::MemoryTableSheet.new(name: "bad\e[31mname", header: %w[a], rows: [%w[2]])]
+    )
+    view = Rufio::TablePreviewView.new(document, path: @csv_path)
+    view.handle_key('/')
+
+    refute_includes view.picker_rows.last[:text], "\e", 'シート名の制御文字を無害化すること'
+  end
+
+  def test_the_list_scrolls_to_keep_the_selection_visible
+    view = many_sheet_view
+    view.handle_key('/')
+    view.picker.visible_rows = 3
+
+    assert_equal %w[t1 t2 t3], view.picker_rows.map { |row| row[:text].strip }
+    view.handle_key('}')
+    assert_equal %w[t8 t9 t10], view.picker_rows.map { |row| row[:text].strip }
+    assert_equal 9, view.picker.index
+  end
+
+  def test_reset_closes_the_list
+    view = multi_sheet_view
+    view.handle_key('/')
+    assert view.reset
+
+    refute view.picker_open?
+  end
+
+  # === 一覧と NavigationController ===
+
+  def xlsx_handler
+    path = File.join(@test_dir, 'book.xlsx')
+    write_xlsx(path, [['Sales', [%w[name price], ['apple', 120]]],
+                      ['Stock', [%w[item count], ['mikan', 30]]]])
+    handler = handler_for('book.xlsx')
+    assert handler.focus_preview_pane
+    handler
+  end
+
+  def test_the_list_opens_from_preview_mode
+    handler = xlsx_handler
+    assert handler.handle_key('/')
+
+    assert handler.preview_view.picker_open?
+  end
+
+  def test_escape_closes_the_list_before_leaving_preview_mode
+    handler = xlsx_handler
+    handler.handle_key('/')
+
+    assert handler.handle_key("\e")
+    assert handler.preview_focused?, 'ESC は一覧を閉じるだけでプレビューは抜けないこと'
+    refute handler.preview_view.picker_open?
+
+    assert handler.handle_key("\e")
+    refute handler.preview_focused?
+  end
+
+  def test_choosing_from_the_list_switches_the_sheet
+    handler = xlsx_handler
+    handler.handle_key('/')
+    handler.handle_key('j')
+    handler.handle_key("\r")
+
+    assert_equal 1, handler.preview_view.sheet_index
+    assert_equal 'Stock', handler.preview_view.sheet.name
   end
 end

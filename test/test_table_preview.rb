@@ -389,4 +389,77 @@ class TestTablePreview < Minitest::Test
 
     assert_includes text, '+1 hidden', '収まらない列数を最下行に出すこと'
   end
+
+  # === テーブル／シート一覧（/） ===
+
+  def workbook_renderer
+    path = File.join(@test_dir, 'book.xlsx')
+    write_xlsx(path, [['Sales', [%w[name price], ['apple', 120]]],
+                      ['Stock', [%w[item count], ['mikan', 30]]]])
+    screen, ui, handler = renderer_for(name: 'book.xlsx')
+    handler.focus_preview_pane
+    [screen, ui, handler]
+  end
+
+  def test_slash_draws_the_sheet_list
+    screen, ui, handler = workbook_renderer
+    handler.handle_key('/')
+    ui.draw_screen(screen)
+    text = screen_text(screen, 24)
+
+    assert_includes text, 'Sheets (2)', '一覧の見出しを出すこと'
+    assert_includes text, 'Sales'
+    assert_includes text, 'Stock'
+    refute_includes text, 'A name', '一覧を開いている間はグリッドを描かないこと'
+    assert_includes text, 'Enter: open'
+  end
+
+  def test_the_selected_entry_is_highlighted_in_the_list
+    screen, ui, handler = workbook_renderer
+    handler.handle_key('/')
+    handler.handle_key('j')
+    ui.draw_screen(screen)
+
+    highlighted = highlighted_text(screen, 100, 24)
+    assert_includes highlighted, 'Stock', '選択中の行を反転表示すること'
+    refute_includes highlighted, 'Sales'
+  end
+
+  def test_choosing_from_the_list_draws_the_selected_grid
+    screen, ui, handler = workbook_renderer
+    handler.handle_key('/')
+    handler.handle_key('j')
+    handler.handle_key("\r")
+    screen.clear
+    ui.draw_screen(screen)
+    text = screen_text(screen, 24)
+
+    assert_includes text, 'A item', '選んだシートのグリッドを描くこと'
+    assert_includes text, 'mikan'
+    assert_includes text, '2/2 Stock'
+    refute_includes text, 'Sheets (2)'
+  end
+
+  # SQLite は「テーブル一覧」として同じ一覧に出る（sqlite3 コマンドがある環境のみ）
+  def test_the_list_shows_the_tables_of_a_database
+    skip 'sqlite3 コマンドがない' unless Rufio::CommandLocator.available?('sqlite3')
+
+    path = File.join(@test_dir, 'shop.db')
+    IO.popen(['sqlite3', path], 'w') do |io|
+      io.write("CREATE TABLE items (id INTEGER, name TEXT);\n" \
+               "INSERT INTO items VALUES (1, 'apple');\n" \
+               "CREATE TABLE sales (id INTEGER, total REAL);\n" \
+               "INSERT INTO sales VALUES (1, 120.0);\n")
+    end
+
+    screen, ui, handler = renderer_for(name: 'shop.db')
+    assert handler.focus_preview_pane
+    handler.handle_key('/')
+    ui.draw_screen(screen)
+    text = screen_text(screen, 24)
+
+    assert_includes text, 'Tables (2)', 'SQLite ではテーブル一覧として出すこと'
+    assert_includes text, 'items'
+    assert_includes text, 'sales'
+  end
 end
