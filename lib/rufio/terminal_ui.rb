@@ -529,12 +529,6 @@ module Rufio
       return handle_fuzzy_finder_input(input) if fuzzy_finder_active?
       return handle_global_search_input(input) if global_search_active?
 
-      # TabキーはFilesモードの時のみブックマーク循環移動（ジョブモード中は無効）
-      if input == "\t" && (@tab_mode_manager.current_mode == :files || @keybind_handler.config_mode?) && !@in_job_mode
-        handle_tab_key
-        return true
-      end
-
       # 数字キー（1-9）: Filesモード かつ フィルターモード外でブックマークジャンプ＋ハイライト
       if input&.match?(/^[1-9]$/) && (@tab_mode_manager.current_mode == :files || @keybind_handler.config_mode?) && !@keybind_handler.filter_active?
         handle_bookmark_key(input.to_i)
@@ -572,17 +566,6 @@ module Rufio
       # 入力があったことを返す
       true
     end
-    # Tabキー: 次のブックマークへ循環移動
-    def handle_tab_key
-      next_idx = @keybind_handler.goto_next_bookmark
-      if next_idx
-        # display_index: 0=start_dir, 1..9=bookmarks（next_idx は 0-based bookmarks 配列）
-        @ui_renderer.set_highlighted_bookmark(next_idx + 1)
-        # ブックマークキャッシュを即時クリア（移動先を反映させる）
-        @ui_renderer.clear_bookmark_cache
-      end
-    end
-
     # 数字キー（1-9）: 指定番号のブックマークへジャンプ＋ハイライト
     def handle_bookmark_key(number)
       result = @keybind_handler.goto_bookmark(number)
@@ -593,18 +576,13 @@ module Rufio
       end
     end
 
-    # Shift+Tab: Filesモードでは前のブックマークへ循環移動、それ以外はモード逆順切り替え
+    # Shift+Tab: Files・Config 以外のモードでは前のモードへ切り替える
+    # （Files・Config では何もしない。ブックマーク移動は数字キー 1-9 と B）
     def handle_shift_tab
-      if @tab_mode_manager.current_mode == :files || @keybind_handler.config_mode?
-        prev_idx = @keybind_handler.goto_prev_bookmark
-        if prev_idx
-          @ui_renderer.set_highlighted_bookmark(prev_idx + 1)
-          @ui_renderer.clear_bookmark_cache
-        end
-      else
-        @tab_mode_manager.previous_mode
-        apply_mode_change(@tab_mode_manager.current_mode)
-      end
+      return if @tab_mode_manager.current_mode == :files || @keybind_handler.config_mode?
+
+      @tab_mode_manager.previous_mode
+      apply_mode_change(@tab_mode_manager.current_mode)
     end
 
     # ============================

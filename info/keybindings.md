@@ -65,8 +65,6 @@ In the built-in search screen (`s`, `/`, `F`), type to fuzzy-filter, use **Up/Do
 | `B` | Bookmark menu (view/add/remove/script paths) |
 | `0` | Jump to startup directory |
 | `1-9` | Jump to bookmark 1-9 |
-| `Tab` | Cycle to next bookmark (Files mode) |
-| `Shift+Tab` | Cycle to previous bookmark (Files mode) |
 | `z` | Navigate using zoxide history (when nothing is selected) |
 
 ## Modes & Tool Runtime
@@ -101,6 +99,7 @@ In the built-in search screen (`s`, `/`, `F`), type to fuzzy-filter, use **Up/Do
 - **y**: Copy the cell under the cursor to the clipboard (the raw value, including any newlines inside it)
 - **Y**: Copy the whole row as one CSV line
 - **[/]**: Previous / next sheet, for a workbook's sheets or a database's tables
+- **/**: Open the list of sheets or tables. `j`/`k` or the arrow keys move, `Ctrl+D/U` page, `g/}` jump to the first and last entry, `Enter` opens the selected one, `ESC` or `/` closes the list. `>` marks the sheet on screen. A single-sheet file has no list
 - The line under the file name shows the cell address and the column name, e.g. `R3C2 price`, and the result of a copy
 - **ESC**: Back to the file list
 
@@ -162,7 +161,7 @@ Copying uses `pbcopy`, `clip`, `wl-copy`, `xclip` or `xsel` when one is availabl
 
 - **Vim users**: Navigation keys (`hjkl`) work exactly like Vim
 - **Selection**: Use `Space` to mark multiple files, then operate on all at once
-- **Quick access**: Number keys `1-9` and `Tab` provide instant access to bookmarks
+- **Quick access**: Number keys `1-9` provide instant access to bookmarks
 - **Filtering**: Press `f` and start typing for real-time filtering
 - **Rake tasks**: Type `:rake:` then `Tab` to see available tasks
 - **Local scripts**: Scripts in the current directory are auto-detected with `@` prefix

@@ -10,7 +10,8 @@ Add your own actions in Ruby.
 
 1.7.0 previews tabular files as a grid: `.csv`, `.tsv`, `.xlsx`, `.ods` and SQLite databases.
 `hjkl` moves a cell cursor, `y` copies the cell and `Y` the row, `[` and `]` switch sheets or tables,
-and Shift_JIS files are decoded rather than shown as replacement characters.
+`/` opens the list of sheets or tables, and Shift_JIS files are decoded rather than shown as
+replacement characters.
 See the [design and implementation notes](./docs/csv_cell_preview_design_ja.md).
 
 ## What Makes rufio Different
@@ -39,7 +40,7 @@ rufio brings finding files, running scripts, and checking results together in on
 - **Vim-like Key Bindings**: Intuitive navigation
 - **Real-time Preview**: Instantly display file contents with syntax highlighting (via `bat`), including `.zip` entry lists
 - **Tables as a Grid**: `.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm`, `.ods` and SQLite databases (with the `sqlite3` command, recognised by file signature) are shown as rows and columns, with the header row fixed while scrolling and automatic decoding of UTF-8, UTF-16, CP932 and EUC-JP
-- **Sheets and Tables**: `[` and `]` switch between a workbook's sheets or a database's tables, and only the one on screen is read
+- **Sheets and Tables**: `[` and `]` switch between a workbook's sheets or a database's tables and `/` opens the list of sheets or tables to pick from, and only the one on screen is read
 - **Move Between Cells**: In preview mode (`P`), `hjkl` moves a cell cursor through the grid, which scrolls in both directions to follow it
 - **Copy with `y`**: Copies the cell under the cursor (`Y` for the whole row), or the current and selected file paths in the file list, using your clipboard command or OSC 52 over SSH
 - **Fast Search**: Built-in fuzzy file name search, rga content search, plus built-in search across all bookmarks that also reads PDF, Excel and PowerPoint
@@ -104,7 +105,7 @@ The most used keys. See the **[User Guide](./docs/guide.md)** for every key and 
 | `a/A`, `r`, `d` | Create file / directory, rename, delete |
 | `f`, `s`, `F` | Filter, fuzzy file name search, rga content search |
 | `G` | Search names or contents (PDF, Excel, PowerPoint too) across all bookmarks |
-| `b`, `B`, `1-9`, `Tab` | Add bookmark, bookmark menu, jump, next bookmark |
+| `b`, `B`, `1-9` | Add bookmark, bookmark menu, jump to bookmark 1-9 |
 | `:` | Command mode (`@script`, `rake:task`, `!shell`, `cd <path>`) |
 | `J`, `L`, `C` | Jobs, logs, config directory |
 | `?` | Help |

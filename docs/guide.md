@@ -99,7 +99,10 @@ In preview mode the cell cursor moves:
 | `y` | Copy the cell under the cursor |
 | `Y` | Copy the whole row as one CSV line |
 | `[` / `]` | Previous / next sheet, for a workbook's sheets or a database's tables |
+| `/` | Open the list of sheets or tables (`j`/`k` to move, `Enter` to open, `ESC` to close) |
 | `ESC` | Back to the file list |
+
+`/` lists a workbook's sheets or a database's tables, with `>` beside the one on screen; `Ctrl+D`/`Ctrl+U` page through a long list and `g`/`}` jump to its first and last entry. A file with a single sheet has no list.
 
 Cell movement follows your `move_up` / `move_down` / `navigate_parent` / `navigate_enter` keybinds, so rebinding `hjkl` applies here too.
 
@@ -212,7 +215,6 @@ Extensions ignore case, the leading dot is optional, and the default `[]` exclud
 | `b` | Bookmark the current directory |
 | `B` | Bookmark menu |
 | `1`–`9` | Jump to bookmark 1–9 |
-| `Tab` / `Shift+Tab` | Next / previous bookmark (Files and Config modes) |
 | `z` | zoxide history (when nothing is selected) |
 
 The `B` menu has four items:

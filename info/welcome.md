@@ -28,7 +28,6 @@ Text previews read at most the first 64 KiB. PDF bodies are not previewed, keepi
 | `s` | Fuzzy search file names |
 | `b` | Add bookmark |
 | `B` | Bookmark menu |
-| `Tab` | Next bookmark |
 | `z` | zoxide history / extract or compress selected items |
 | `G` | Global search across bookmarks |
 | `C` | Config mode |

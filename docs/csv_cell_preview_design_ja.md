@@ -340,6 +340,7 @@ Rufio::Clipboard.copy(text) # => :pbcopy | :clip | :wl_copy | :xclip | :xsel | :
 | 2 | **実装済み**: `PreviewView` プロトコルへの委譲、`TableCursor`、hjkl・ページ・`0`/`$`・`g`/`}`、2 行目のステータス、マウスホイール | 中 |
 | 3 | **実装済み**: `Clipboard`、`y`（セル／ファイルパス）、コピー結果表示、`HealthChecker`、設定項目、ドキュメント | 小〜中 |
 | 4 | **実装済み**: `XlsxTableSource`、`SqliteTableSource`、シート切替（`[` / `]`）、`Y`（行コピー）、検索画面プレビューとの統合 | 中 |
+| 5 | **実装済み**: シート／テーブル一覧（`/`、`SheetPicker`・`TableDocument#sheet_label`）。名前だけで出せるので、選ぶまでテーブルを読まない | 小 |
 
 Phase 1 単体でも「CSV が文字化けせず表で読める」価値が出る。Phase 3 の `y` は Files モードのパスコピーとセルコピーを同時に入れる。
 

@@ -24,6 +24,7 @@ module Rufio
     BOOKMARK_HIGHLIGHT_DURATION = 0.5  # ブックマークハイライト表示時間（秒）
     TABLE_FOOTER_MIN_HEIGHT = 5      # 表プレビューで最下行に情報行を出す最小の高さ
     TABLE_GRID_START_ROW = 2         # プレビューペインでグリッドが始まる行（0:ファイル名 1:情報）
+    SHEET_LIST_START_ROW = 3         # シート一覧が始まる行（0:ファイル名 1:情報 2:一覧の見出し）
     TAB_SEPARATOR = ">"            # タブ間セパレータ
 
     # File display constants
@@ -69,7 +70,7 @@ module Rufio
       @cached_bookmark_time = nil
       @bookmark_cache_ttl = 1.0
 
-      # Bookmark highlight (Tab ジャンプ時に 500ms ハイライト)
+      # Bookmark highlight (1-9 のジャンプ時に 500ms ハイライト)
       @highlighted_bookmark_index = nil
       @highlighted_bookmark_time = nil
 
@@ -420,6 +421,9 @@ module Rufio
         table_status = table_status_text(table_document, table_layout, table_col_offset)
       end
 
+      # シート一覧（/）を開いている間は、グリッドの代わりに一覧を描く
+      sheet_picker_title, sheet_picker_rows = sheet_picker_for(table_layout, height)
+
       (0...height).each do |i|
         line_num = i + CONTENT_START_LINE
 
@@ -442,6 +446,11 @@ module Rufio
           status = @keybind_handler&.preview_view&.status_line || PreviewView::BACK_HINT
           hint = TextUtils.truncate_to_width(" #{status}", safe_width)
           screen.put_string(content_x, line_num, hint + ' ' * (safe_width - TextUtils.display_width(hint)))
+
+        elsif i >= 2 && sheet_picker_rows
+          # シート（SQLite のテーブル / Excel のシート）一覧
+          draw_sheet_picker_line_to_buffer(screen, content_x, line_num, i, safe_width,
+                                           sheet_picker_title, sheet_picker_rows)
 
         elsif i >= 2 && table_layout
           # 行列（グリッド）プレビュー
@@ -510,6 +519,32 @@ module Rufio
         sheet, safe_width, max_column_width: ConfigLoader.table_preview[:max_column_width]
       ))
       [document, layout, sheet]
+    end
+
+    # シート一覧を開いているなら、見出しと描く行を返す（開いていなければ [nil, nil]）
+    # @return [Array(String, Array<Hash>)]
+    def sheet_picker_for(table_layout, height)
+      return [nil, nil] unless table_layout
+
+      view = @keybind_handler&.preview_view
+      return [nil, nil] unless view&.table? && view.picker_open?
+
+      # 見出しの下に収まる行数を毎フレーム伝える（選択行が見えるようにスクロールする）
+      view.picker.visible_rows = [height - SHEET_LIST_START_ROW, 1].max
+      [view.picker_title, view.picker_rows]
+    end
+
+    # 一覧のペイン内 i 行目（2:見出し、3 行目以降:シート名）を描く
+    def draw_sheet_picker_line_to_buffer(screen, content_x, line_num, index, safe_width, title, rows)
+      if index == TABLE_GRID_START_ROW
+        screen.put_string(content_x, line_num, TextUtils.pad_string_to_width(" #{title}", safe_width))
+        return
+      end
+
+      row = rows[index - SHEET_LIST_START_ROW]
+      text = TextUtils.pad_string_to_width(" #{row ? row[:text] : ''}", safe_width)
+      fg = row && row[:selected] ? ColorHelper.color_to_selected_ansi(ConfigLoader.colors[:selected]) : nil
+      screen.put_string(content_x, line_num, text, fg: fg)
     end
 
     # グリッドでデータ行として使える行数（ヘッダ行と最下行の情報行を除く）
@@ -617,7 +652,7 @@ module Rufio
         footer_content = help_text.ljust(@screen_width)[0...@screen_width]
         screen.put_string(0, y, footer_content, fg: "\e[7m")
       else
-        # ブックマークをキャッシュ（Tab移動と同じソース：keybind_handler経由で取得）
+        # ブックマークをキャッシュ（keybind_handler 経由で取得）
         current_time = Time.now
         if @cached_bookmarks.nil? || @cached_bookmark_time.nil? || (current_time - @cached_bookmark_time) > @bookmark_cache_ttl
           @cached_bookmarks = @keybind_handler.bookmark_list
@@ -686,7 +721,7 @@ module Rufio
         end
         screen.put_string(0, y, footer_content, fg: "\e[90m")
 
-        # Tab ジャンプ時：対象ブックマークを 500ms ハイライト（セカンドパス）
+        # 1-9 のジャンプ時：対象ブックマークを 500ms ハイライト（セカンドパス）
         if @highlighted_bookmark_index && !bookmark_highlight_expired? && available_width > 3
           highlight_idx = @highlighted_bookmark_index
           if highlight_idx < bookmark_parts.length

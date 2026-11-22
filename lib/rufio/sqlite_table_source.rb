@@ -40,7 +40,8 @@ module Rufio
           LazyTableSheet.new(name: table) { load_table(path, table, limits, options) }
         end
 
-        TableDocument.new(sheets: sheets, encoding: 'UTF-8', label: File.basename(path.to_s))
+        TableDocument.new(sheets: sheets, encoding: 'UTF-8', label: File.basename(path.to_s),
+                          sheet_label: 'Tables')
       end
 
       # sqlite3 コマンドが使えるか（テストから差し替えられるよう public）

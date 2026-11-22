@@ -45,7 +45,7 @@
 
 In a preview, `j/k` scroll, `Ctrl+D/U` page down/up and `ESC` returns to the file list.
 
-In a table preview, `h/j/k/l` and the arrow keys move a cell cursor instead, `g/}` jump to the first and last row, `0/$` to the first and last column, `y` copies the cell under the cursor, `Y` the whole row as a CSV line, `[`/`]` switch between a workbook's sheets or a database's tables, and the line under the file name shows the cell address and column name (`R3C2 price`). The grid scrolls in both directions to keep the cursor visible.
+In a table preview, `h/j/k/l` and the arrow keys move a cell cursor instead, `g/}` jump to the first and last row, `0/$` to the first and last column, `y` copies the cell under the cursor, `Y` the whole row as a CSV line, `[`/`]` switch between a workbook's sheets or a database's tables, `/` opens the list of sheets or tables (`j`/`k` to move, `Enter` to open the selected one, `ESC` to close), and the line under the file name shows the cell address and column name (`R3C2 price`). The grid scrolls in both directions to keep the cursor visible.
 
 Copying uses `pbcopy`, `clip`, `wl-copy`, `xclip` or `xsel` when available and OSC 52 otherwise; `CLIPBOARD_COMMAND` in `config.rb` overrides it and `rufio -c` shows which one is used.
 
@@ -99,8 +99,6 @@ ZIP jobs show progress in Jobs mode (`J`). `x`: Cancel the selected job there; a
 | `B` | Bookmark menu (view/add/remove/script paths) |
 | `0` | Jump to startup directory |
 | `1-9` | Jump to bookmark 1-9 |
-| `Tab` | Cycle to next bookmark (Files mode) |
-| `Shift+Tab` | Cycle to previous bookmark (Files mode) |
 | `z` | Navigate using zoxide history (when nothing is selected) |
 
 ---
@@ -187,7 +185,7 @@ and file operations as Files mode. Leaving the directory returns to Files mode.
 | `q` | Quit rufio (with confirmation) |
 | `T` | Quit rufio and cd the shell to the current directory (requires `rufio --shell-init`) |
 
-In Files mode, `Tab` / `Shift+Tab` cycle bookmarks. In other modes, `Shift+Tab` switches to the previous mode.
+In modes other than Files and Config, `Shift+Tab` switches to the previous mode.
 
 ### Help Menu
 

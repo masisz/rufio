@@ -246,9 +246,11 @@ module Rufio
 
     # プレビューペインフォーカス中のキー処理。
     # まずビュー（テキスト / 表）に渡し、扱わなかったキーだけここで処理する。
+    # ESC もビューに先に渡す（表のシート一覧を開いている間は、一覧を閉じるだけで
+    # プレビューモードは抜けない）。
     def handle_preview_focus_key(key)
-      return unfocus_preview_pane if key == "\e" # ESC
       return true if @preview_view&.handle_key(key)
+      return unfocus_preview_pane if key == "\e" # ESC
 
       case key
       when 'j', "\e[B" then scroll_preview_down

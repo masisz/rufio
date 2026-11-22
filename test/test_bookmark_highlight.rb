@@ -7,7 +7,7 @@ require 'fileutils'
 
 module Rufio
   # ブックマークハイライト描画テスト
-  # Tab でジャンプした際に上部バーの対象ブックマークが 500ms ハイライトされることを検証
+  # 1-9 でジャンプした際に上部バーの対象ブックマークが 500ms ハイライトされることを検証
   class TestBookmarkHighlight < Minitest::Test
     SCREEN_WIDTH = 80
 

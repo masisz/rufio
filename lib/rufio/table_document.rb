@@ -174,13 +174,22 @@ module Rufio
 
   # 1 ファイル分の表データ。複数シートを持つ形式（Excel / SQLite）にも対応する。
   class TableDocument
-    attr_reader :sheets, :encoding, :byte_truncated, :label
+    attr_reader :sheets, :encoding, :byte_truncated, :label, :sheet_label
 
-    def initialize(sheets:, encoding: 'UTF-8', byte_truncated: false, label: nil)
+    # @param sheet_label [String] シート一覧（/）の見出し。形式ごとの呼び名を使う
+    #   （Excel は "Sheets"、SQLite は "Tables"）
+    def initialize(sheets:, encoding: 'UTF-8', byte_truncated: false, label: nil,
+                   sheet_label: 'Sheets')
       @sheets = sheets
       @encoding = encoding
       @byte_truncated = byte_truncated
       @label = label
+      @sheet_label = sheet_label
+    end
+
+    # @return [Array<String>] シート名（表示順）
+    def sheet_names
+      @sheets.map(&:name)
     end
 
     def sheet(index = 0)

@@ -640,9 +640,9 @@ class TestPreviewView < Minitest::Test
     view.handle_key('/')
     view.picker.visible_rows = 3
 
-    assert_equal %w[t1 t2 t3], view.picker_rows.map { |row| row[:text].strip }
+    assert_equal %w[t1 t2 t3], view.picker_rows.map { |row| row[:text][2..] }
     view.handle_key('}')
-    assert_equal %w[t8 t9 t10], view.picker_rows.map { |row| row[:text].strip }
+    assert_equal %w[t8 t9 t10], view.picker_rows.map { |row| row[:text][2..] }
     assert_equal 9, view.picker.index
   end
 

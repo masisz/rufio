@@ -432,17 +432,7 @@ module Rufio
       @nav_controller.reset_preview_scroll
     end
 
-    # Tabキー: 次のブックマークへ循環移動
-    def goto_next_bookmark
-      @bookmark_controller.goto_next_bookmark
-    end
-
-    # Shift+Tabキー: 前のブックマークへ循環移動
-    def goto_prev_bookmark
-      @bookmark_controller.goto_prev_bookmark
-    end
-
-    # UIRenderer 用：Tab移動と同じブックマークリストを返す
+    # UIRenderer 用：ブックマークリストを返す
     def bookmark_list
       @bookmark_manager.list
     end
