@@ -8,10 +8,10 @@ Add your own actions in Ruby.
 
 [日本語](./README_ja.md) | **English**
 
-Development for 1.6.0 replaces fzf with a built-in fuzzy search screen for `s` / `/` and `F`
-(with a file preview and a cached file list for quick reopening),
-backed by a Zig fuzzy search core, a Ruby fallback, and an asynchronous search session.
-See the [implementation plan and benchmarks](./docs/native_fuzzy_search_design_ja.md).
+1.7.0 previews tabular files as a grid: `.csv`, `.tsv`, `.xlsx`, `.ods` and SQLite databases.
+`hjkl` moves a cell cursor, `y` copies the cell and `Y` the row, `[` and `]` switch sheets or tables,
+and Shift_JIS files are decoded rather than shown as replacement characters.
+See the [design and implementation notes](./docs/csv_cell_preview_design_ja.md).
 
 ## What Makes rufio Different
 

@@ -42,7 +42,7 @@ rufio is a local TUI tool run by you, on files you can already access.
 - SQLite databases are opened read-only, with `-safe` where the `sqlite3` command supports it, by absolute path, and only `SELECT` is issued; table names are quoted as identifiers
 - YAML is loaded with `YAML.safe_load`
 - Command execution logs are written with `0600` permissions
-- Runtime dependencies are limited to `io-console`, `pastel`, `tty-cursor`, `tty-screen`
+- Runtime dependencies are kept to the terminal libraries (`io-console`, `pastel`, `tty-cursor`, `tty-screen`) and the parsers the previews need (`csv`, `rubyzip`, `roo`, `nokogiri`, `pdf-reader`, `base64`). A parser only ever reads the file being previewed or searched
 - Gems are published from tagged commits via RubyGems Trusted Publishing (no long-lived API key); CI runs the test suite before publishing
 
 ### Known limitations
@@ -93,7 +93,7 @@ rufioは、あなた自身がアクセスできるファイルに対して、ロ
 - SQLite は読み取り専用で開き、`sqlite3` が対応していれば `-safe` を付け、絶対パスで渡し、`SELECT` のみを発行します。テーブル名は識別子としてクォートします
 - YAML は `YAML.safe_load` で読み込みます
 - コマンド実行ログは `0600` で保存します
-- 実行時依存gemは `io-console`、`pastel`、`tty-cursor`、`tty-screen` のみです
+- 実行時依存gemは、ターミナル操作（`io-console`、`pastel`、`tty-cursor`、`tty-screen`）と、プレビュー・検索に必要な解析ライブラリ（`csv`、`rubyzip`、`roo`、`nokogiri`、`pdf-reader`、`base64`）に限っています。解析ライブラリはプレビュー・検索の対象ファイルを読むためだけに使います
 - gemはタグ付きコミットからRubyGemsのTrusted Publishingで公開します（長期APIキーなし）。公開前にCIでテストを実行します
 
 ### 既知の制約

@@ -69,7 +69,43 @@ The right pane previews the selected file. Code is highlighted when `bat` is ins
 | `P` | Fullscreen preview (hides the file list) |
 | `j` / `k` | Scroll |
 | `Ctrl+D` / `Ctrl+U` | Page down / up |
+| `y` | Copy the file path to the clipboard |
 | `ESC` | Back to the file list |
+
+### Tables as a Grid
+
+`.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm` and `.ods` files, and SQLite databases when the `sqlite3` command is installed, are shown as rows and columns:
+
+```
+ sales.csv [PREVIEW MODE]
+ R3C2 price  |  hjkl: move  y: copy  ESC: back
+   | A name | B price | C stock |
+ 1 | apple  | 120     | 30      |
+ 2 | mikan  | 150     | 8       |
+ 3 | banana | 80      | 12      |
+3 rows  3 cols
+```
+
+Column letters sit beside the header names, the header row stays in place while you scroll, and the last line reports the row and column counts, the character encoding that was detected, any limit that was reached and how many columns do not fit the pane.
+
+In preview mode the cell cursor moves:
+
+| Key | Action |
+|-----|--------|
+| `h` / `j` / `k` / `l` or arrows | Move the cell cursor (the grid scrolls in both directions to follow it) |
+| `Ctrl+D` / `Ctrl+U` | Move one screen of rows |
+| `g` / `}` | First / last row |
+| `0` / `$` | First / last column |
+| `y` | Copy the cell under the cursor |
+| `Y` | Copy the whole row as one CSV line |
+| `[` / `]` | Previous / next sheet, for a workbook's sheets or a database's tables |
+| `ESC` | Back to the file list |
+
+Cell movement follows your `move_up` / `move_down` / `navigate_parent` / `navigate_enter` keybinds, so rebinding `hjkl` applies here too.
+
+UTF-8, UTF-16 (with a BOM), CP932 and EUC-JP are decoded automatically, so a Shift_JIS CSV reads as text rather than replacement characters. A `.csv` or `.tsv` is read up to 512 KiB and 1000 rows; only the sheet on screen is read, so a workbook's other sheets and a database's other tables cost nothing until you switch to them. A spreadsheet over 10 MiB, or one that cannot be parsed, falls back to the ZIP entry list.
+
+Copying uses `pbcopy`, `clip`, `wl-copy`, `xclip` or `xsel` when one is available, and OSC 52 otherwise, which works over SSH if your terminal supports it (in tmux, also `set -g set-clipboard on`). `CLIPBOARD_COMMAND` in `config.rb` sets a command of your own, and `rufio -c` reports which one is used. `TABLE_PREVIEW` changes the limits and the header, delimiter and encoding handling.
 
 ## File Operations
 
