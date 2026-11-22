@@ -25,6 +25,8 @@ module Rufio
     TABLE_FOOTER_MIN_HEIGHT = 5      # 表プレビューで最下行に情報行を出す最小の高さ
     TABLE_GRID_START_ROW = 2         # プレビューペインでグリッドが始まる行（0:ファイル名 1:情報）
     SHEET_LIST_START_ROW = 3         # シート一覧が始まる行（0:ファイル名 1:情報 2:一覧の見出し）
+    # Space で選んだカラムの印（ファイル一覧の選択済みアイテムと同じ緑背景・黒文字）
+    MARKED_COLUMN_COLOR = "\e[42m\e[30m"
     TAB_SEPARATOR = ">"            # タブ間セパレータ
 
     # File display constants
@@ -457,6 +459,9 @@ module Rufio
           screen.put_string(content_x, line_num,
                             table_line(table_layout, table_sheet, table_rows, table_status, i, height,
                                        table_col_offset))
+          # 選択カラムの印を先に置き、カーソルセルを後から重ねる（カーソルを隠さない）
+          draw_selected_columns_to_buffer(screen, content_x, line_num, table_layout, table_sheet,
+                                          table_rows, table_status, i, height, table_col_offset)
           draw_table_cursor_to_buffer(screen, content_x, line_num, table_layout, table_sheet,
                                       table_cursor, table_rows, table_status, i, height)
 
@@ -577,6 +582,30 @@ module Rufio
 
       scroll_offset = @keybind_handler&.preview_scroll_offset || 0
       layout.row_line(scroll_offset + data_index + 1, row, col_offset)
+    end
+
+    # Space で選んだカラムのセル（見出し行も含む）を選択マーク色で上書きする
+    def draw_selected_columns_to_buffer(screen, content_x, line_num, layout, sheet, rows, status,
+                                        index, height, col_offset)
+      view = @keybind_handler&.preview_view
+      return unless view&.table?
+
+      selected = view.selected_columns
+      return if selected.empty?
+      return if table_footer_row?(status, index, height)
+
+      data_index = table_data_index(sheet, index)
+      row = data_index.nil? ? nil : rows && rows[data_index]
+      # データのない行（表の下の空白）には印を付けない
+      return if !data_index.nil? && row.nil?
+
+      selected.each do |column|
+        x = layout.column_x(column, col_offset)
+        next if x.nil?
+
+        text = data_index.nil? ? layout.format_header_cell(column) : layout.format_cell(row[column], column)
+        screen.put_string(content_x + x, line_num, text, fg: MARKED_COLUMN_COLOR)
+      end
     end
 
     # カーソルのあるセルだけを反転色で上書きする

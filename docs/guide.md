@@ -96,11 +96,14 @@ In preview mode the cell cursor moves:
 | `Ctrl+D` / `Ctrl+U` | Move one screen of rows |
 | `g` / `}` | First / last row |
 | `0` / `$` | First / last column |
-| `y` | Copy the cell under the cursor |
+| `Space` | Select / unselect the column under the cursor |
+| `y` | Copy the cell under the cursor, or the cursor row's selected columns joined with commas |
 | `Y` | Copy the whole row as one CSV line |
 | `[` / `]` | Previous / next sheet, for a workbook's sheets or a database's tables |
 | `/` | Open the list of sheets or tables (`j`/`k` to move, `Enter` to open, `ESC` to close) |
 | `ESC` | Back to the file list |
+
+`Space` marks the column under the cursor the way a selected file is marked, and the line under the file name lists the selection (`cols A,C`). With columns selected, `y` copies the cursor row's cells from those columns, in column order, joined with commas as one CSV line (`apple,30`), so a cell holding a comma or a newline is quoted. `Y` still copies the whole row, and switching sheets clears the selection.
 
 `/` lists a workbook's sheets or a database's tables, with `>` beside the one on screen; `Ctrl+D`/`Ctrl+U` page through a long list and `g`/`}` jump to its first and last entry. A file with a single sheet has no list.
 

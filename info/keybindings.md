@@ -96,7 +96,8 @@ In the built-in search screen (`s`, `/`, `F`), type to fuzzy-filter, use **Up/Do
 - **Ctrl+D/U**: Move one screen of rows
 - **g/}**: First / last row
 - **0/$**: First / last column of the row
-- **y**: Copy the cell under the cursor to the clipboard (the raw value, including any newlines inside it)
+- **Space**: Select / unselect the column under the cursor. The selected columns' cells are marked, and the line under the file name lists them (`cols A,C`). Switching sheets clears the selection
+- **y**: Copy the cell under the cursor to the clipboard (the raw value, including any newlines inside it). With columns selected, it copies the cursor row's selected columns instead, joined with commas as one CSV line (`apple,30`), in column order
 - **Y**: Copy the whole row as one CSV line
 - **[/]**: Previous / next sheet, for a workbook's sheets or a database's tables
 - **/**: Open the list of sheets or tables. `j`/`k` or the arrow keys move, `Ctrl+D/U` page, `g/}` jump to the first and last entry, `Enter` opens the selected one, `ESC` or `/` closes the list. `>` marks the sheet on screen. A single-sheet file has no list

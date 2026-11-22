@@ -45,7 +45,7 @@
 
 In a preview, `j/k` scroll, `Ctrl+D/U` page down/up and `ESC` returns to the file list.
 
-In a table preview, `h/j/k/l` and the arrow keys move a cell cursor instead, `g/}` jump to the first and last row, `0/$` to the first and last column, `y` copies the cell under the cursor, `Y` the whole row as a CSV line, `[`/`]` switch between a workbook's sheets or a database's tables, `/` opens the list of sheets or tables (`j`/`k` to move, `Enter` to open the selected one, `ESC` to close), and the line under the file name shows the cell address and column name (`R3C2 price`). The grid scrolls in both directions to keep the cursor visible.
+In a table preview, `h/j/k/l` and the arrow keys move a cell cursor instead, `g/}` jump to the first and last row, `0/$` to the first and last column, `Space` selects the column under the cursor (its cells are marked like a selected file), `y` copies the cell under the cursor, or the cursor row's selected columns joined with commas when any column is selected, `Y` the whole row as a CSV line, `[`/`]` switch between a workbook's sheets or a database's tables, `/` opens the list of sheets or tables (`j`/`k` to move, `Enter` to open the selected one, `ESC` to close), and the line under the file name shows the cell address and column name (`R3C2 price`). The grid scrolls in both directions to keep the cursor visible.
 
 Copying uses `pbcopy`, `clip`, `wl-copy`, `xclip` or `xsel` when available and OSC 52 otherwise; `CLIPBOARD_COMMAND` in `config.rb` overrides it and `rufio -c` shows which one is used.
 

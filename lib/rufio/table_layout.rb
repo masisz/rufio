@@ -147,11 +147,16 @@ module Rufio
       "#{row_number.to_s.rjust(@gutter_digits)} "
     end
 
+    # 見出しセル 1 個分の表示文字列（列ラベル + 列名）
+    def format_header_cell(column_index)
+      title = TextUtils.sanitize_for_display(@sheet.column_title(column_index))
+      TextUtils.pad_string_to_width(title, column_width(column_index))
+    end
+
     def header_line(col_offset = 0)
       line = ' ' * @gutter_width
       visible_columns(col_offset).each do |index|
-        title = TextUtils.sanitize_for_display(@sheet.column_title(index))
-        line += CELL_PREFIX + TextUtils.pad_string_to_width(title, column_width(index)) + CELL_SUFFIX
+        line += CELL_PREFIX + format_header_cell(index) + CELL_SUFFIX
       end
       fit(close(line))
     end

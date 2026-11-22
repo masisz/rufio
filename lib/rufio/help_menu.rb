@@ -59,6 +59,7 @@ module Rufio
           'Preview: j/k scroll, Ctrl+D/U page down/up',
           "Preview .csv/.tsv/.xlsx/SQLite: grid; hjkl moves a cell, #{key(:copy_to_clipboard)} copies it",
           '  [ / ]: Previous / next sheet | /: Sheet or table list',
+          "  #{key(:select)}: Select a column | #{key(:copy_to_clipboard)}: Copy the selected columns of the row",
           "#{key(:top)}/#{key(:bottom)}: First / last entry",
           "#{key(:open_file)}: Open in external editor",
           "#{key(:open_explorer)}: Open directory in file explorer",

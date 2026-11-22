@@ -10,7 +10,7 @@ module Rufio
   # 行列（グリッド）プレビュー。セルカーソルを持ち、hjkl で移動する。
   # 形式（CSV / 将来の Excel・SQLite）には依存せず、TableDocument だけを見る。
   class TablePreviewView < PreviewView
-    MOVE_HINT = 'hjkl: move  y: copy  ESC: back'
+    MOVE_HINT = 'hjkl: move  Space: col  y: copy  ESC: back'
     SHEET_HINT = '[ ]: sheet  /: list'
     PICKER_HINT = 'j/k: move  Enter: open  ESC: cancel'
     # シート一覧を開くキー（Files モードの file_search_alt と同じ / を、
@@ -18,6 +18,8 @@ module Rufio
     LIST_KEY = '/'
     # 一覧で現在表示中のシートに付ける印（Windows の端末でも崩れない ASCII）
     CURRENT_MARK = '>'
+    # ステータス行に並べる選択カラム名の上限（残りは +n と出す）
+    SELECTED_LABEL_LIMIT = 4
 
     attr_reader :document, :cursor, :sheet_index, :picker
 
@@ -27,6 +29,16 @@ module Rufio
       @sheet_index = sheet_index
       @cursor = TableCursor.new(sheet)
       @picker = nil
+      @selected_columns = []
+    end
+
+    # Space で選んだカラム（列の順に並べる）
+    def selected_columns
+      @selected_columns.sort
+    end
+
+    def column_selected?(index)
+      @selected_columns.include?(index)
     end
 
     def table?
@@ -44,6 +56,7 @@ module Rufio
     def reset
       @cursor.reset
       close_sheet_list
+      clear_columns
       clear_notice
       true
     end
@@ -115,6 +128,7 @@ module Rufio
       when :previous_sheet then select_sheet(@sheet_index - 1)
       when :next_sheet     then select_sheet(@sheet_index + 1)
       when :sheet_list     then open_sheet_list
+      when :toggle_column  then toggle_column
       when :copy_row       then copy_row
       end
     end
@@ -126,6 +140,8 @@ module Rufio
 
       @sheet_index = index
       @cursor = TableCursor.new(sheet)
+      # 列の並びはシートごとに違うので、選択は持ち越さない
+      clear_columns
       true
     end
 
@@ -151,13 +167,16 @@ module Rufio
       return picker_status_line if picker_open?
 
       hint = @document.sheet_count > 1 ? "#{MOVE_HINT}  #{SHEET_HINT}" : MOVE_HINT
-      [cell_address, notice_text || hint].compact.join('  |  ')
+      [cell_address, selected_columns_label, notice_text || hint].compact.join('  |  ')
     end
 
     # y でコピーする値（表示用に畳む前の生のセル値）。
+    # カラムを選んでいればカーソル行の選択カラムをカンマ区切りで連結した 1 行、
+    # 選んでいなければカーソル位置のセル。
     # データ行がなければファイルパスを返す（テキストプレビューと同じ扱い）
     def copy_target
       return super if @cursor.empty?
+      return selected_columns_line if @selected_columns.any?
 
       @cursor.value
     end
@@ -192,6 +211,44 @@ module Rufio
     def picker_status_line
       name = TextUtils.sanitize_for_display(@picker.selected_name.to_s)
       ["#{@picker.index + 1}/#{@picker.count} #{name}", PICKER_HINT].join('  |  ')
+    end
+
+    # y: 選択カラムがあれば、何列コピーしたかを通知に出す
+    def perform_copy
+      return super unless @selected_columns.any? && !@cursor.empty?
+
+      copy_text(copy_target, label: "#{@selected_columns.length} cols")
+    end
+
+    # Space: カーソル位置のカラムを選択・解除する
+    def toggle_column
+      index = @cursor.column
+      return false unless index < sheet.column_count
+
+      clear_notice
+      @selected_columns.include?(index) ? @selected_columns.delete(index) : @selected_columns << index
+      true
+    end
+
+    def clear_columns
+      @selected_columns = []
+    end
+
+    # 選択カラムのセルを CSV の 1 行として連結する（カンマ区切り。
+    # カンマや改行を含むセルは読み戻せるようクォートする）
+    def selected_columns_line
+      row = sheet.fetch_rows(@cursor.row, 1).first
+      CSV.generate_line(selected_columns.map { |index| row && row[index] }).chomp
+    end
+
+    # 例: "cols A,B" / "cols A,B,C,D +4"
+    def selected_columns_label
+      return nil if @selected_columns.empty?
+
+      labels = selected_columns.map { |index| sheet.column_label(index) }
+      shown = labels.first(SELECTED_LABEL_LIMIT).join(',')
+      rest = labels.length - SELECTED_LABEL_LIMIT
+      rest.positive? ? "cols #{shown} +#{rest}" : "cols #{shown}"
     end
 
     # Y: カーソル行を CSV の 1 行としてコピーする
@@ -231,6 +288,7 @@ module Rufio
       when '['                            then :previous_sheet
       when ']'                            then :next_sheet
       when LIST_KEY                       then :sheet_list
+      when keys[:select]                  then :toggle_column
       when 'Y'                            then :copy_row
       end
     end

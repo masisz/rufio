@@ -65,6 +65,19 @@ class TestInfoDocs < Minitest::Test
     end
   end
 
+  # 表プレビューの Space はカラム選択、y は選択カラムをカンマ区切りでコピー
+  def test_docs_describe_column_selection
+    root = File.expand_path('..', __dir__)
+    { 'info/help.md' => 'selects the column',
+      'info/keybindings.md' => 'Select / unselect the column',
+      'docs/guide.md' => 'Select / unselect the column',
+      'docs/guide_ja.md' => 'カラムを選択',
+      'README.md' => 'Space` selects columns',
+      'README_ja.md' => 'Space` でカラムを選び' }.each do |name, phrase|
+      assert_includes File.read(File.join(root, name)), phrase, name
+    end
+  end
+
   # Tab / Shift+Tab のブックマーク巡回は削除した
   def test_docs_do_not_describe_bookmark_cycling
     root = File.expand_path('..', __dir__)
