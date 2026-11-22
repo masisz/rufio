@@ -17,7 +17,7 @@ echo ""
 
 # 1. ローカルのタグを削除
 echo "1. ローカルタグを削除中..."
-if git tag -d $TAG_NAME; then
+if git tag -d "$TAG_NAME"; then
   echo "✓ ローカルタグを削除しました"
 else
   echo "⚠ ローカルタグが存在しないか、削除に失敗しました"
@@ -26,7 +26,7 @@ echo ""
 
 # 2. リモートのタグを削除
 echo "2. リモートタグを削除中..."
-if git push origin :refs/tags/$TAG_NAME; then
+if git push origin ":refs/tags/$TAG_NAME"; then
   echo "✓ リモートタグを削除しました"
 else
   echo "⚠ リモートタグの削除に失敗しました（存在しない可能性があります）"
@@ -35,7 +35,7 @@ echo ""
 
 # 3. タグを再作成
 echo "3. タグを再作成中..."
-if git tag $TAG_NAME; then
+if git tag "$TAG_NAME"; then
   echo "✓ タグを再作成しました"
 else
   echo "✗ タグの再作成に失敗しました"
@@ -45,7 +45,7 @@ echo ""
 
 # 4. タグをプッシュ
 echo "4. タグをプッシュ中..."
-if git push origin $TAG_NAME; then
+if git push origin "refs/tags/$TAG_NAME"; then
   echo "✓ タグをプッシュしました"
   echo ""
   echo "🎉 完了！GitHub Actionsが実行されます。"
