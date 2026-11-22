@@ -280,7 +280,7 @@ class TestNativeContentCacheFill < Minitest::Test
   def setup
     skip 'Zig content search is not available' unless Rufio::NativeContentSearch.available?
     @dir = Dir.mktmpdir('rufio_cache_fill')
-    20.times { |i| File.write(File.join(@dir, "f#{i}.txt"), "line one\nworld #{i}\n") }
+    20.times { |i| File.binwrite(File.join(@dir, "f#{i}.txt"), "line one\nworld #{i}\n") }
     File.binwrite(File.join(@dir, 'bin.dat'), "world\0binary")
   end
 

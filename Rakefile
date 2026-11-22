@@ -25,6 +25,11 @@ namespace :native do
   task :check do
     ruby '-I test -I lib test/test_native_platform_binaries.rb'
   end
+
+  desc 'Sync shared Zig core (search/os/fuzzy and tests) to usurai.nvim and rebuild'
+  task :sync_nvim do
+    sh 'make -C lib_zig/rufio_native sync-nvim'
+  end
 end
 
 # Gem build and push tasks

@@ -353,6 +353,8 @@ class TestNativeFileLabels < Minitest::Test
   end
 
   def test_names_that_are_not_utf8_are_returned_one_by_one
+    skip 'POSIX raw filenames only' if Gem.win_platform?
+
     raw = File.join(@dir, "bad\xFF.txt".b)
     begin
       File.write(raw, '')
