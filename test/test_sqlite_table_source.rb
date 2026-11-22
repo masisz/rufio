@@ -48,10 +48,10 @@ class TestSqliteTableSource < Minitest::Test
     end
   end
 
-  def test_supported_extensions_when_the_command_exists
+  def test_any_extension_is_recognised_by_the_signature
     Rufio::SqliteTableSource.stub(:command_available?, true) do
       assert Rufio::SqliteTableSource.supports?(@path), 'shop.db'
-      %w[shop.sqlite shop.sqlite3 other.DB].each do |name|
+      %w[shop.sqlite store.data archive].each do |name|
         path = File.join(@dir, name)
         FileUtils.cp(@path, path)
         assert Rufio::SqliteTableSource.supports?(path), name
@@ -59,21 +59,15 @@ class TestSqliteTableSource < Minitest::Test
     end
   end
 
-  def test_signature_is_recognised_without_a_known_extension
-    path = File.join(@dir, 'store.data')
-    FileUtils.cp(@path, path)
-
-    Rufio::SqliteTableSource.stub(:command_available?, true) do
-      assert Rufio::SqliteTableSource.supports?(path), '先頭のシグネチャで判定すること'
-    end
-  end
-
   def test_other_files_are_not_supported
-    path = File.join(@dir, 'notes.txt')
-    File.write(path, 'plain text')
+    text = File.join(@dir, 'notes.txt')
+    File.write(text, 'plain text')
+    impostor = File.join(@dir, 'impostor.db')
+    File.write(impostor, 'this is not a database')
 
     Rufio::SqliteTableSource.stub(:command_available?, true) do
-      refute Rufio::SqliteTableSource.supports?(path)
+      refute Rufio::SqliteTableSource.supports?(text)
+      refute Rufio::SqliteTableSource.supports?(impostor), '拡張子だけで判定しないこと'
       refute Rufio::SqliteTableSource.supports?(File.join(@dir, 'missing.db'))
     end
   end
@@ -174,6 +168,34 @@ class TestSqliteTableSource < Minitest::Test
     end
   end
 
+  # === 出力の文字コード ===
+
+  def test_output_in_the_default_external_encoding_is_read_as_utf8
+    # コマンドの出力は Encoding.default_external になる。LANG が無い環境では US-ASCII で、
+    # そのまま CSV に渡すと日本語を含むテーブルが「Invalid byte sequence」になる
+    ascii_tables = "products\n".dup.force_encoding(Encoding::US_ASCII)
+    ascii_rows = "name,note\nみかん,冬の定番\n".dup.force_encoding(Encoding::US_ASCII)
+
+    with_runner({ 'sqlite_master' => ascii_tables, 'FROM' => ascii_rows }) do
+      sheet = open_db.sheet(0)
+
+      assert_nil sheet.load_error
+      assert_equal %w[name note], sheet.header
+      assert_equal [%w[みかん 冬の定番]], sheet.fetch_rows(0, 10)
+      assert_equal Encoding::UTF_8, sheet.fetch_rows(0, 1).first.first.encoding
+    end
+  end
+
+  def test_invalid_bytes_in_the_output_are_replaced
+    broken = "a\n\xFF\xFE\n".dup.force_encoding(Encoding::ASCII_8BIT)
+    with_runner({ 'sqlite_master' => "t\n", 'FROM' => broken }) do
+      sheet = open_db.sheet(0)
+
+      assert_nil sheet.load_error, '不正なバイトでも読み込みを止めないこと'
+      assert sheet.fetch_rows(0, 1).first.first.valid_encoding?
+    end
+  end
+
   # === 失敗の扱い ===
 
   def test_a_database_without_tables_raises_parse_error
@@ -204,5 +226,114 @@ class TestSqliteTableSource < Minitest::Test
     end
   ensure
     Rufio::SqliteTableSource.reset!
+  end
+
+  # === 実際の sqlite3 コマンドを使った確認 ===
+  # コマンドが無い環境（CI など）では skip する
+
+  def sqlite3_or_skip
+    skip 'sqlite3 コマンドがない' unless Rufio::CommandLocator.available?('sqlite3')
+  end
+
+  def build_database(path, sql)
+    IO.popen(['sqlite3', path], 'w') { |io| io.write(sql) }
+    assert File.exist?(path)
+    path
+  end
+
+  def real_database
+    build_database(File.join(@dir, 'real.db'), <<~SQL)
+      CREATE TABLE products (id INTEGER, name TEXT, price REAL, note TEXT);
+      INSERT INTO products VALUES (1, 'apple', 120.0, 'red, sweet');
+      INSERT INTO products VALUES (2, 'みかん', 150.5, '冬の定番');
+      INSERT INTO products VALUES (3, 'banana', 80.0, NULL);
+      CREATE TABLE "odd name" (a TEXT);
+      INSERT INTO "odd name" VALUES ('quoted "value"');
+      CREATE VIEW cheap AS SELECT name FROM products WHERE price < 100;
+    SQL
+  end
+
+  def test_real_database_is_recognised
+    sqlite3_or_skip
+    path = real_database
+
+    assert Rufio::SqliteTableSource.supports?(path)
+    assert_equal Rufio::SqliteTableSource, Rufio::PreviewRegistry.table_source_for(path)
+  end
+
+  def test_real_database_lists_tables_and_views
+    sqlite3_or_skip
+    document = Rufio::SqliteTableSource.open(real_database)
+
+    assert_equal ['cheap', 'odd name', 'products'], document.sheets.map(&:name)
+  end
+
+  def test_real_database_reads_rows_with_japanese_and_nulls
+    sqlite3_or_skip
+    sheet = Rufio::SqliteTableSource.open(real_database).sheets.find { |s| s.name == 'products' }
+
+    assert_nil sheet.load_error
+    assert_equal %w[id name price note], sheet.header
+    assert_equal 3, sheet.row_count
+    assert_equal ['1', 'apple', '120.0', 'red, sweet'], sheet.fetch_rows(0, 1).first
+    assert_equal ['2', 'みかん', '150.5', '冬の定番'], sheet.fetch_rows(1, 1).first
+    assert_equal '', sheet.fetch_rows(2, 1).first.last, 'NULL は空セルになること'
+  end
+
+  def test_real_database_quotes_odd_table_names
+    sqlite3_or_skip
+    sheet = Rufio::SqliteTableSource.open(real_database).sheets.find { |s| s.name == 'odd name' }
+
+    assert_equal [['quoted "value"']], sheet.fetch_rows(0, 10)
+  end
+
+  def test_real_database_respects_the_row_limit
+    sqlite3_or_skip
+    path = build_database(File.join(@dir, 'many.db'), <<~SQL)
+      CREATE TABLE numbers (n INTEGER);
+      INSERT INTO numbers SELECT value FROM generate_series(1, 50);
+    SQL
+
+    limits = Rufio::TableSource::Limits.new(max_bytes: 0, max_rows: 10, max_columns: 256)
+    sheet = Rufio::SqliteTableSource.open(path, limits: limits).sheet
+
+    assert sheet.row_truncated
+    assert_equal 10, sheet.row_count
+  end
+
+  def test_real_database_is_opened_read_only
+    sqlite3_or_skip
+    path = real_database
+    before = File.read(path, mode: 'rb')
+
+    output = IO.popen(['sqlite3', '-readonly', path, "INSERT INTO products VALUES (9,'x',1,'y');"],
+                      err: [:child, :out], &:read)
+
+    assert_includes output, 'readonly'
+    assert_equal before, File.read(path, mode: 'rb'), 'データベースが変わらないこと'
+  end
+
+  def test_a_file_that_is_not_a_database_is_not_supported
+    sqlite3_or_skip
+    path = File.join(@dir, 'fake.db')
+    File.write(path, 'this is not a database')
+
+    refute Rufio::SqliteTableSource.supports?(path), 'シグネチャが違えば表として扱わない'
+  end
+
+  def test_an_empty_database_raises_parse_error
+    sqlite3_or_skip
+    path = build_database(File.join(@dir, 'empty.db'), "CREATE TABLE t (a TEXT); DROP TABLE t;
+")
+
+    assert_raises(Rufio::TableSource::ParseError) { Rufio::SqliteTableSource.open(path) }
+  end
+
+  def test_file_preview_shows_a_real_database_as_a_grid
+    sqlite3_or_skip
+    preview = Rufio::FilePreview.new.preview_file(real_database)
+
+    assert_equal 'table', preview[:type]
+    assert(preview[:lines].any? { |line| line.include?('A name') })
   end
 end

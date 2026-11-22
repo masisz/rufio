@@ -124,6 +124,16 @@ class TestEncodingDetector < Minitest::Test
     assert result.text.valid_encoding?
   end
 
+  def test_read_text_keeps_a_line_longer_than_the_limit
+    # 1 行が上限より長い場合、改行まで戻すと行が丸ごと消えてしまう
+    path = write_bytes('long_line.csv', "id,blob\n1,#{'x' * 200}\n".b)
+    result = Rufio::EncodingDetector.read_text(path, max_bytes: 100)
+
+    assert result.truncated
+    assert_includes result.text, '1,xxx', '長い行を捨てずに途中まで読むこと'
+    assert_equal 100, result.text.bytesize
+  end
+
   def test_read_text_without_newline_falls_back_to_byte_limit
     path = write_bytes('oneline.csv', ('a' * 100).b)
     result = Rufio::EncodingDetector.read_text(path, max_bytes: 10)

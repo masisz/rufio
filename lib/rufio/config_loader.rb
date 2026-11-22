@@ -20,15 +20,17 @@ module Rufio
     DEFAULT_FUZZY_SEARCH_CACHE = { max_entries: 200_000, max_roots: 4, ttl: 300 }.freeze
     MAX_FUZZY_SEARCH_CACHE = { max_entries: 1_000_000, max_roots: 16, ttl: 86_400 }.freeze
 
-    # 表プレビュー（CSV / TSV, 将来は Excel / SQLite）の読み込み上限と表示設定
+    # 表プレビュー（CSV / TSV / Excel / SQLite）の読み込み上限と表示設定。
+    # max_bytes はテキスト形式（CSV / TSV）を読む量。max_rows 行で解析を打ち切るため、
+    # ここを広げても解析時間は増えない（読み込みと文字コード判定の分だけ増える）。
     DEFAULT_TABLE_PREVIEW = {
-      max_bytes: 64 * 1024, max_rows: 1000, max_columns: 256, max_column_width: 32
+      max_bytes: 512 * 1024, max_rows: 1000, max_columns: 256, max_column_width: 32
     }.freeze
     MIN_TABLE_PREVIEW = {
       max_bytes: 1024, max_rows: 1, max_columns: 1, max_column_width: 3
     }.freeze
     MAX_TABLE_PREVIEW = {
-      max_bytes: 1024 * 1024, max_rows: 100_000, max_columns: 4096, max_column_width: 200
+      max_bytes: 4 * 1024 * 1024, max_rows: 100_000, max_columns: 4096, max_column_width: 200
     }.freeze
 
     class << self

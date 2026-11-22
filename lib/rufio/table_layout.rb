@@ -23,6 +23,9 @@ module Rufio
     MIN_GUTTER_DIGITS = 2
     # 幅指定なしで生成するとき（lines フォールバック用）の上限
     PLAIN_MAX_WIDTH = 500
+    # 幅計算と表示で見るセルの文字数。表示幅は max_column_width 以下なので、
+    # 極端に長いセル（数十万文字）を毎回走査しないための歯止め
+    CELL_SCAN_LIMIT = 256
 
     attr_reader :width, :column_widths, :gutter_width, :max_column_width
 
@@ -190,7 +193,9 @@ module Rufio
     def normalize(value)
       return '' if value.nil?
 
-      value.to_s.gsub(/[\r\n\t]+/, ' ')
+      text = value.to_s
+      text = text[0, CELL_SCAN_LIMIT] if text.length > CELL_SCAN_LIMIT
+      text.gsub(/[\r\n\t]+/, ' ')
     end
 
     def close(line)

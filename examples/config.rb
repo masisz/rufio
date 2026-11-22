@@ -81,7 +81,7 @@ COMMAND_HISTORY_SIZE = 1000
 # Limits and display settings for the grid preview.
 # Omitted or out-of-range values fall back to the defaults shown here.
 TABLE_PREVIEW = {
-  max_bytes: 64 * 1024,   # Bytes read from the file (up to 1 MiB)
+  max_bytes: 512 * 1024,  # Bytes read from a .csv / .tsv (up to 4 MiB)
   max_rows: 1000,         # Rows parsed
   max_columns: 256,       # Columns parsed
   max_column_width: 32,   # Display width of one column

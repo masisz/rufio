@@ -57,11 +57,16 @@ module Rufio
         encoding.nil? || encoding.to_s.empty? || encoding.to_s.casecmp?('auto')
       end
 
-      # 上限内の最後の改行までで切る（行指向データなので境界が自然に取れる）
+      # 上限内の最後の改行までで切る（行指向データなので境界が自然に取れる）。
+      # ただし 1 行が上限より長い場合、改行まで戻すとその行が丸ごと消えてしまうため、
+      # 半分以上を捨てることになるならバイト位置で切る（末尾の文字が割れても置換される）。
       def cut_at_line_boundary(raw, max_bytes)
         head = raw.byteslice(0, max_bytes)
         index = head.rindex("\n".b)
-        index ? head.byteslice(0, index + 1) : head
+        return head if index.nil?
+
+        cut = head.byteslice(0, index + 1)
+        cut.bytesize * 2 >= max_bytes ? cut : head
       end
 
       def decode_bom(raw)

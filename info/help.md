@@ -53,7 +53,7 @@ Text previews read at most the first 64 KiB. PDF bodies are not previewed, keepi
 
 `.zip` previews list the archive entries (size, method, modified time, name) without extracting them.
 
-`.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm` and `.ods` files, and SQLite databases when the `sqlite3` command is installed, are shown as a grid with column letters, the header row kept in place while you scroll, and a last line reporting the row and column counts, the detected character encoding and any truncation. UTF-8, UTF-16 (with BOM), CP932 and EUC-JP files are decoded automatically.
+`.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm` and `.ods` files, and SQLite databases when the `sqlite3` command is installed (recognised by the file's own signature, whatever its extension), are shown as a grid with column letters, the header row kept in place while you scroll, and a last line reporting the row and column counts, the detected character encoding and any truncation. UTF-8, UTF-16 (with BOM), CP932 and EUC-JP files are decoded automatically. A `.csv` or `.tsv` is read up to 512 KiB.
 
 ### File Selection & Bulk Operations
 

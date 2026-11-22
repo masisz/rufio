@@ -6,7 +6,7 @@ require 'minitest/autorun'
 # 表プレビューの上限・表示設定は既定値で動き、config.rb の TABLE_PREVIEW で変更できる。
 class TestTablePreviewConfig < Minitest::Test
   DEFAULTS = {
-    max_bytes: 65_536, max_rows: 1000, max_columns: 256, max_column_width: 32,
+    max_bytes: 524_288, max_rows: 1000, max_columns: 256, max_column_width: 32,
     header: true, delimiter: 'auto', encoding: 'auto'
   }.freeze
 
@@ -20,8 +20,10 @@ class TestTablePreviewConfig < Minitest::Test
     assert_equal DEFAULTS, table_config([1, 2])
   end
 
-  def test_byte_limit_matches_the_text_preview_default
-    assert_equal Rufio::FilePreview::MAX_PREVIEW_BYTES, DEFAULTS[:max_bytes]
+  def test_byte_limit_is_wider_than_the_text_preview
+    # 表は 1 行あたりの情報量が多く、max_rows 行で解析を打ち切るため広く取れる
+    assert_operator DEFAULTS[:max_bytes], :>, Rufio::FilePreview::MAX_PREVIEW_BYTES
+    assert_operator DEFAULTS[:max_bytes], :<=, Rufio::ConfigLoader::MAX_TABLE_PREVIEW[:max_bytes]
   end
 
   def test_partial_setting_is_merged_with_defaults

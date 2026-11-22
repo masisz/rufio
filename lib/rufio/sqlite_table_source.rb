@@ -11,9 +11,11 @@ module Rufio
   # rga / bat / zoxide と同じ「インストールされていれば使う」方式で、sqlite3 コマンドが
   # 無ければ表として扱わない（プレビューは従来のバイナリ表示になる）。gem を増やさない。
   #
+  # 判定は拡張子ではなくファイル先頭のシグネチャで行う。拡張子は .db / .sqlite に限らず
+  # 何でもよく、逆に .db という名前の別形式を誤って開くこともない。
+  #
   # 実行は argv（シェル非経由）で、必ず読み取り専用で開き、発行するのは SELECT だけ。
   class SqliteTableSource < TableSource
-    EXTENSIONS = %w[.db .sqlite .sqlite3].freeze
     COMMAND = 'sqlite3'
     SIGNATURE = "SQLite format 3\x00".b
     # 表示するテーブル（sqlite_ で始まる内部テーブルは除く）
@@ -26,9 +28,7 @@ module Rufio
 
         file = path.to_s
         return false unless File.file?(file)
-        return true if EXTENSIONS.include?(File.extname(file).downcase)
 
-        # 拡張子に頼らずシグネチャでも判定する
         sqlite_file?(file)
       end
 
@@ -109,15 +109,23 @@ module Rufio
         output, ok = runner.call(argv)
         raise TableSource::ParseError, "#{COMMAND} failed" unless ok
 
-        output.to_s
+        force_utf8(output)
       end
 
       def run_command(argv)
         output = IO.popen(argv, 'r', err: File::NULL, &:read)
         status = Process.last_status
-        [output, status.nil? || status.success?]
+        [force_utf8(output), status.nil? || status.success?]
       rescue SystemCallError, IOError => e
         raise TableSource::ParseError, e.message
+      end
+
+      # コマンドの出力は Encoding.default_external になる（LANG が無い環境では US-ASCII）。
+      # sqlite3 は UTF-8 で出力するため、読み替えないと日本語を含むテーブルで
+      # CSV が「Invalid byte sequence」になる。
+      def force_utf8(output)
+        text = output.to_s.dup.force_encoding(Encoding::UTF_8)
+        text.valid_encoding? ? text : text.scrub('?')
       end
 
       # テーブル名は識別子クォートする（SQL を文字列連結で組まない）

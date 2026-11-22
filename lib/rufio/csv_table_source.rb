@@ -69,7 +69,7 @@ module Rufio
       end
 
       def parse(text, delimiter, limits)
-        raw_rows = parse_rows(text, delimiter)
+        raw_rows = parse_rows(text, delimiter, limits.max_rows)
         row_truncated = raw_rows.length > limits.max_rows
         raw_rows = raw_rows[0, limits.max_rows] if row_truncated
 
@@ -91,21 +91,34 @@ module Rufio
       #   2. liberal_parsing（引用符の中途半端な使い方を許容する）
       #   3. 閉じ引用符を補う（バイト上限が引用符つきセルの途中に当たった場合）
       # すべて失敗したら ParseError にして、呼び出し側でテキストプレビューへ戻す。
-      def parse_rows(text, delimiter)
+      #
+      # 表示する行数が決まっているので、読み込んだバイト全体をパースせず
+      # row_limit + 1 行で打ち切る。こうするとバイト上限を広げても解析時間は増えない。
+      def parse_rows(text, delimiter, row_limit)
         attempts = [
-          -> { CSV.parse(text, col_sep: delimiter) },
-          -> { CSV.parse(text, col_sep: delimiter, liberal_parsing: true) },
-          -> { CSV.parse("#{text}\"", col_sep: delimiter, liberal_parsing: true) }
+          [text, false],
+          [text, true],
+          ["#{text}\"", true]
         ]
 
         last_error = nil
-        attempts.each do |attempt|
-          return attempt.call
+        attempts.each do |source, liberal|
+          return read_rows(source, delimiter, liberal, row_limit)
         rescue CSV::MalformedCSVError, ArgumentError => e
           last_error = e
         end
 
         raise TableSource::ParseError, last_error.message
+      end
+
+      # 切り詰めの有無を判定できるよう、上限より 1 行だけ多く読む
+      def read_rows(source, delimiter, liberal, row_limit)
+        rows = []
+        CSV.new(source, col_sep: delimiter, liberal_parsing: liberal).each do |row|
+          rows << row
+          break if rows.length > row_limit
+        end
+        rows
       end
     end
   end

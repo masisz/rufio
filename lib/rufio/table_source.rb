@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative 'table_document'
+require_relative 'config_loader'
 
 module Rufio
   # 表として読める形式の共通インターフェース。
@@ -17,9 +18,12 @@ module Rufio
     class ParseError < StandardError; end
 
     # 読み込みの上限。形式に依存しない共通の歯止め。
+    # 既定値は設定（TABLE_PREVIEW）から取り、上限の定義を 1 箇所にする。
     Limits = Struct.new(:max_bytes, :max_rows, :max_columns, keyword_init: true) do
       def self.default
-        new(max_bytes: 64 * 1024, max_rows: 1000, max_columns: 256)
+        settings = ConfigLoader.table_preview
+        new(max_bytes: settings[:max_bytes], max_rows: settings[:max_rows],
+            max_columns: settings[:max_columns])
       end
     end
 
