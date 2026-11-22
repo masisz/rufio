@@ -1,7 +1,7 @@
 # 表プレビュー設計（CSV の行列表示 / hjkl セル移動 / y でコピー、将来の SQLite・Excel 対応を含む）
 
 対象バージョン: 1.7.0 想定（1.6.0 時点のコードを調査）
-ステータス: 検討案（未実装）
+ステータス: Phase 1 実装済み / Phase 2 以降は検討案
 
 ## 1. 目的とスコープ
 
@@ -336,7 +336,7 @@ Rufio::Clipboard.copy(text) # => :pbcopy | :clip | :wl_copy | :xclip | :xsel | :
 
 | Phase | 内容 | 目安 |
 |---|---|---|
-| 1 | `TableSource` / `TableDocument` / `CsvTableSource` / `EncodingDetector`（CP932 含む）/ `TableLayout`、`PreviewRegistry`、`FilePreview` の type 追加、分割＋フルスクリーンのグリッド表示（カーソルなし） | 中〜大 |
+| 1 | **実装済み**: `TableSource` / `TableDocument` / `CsvTableSource` / `EncodingDetector`（CP932 含む）/ `TableLayout`、`PreviewRegistry`、`FilePreview` の type 追加、分割＋フルスクリーンのグリッド表示（カーソルなし） | 中〜大 |
 | 2 | `PreviewView` プロトコルへの委譲、`TableCursor`、hjkl・ページ・`0`/`$`・`g`/`}`、2 行目のステータス、マウスホイール | 中 |
 | 3 | `Clipboard`、`y`（セル／ファイルパス）、コピー結果表示、`HealthChecker`、設定項目、ドキュメント | 小〜中 |
 | 4 | `XlsxTableSource`、`SqliteTableSource`、シート切替（`[` / `]`）、`Y`（行コピー）、検索画面プレビューとの統合 | 中 |
@@ -373,3 +373,47 @@ fixture（`test/fixtures/`）: 全角混在、引用符、セル内改行、CP93
 - **CP932 自動判定は Phase 1 に含める**（BOM・UTF-8・CP932・EUC-JP の順で判定、設定で上書き可）
 - プレビュー表示は `TableSource` / `PreviewView` / `PreviewRegistry` の 3 つの拡張点を設け、**SQLite・Excel を「ソースの追加」だけで足せる**構造にする
 - ヘッダ行は既定で 1 行目を見出し扱い（`header: false` で無効化）
+
+## 16. Phase 1 実装記録
+
+### 追加したファイル
+
+| ファイル | 内容 |
+|---|---|
+| `lib/rufio/encoding_detector.rb` | BOM（UTF-8 / UTF-16LE / UTF-16BE）→ UTF-8 → CP932 → EUC-JP → 置換付き UTF-8 の判定。`read_text` は上限内の最後の改行で切る |
+| `lib/rufio/table_document.rb` | `TableSheet`（`fetch_rows` / 列ラベル A..Z, AA..）、`MemoryTableSheet`、`TableDocument`（複数シート・状態表示） |
+| `lib/rufio/table_source.rb` | 形式共通インターフェースと `Limits`、`ParseError` |
+| `lib/rufio/csv_table_source.rb` | CSV / TSV のパース、区切り推定、上限適用 |
+| `lib/rufio/table_layout.rb` | 列幅・ガター・可視列・行文字列の生成、`plain_lines` |
+| `lib/rufio/preview_registry.rb` | 表ソースの登録表（`register_table_source` / `reset!`） |
+
+変更: `file_preview.rb`（`type: 'table'` と `text_response` の切り出し、ParseError 時のフォールバック）、
+`ui_renderer.rb`（`extract_preview_lines` に `'table'`、グリッド描画と幅別レイアウトキャッシュ）、
+`config_loader.rb`（`TABLE_PREVIEW`）、`config.rb`（メッセージ 1 件）、`rufio.rb`（require）。
+
+### 設計からの変更点
+
+1. **壊れた CSV の復旧を 3 段にした**。`liberal_parsing: true` は**引用符の閉じ忘れを救わない**（`CSV::MalformedCSVError: Unclosed quoted field`）ことが実装中に判明した。
+   バイト上限が引用符つきセルの途中に当たると必ずこれに当たるため、3 段目として「末尾に `"` を補って再パース」を追加した。
+   結果として、テキストプレビューへのフォールバックは実際にはほとんど起きない
+2. **表判定をバイナリ判定より前に置いた**。UTF-16 の CSV は NUL バイトが半分を占め、既存の `binary_file?` が 30% の閾値でバイナリと判定してしまうため
+3. **最下行の情報をドキュメント側に持たせた**（`TableDocument#status_line`）。「`4 rows  4 cols  CP932  +1 hidden`」のように、
+   行数・列数・判定した文字コード・切り詰め・収まらない列数を 1 行で出す。狭いペインでも収まるよう短い表記にした
+4. **行番号ガターは幅が足りなければ落とす**。`TableLayout` が `幅 - ガター >= 区切り + 最小列幅` を満たさないときガターを 0 にする
+5. **EUC-JP の判定にヒューリスティックを 1 つ足した**。EUC-JP のバイト列は CP932 としても「読めて」しまい半角カタカナの羅列になるため、
+   CP932 で読んだ結果の半角カタカナ率が 50% を超える場合は EUC-JP を採用する
+
+### 動作確認
+
+- 新規テスト 4 ファイル（`test_encoding_detector.rb` / `test_csv_table_source.rb` / `test_table_layout.rb` / `test_table_preview.rb`）、計 79 ケース
+- `rake test` 全体で新たな失敗はなし（既存の 13 件の失敗・エラーは変更前から発生している別件）
+- tmux 上で実際に `bin/rufio` を起動して確認: 分割ペインとフルスクリーン（`P`）のグリッド表示、
+  `j` でのスクロール時にヘッダ行が固定されること、CP932 の CSV が文字化けせず読めること、
+  `.txt` のプレビューが従来どおりであること
+
+### Phase 2 の着手点
+
+- `handle_preview_focus_key`（`navigation_controller.rb:222`）をビューへの委譲に差し替える
+- セルカーソルの描画は、`TableLayout#column_x` と `#format_cell` で該当セルだけを反転色で上書きする
+  （行は `row_line` で描いてからカーソルセルを重ねる）
+- 横スクロールは `visible_columns(col_offset)` に既に対応済み。`col_offset` を持つのは `TableCursor`

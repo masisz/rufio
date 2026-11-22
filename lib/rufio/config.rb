@@ -34,6 +34,7 @@ module Rufio
       'file.cannot_preview' => 'Cannot preview',
       'file.encoding_error' => 'Character encoding error - cannot read file',
       'file.invalid_archive' => 'Invalid ZIP archive',
+      'file.not_parsed_as_table' => 'not parsed as table',
       'file.preview_error' => 'Preview error',
       'file.error_prefix' => 'Error',
 

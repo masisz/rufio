@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+require_relative 'preview_registry'
+require_relative 'table_layout'
+require_relative 'table_source'
+
 module Rufio
   class FilePreview
     BINARY_THRESHOLD = 0.3  # treat as binary if 30% or more binary characters
@@ -32,31 +36,81 @@ module Rufio
         # PDF bodies are not displayed; never scan their binary streams as text.
         return binary_response(file_path) if File.extname(file_path).casecmp?('.pdf')
 
+        # 表として読める形式（CSV / TSV, 将来は Excel / SQLite）はグリッド表示に回す。
+        # UTF-16 の CSV は NUL バイトが多くバイナリ判定に引っかかるため、判定より前に置く。
+        table_source = PreviewRegistry.table_source_for(file_path)
+        return table_response(file_path, table_source, max_lines) if table_source
+
         return archive_response(file_path, max_lines) if zip_archive?(file_path)
 
         # binary file detection
         sample = File.binread(file_path, [file_size, BINARY_SAMPLE_SIZE].min)
         return binary_response(file_path) if binary_file?(sample)
 
-        # process as text file
-        lines = read_text_file(file_path, max_lines)
-        file_type = determine_file_type(file_path)
-        
-        {
-          type: file_type[:type],
-          language: file_type[:language],
-          lines: lines[:content],
-          truncated: lines[:truncated],
-          size: file_size,
-          modified: File.mtime(file_path),
-          encoding: lines[:encoding]
-        }
+        text_response(file_path, max_lines)
       rescue => e
         error_response("#{ConfigLoader.message('file.read_error')}: #{e.message}")
       end
     end
 
     private
+
+    # 通常のテキスト／コードプレビュー
+    def text_response(file_path, max_lines)
+      lines = read_text_file(file_path, max_lines)
+      file_type = determine_file_type(file_path)
+
+      {
+        type: file_type[:type],
+        language: file_type[:language],
+        lines: lines[:content],
+        truncated: lines[:truncated],
+        size: File.size(file_path),
+        modified: File.mtime(file_path),
+        encoding: lines[:encoding]
+      }
+    end
+
+    # 行列（グリッド）プレビュー。
+    # lines には整形済みのグリッド文字列も入れておき、表描画を知らない利用側
+    # （検索画面のプレビューなど）でもそのまま読めるようにする。
+    def table_response(file_path, source, max_lines)
+      settings = ConfigLoader.table_preview
+      limits = TableSource::Limits.new(
+        max_bytes: settings[:max_bytes],
+        max_rows: settings[:max_rows],
+        max_columns: settings[:max_columns]
+      )
+      document = source.open(
+        file_path,
+        limits: limits,
+        options: {
+          header: settings[:header],
+          delimiter: settings[:delimiter],
+          encoding: settings[:encoding]
+        }
+      )
+
+      {
+        type: 'table',
+        language: nil,
+        document: document,
+        lines: TableLayout.plain_lines(
+          document, max_lines: max_lines, max_column_width: settings[:max_column_width]
+        ),
+        truncated: document.truncated?,
+        size: File.size(file_path),
+        modified: File.mtime(file_path),
+        encoding: document.encoding
+      }
+    rescue TableSource::ParseError => e
+      # 表として読めなければ従来のテキストプレビューに戻す（理由を先頭行に出す）
+      fallback = text_response(file_path, max_lines)
+      fallback[:table_error] = e.message
+      fallback[:lines] = ["(#{ConfigLoader.message('file.not_parsed_as_table')}: #{e.message})"] +
+                         Array(fallback[:lines])
+      fallback
+    end
 
     def zip_archive?(file_path)
       File.extname(file_path).casecmp?('.zip') || ZipArchive.zip_signature?(file_path)

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `.csv`, `.tsv` and `.tab` previews are shown as a grid instead of raw text: column letters with the header row, row numbers, the header kept in place while scrolling, and a last line with the row and column counts, the detected character encoding, any truncation and how many columns do not fit. Both the split pane and the fullscreen preview (`P`) use it
+- Character encoding detection for table previews (`Rufio::EncodingDetector`): UTF-8 and UTF-16 BOMs, UTF-8, CP932 and EUC-JP, so Shift_JIS CSV files no longer read as replacement characters. The byte limit is cut at the last newline so a multibyte character is never split
+- `TABLE_PREVIEW` in `config.rb` sets the table preview limits (`max_bytes` up to 1 MiB, `max_rows`, `max_columns`, `max_column_width`) and the `header`, `delimiter` (`'auto'` detects `;`) and `encoding` handling. Omitted or invalid values keep the defaults (64 KiB / 1000 / 256 / 32)
+- `Rufio::TableSource` and `Rufio::PreviewRegistry`: a table format implements `supports?` and `open` and returns sheets whose rows are read through `fetch_rows(offset, limit)`, so further formats (Excel, SQLite) need no change to the renderer. The plan is in `docs/csv_cell_preview_design_ja.md`
+
 ## [1.6.0] - 2026-11-22
 
 ### Added

@@ -48,6 +48,8 @@ Text previews read at most the first 64 KiB. PDF bodies are not previewed, keepi
 
 `.zip` previews list the archive entries (size, method, modified time, name) without extracting them.
 
+`.csv`, `.tsv` and `.tab` files are shown as a grid with column letters, the header row kept in place while you scroll, and a last line reporting the row and column counts, the detected character encoding and any truncation. UTF-8, UTF-16 (with BOM), CP932 and EUC-JP files are decoded automatically.
+
 ### File Selection & Bulk Operations
 
 | Key | Action |
