@@ -2,12 +2,16 @@
 
 require_relative 'file_opener'
 require_relative 'filter_manager'
+require_relative 'preview_view'
 
 module Rufio
   # ナビゲーション専用コントローラ
   # KeybindHandler から移動・フィルタ・プレビュースクロール系メソッドを分離し、単一責任原則に準拠
   class NavigationController
-    attr_reader :current_index, :preview_scroll_offset
+    attr_reader :current_index
+
+    # プレビューモード中のビュー（TextPreviewView / TablePreviewView）
+    attr_reader :preview_view
 
     def initialize(directory_listing, filter_manager)
       @directory_listing = directory_listing
@@ -15,6 +19,7 @@ module Rufio
       @current_index = 0
       @preview_focused = false
       @preview_scroll_offset = 0
+      @preview_view = nil
       @file_opener = FileOpener.new
       @terminal_ui = nil
     end
@@ -168,6 +173,8 @@ module Rufio
 
       @preview_focused = true
       @preview_scroll_offset = 0
+      # 表として読めるファイルはセルカーソル付きのビューになる
+      @preview_view = PreviewView.build(entry[:path])
       true
     end
 
@@ -175,22 +182,34 @@ module Rufio
       return false unless @preview_focused
 
       @preview_focused = false
+      @preview_view = nil
       true
+    end
+
+    # 表プレビューのセルカーソル（表でなければ nil）
+    def preview_cursor
+      @preview_view&.cursor
     end
 
     # ============================
     # プレビュースクロール
     # ============================
 
+    # 縦スクロール位置はビューが持つ（表プレビューではカーソル行に追従する）
+    def preview_scroll_offset
+      @preview_view ? @preview_view.row_offset : @preview_scroll_offset
+    end
+
     def scroll_preview_down
       return false unless @preview_focused
 
-      @preview_scroll_offset += 1
-      true
+      @preview_view ? @preview_view.scroll(1) : (@preview_scroll_offset += 1) && true
     end
 
     def scroll_preview_up
       return false unless @preview_focused
+
+      return @preview_view.scroll(-1) if @preview_view
 
       @preview_scroll_offset = [@preview_scroll_offset - 1, 0].max
       true
@@ -199,6 +218,8 @@ module Rufio
     def scroll_preview_page_down
       return false unless @preview_focused
 
+      return @preview_view.page(1) if @preview_view
+
       @preview_scroll_offset += 20
       true
     end
@@ -206,33 +227,35 @@ module Rufio
     def scroll_preview_page_up
       return false unless @preview_focused
 
+      return @preview_view.page(-1) if @preview_view
+
       @preview_scroll_offset = [@preview_scroll_offset - 20, 0].max
       true
     end
 
+    # 別のファイルを選び直したときなど、プレビューを先頭に戻す
     def reset_preview_scroll
       @preview_scroll_offset = 0
+      @preview_focused ? @preview_view&.reset : @preview_view = nil
+      0
     end
 
     # ============================
     # キー処理
     # ============================
 
-    # プレビューペインフォーカス中のキー処理
+    # プレビューペインフォーカス中のキー処理。
+    # まずビュー（テキスト / 表）に渡し、扱わなかったキーだけここで処理する。
     def handle_preview_focus_key(key)
+      return unfocus_preview_pane if key == "\e" # ESC
+      return true if @preview_view&.handle_key(key)
+
       case key
-      when 'j', "\e[B"  # j or Down arrow
-        scroll_preview_down
-      when 'k', "\e[A"  # k or Up arrow
-        scroll_preview_up
-      when "\x04"  # Ctrl+D
-        scroll_preview_page_down
-      when "\x15"  # Ctrl+U
-        scroll_preview_page_up
-      when "\e"   # ESC
-        unfocus_preview_pane
-      else
-        false
+      when 'j', "\e[B" then scroll_preview_down
+      when 'k', "\e[A" then scroll_preview_up
+      when "\x04"      then scroll_preview_page_down
+      when "\x15"      then scroll_preview_page_up
+      else false
       end
     end
 

@@ -102,6 +102,18 @@ module Rufio
       visible.first + (column_count - (visible.last + 1))
     end
 
+    # column_index が表示範囲に入る最小の col_offset を返す（横スクロール量の計算）
+    def offset_for(column_index, current_offset = 0)
+      return 0 if column_count.zero?
+
+      target = column_index.clamp(0, column_count - 1)
+      offset = current_offset.clamp(0, column_count - 1)
+      return target if target < offset
+
+      offset += 1 while offset < target && !visible_columns(offset).include?(target)
+      offset
+    end
+
     # ペイン内のセル描画開始 x（セル本体の先頭。区切りとスペースの右側）
     # @return [Integer, nil] 表示範囲外なら nil
     def column_x(column_index, col_offset = 0)

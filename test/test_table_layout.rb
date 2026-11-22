@@ -145,6 +145,36 @@ class TestTableLayout < Minitest::Test
     assert_nil layout.column_x(2)
   end
 
+  # === offset_for（横スクロール量の計算） ===
+
+  def test_offset_for_keeps_visible_columns_in_place
+    layout = Rufio::TableLayout.build(wide_sheet, 80)
+    assert_equal 0, layout.offset_for(0, 0)
+    assert_equal 0, layout.offset_for(2, 0), '全列見えているならずらさない'
+  end
+
+  def test_offset_for_scrolls_right_minimally
+    layout = Rufio::TableLayout.build(wide_sheet, 24)
+    assert_equal [0, 1], layout.visible_columns(0)
+    assert_equal 1, layout.offset_for(2, 0), '1 列だけずらして右端を見せること'
+  end
+
+  def test_offset_for_scrolls_back_left
+    layout = Rufio::TableLayout.build(wide_sheet, 24)
+    assert_equal 0, layout.offset_for(0, 1)
+  end
+
+  def test_offset_for_clamps_out_of_range_columns
+    layout = Rufio::TableLayout.build(wide_sheet, 24)
+    assert_operator layout.offset_for(99, 0), :<=, 2
+    assert_equal 0, layout.offset_for(-5, 0)
+  end
+
+  def test_offset_for_on_an_empty_sheet
+    layout = Rufio::TableLayout.build(sheet(rows: []), 40)
+    assert_equal 0, layout.offset_for(0, 0)
+  end
+
   # === plain_lines（lines フォールバック） ===
 
   def test_plain_lines_includes_header_rows_and_status

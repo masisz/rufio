@@ -74,14 +74,14 @@ module Rufio
     # 行列（グリッド）プレビュー。
     # lines には整形済みのグリッド文字列も入れておき、表描画を知らない利用側
     # （検索画面のプレビューなど）でもそのまま読めるようにする。
-    def table_response(file_path, source, max_lines)
+    def table_response(file_path, _source, max_lines)
       settings = ConfigLoader.table_preview
       limits = TableSource::Limits.new(
         max_bytes: settings[:max_bytes],
         max_rows: settings[:max_rows],
         max_columns: settings[:max_columns]
       )
-      document = source.open(
+      document = PreviewRegistry.load_table(
         file_path,
         limits: limits,
         options: {
@@ -90,6 +90,7 @@ module Rufio
           encoding: settings[:encoding]
         }
       )
+      raise TableSource::ParseError, 'no table source' unless document
 
       {
         type: 'table',

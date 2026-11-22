@@ -86,9 +86,19 @@ In the built-in search screen (`s`, `/`, `F`), type to fuzzy-filter, use **Up/Do
 
 ### Preview
 - **P**: Open fullscreen file preview (hides the file list)
-- **j/k**: Scroll preview (a `.csv` / `.tsv` grid scrolls by data row and keeps its header)
+- **j/k**: Scroll preview
 - **Ctrl+D/U**: Page down/up
 - **ESC**: Back to the file list
+
+### Preview of a table (`.csv` / `.tsv` / `.tab`)
+- **h/j/k/l** or the **arrow keys**: Move the cell cursor. The grid scrolls, horizontally as well, to keep the cursor in view and the header row in place
+- **Ctrl+D/U**: Move one screen of rows
+- **g/}**: First / last row
+- **0/$**: First / last column of the row
+- The line under the file name shows the cell address and the column name, e.g. `R3C2 price`
+- **ESC**: Back to the file list
+
+Cell movement follows the `move_up` / `move_down` / `navigate_parent` / `navigate_enter` keybinds, so rebinding `hjkl` applies here too.
 
 ### Filter Mode
 - **Any character**: Add to filter query

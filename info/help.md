@@ -44,6 +44,8 @@
 
 In a preview, `j/k` scroll, `Ctrl+D/U` page down/up and `ESC` returns to the file list.
 
+In a table preview (`.csv` / `.tsv` / `.tab`), `h/j/k/l` and the arrow keys move a cell cursor instead, `g/}` jump to the first and last row, `0/$` to the first and last column, and the line under the file name shows the cell address and column name (`R3C2 price`). The grid scrolls in both directions to keep the cursor visible.
+
 Text previews read at most the first 64 KiB. PDF bodies are not previewed, keeping file navigation responsive.
 
 `.zip` previews list the archive entries (size, method, modified time, name) without extracting them.

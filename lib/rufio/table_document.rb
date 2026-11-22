@@ -31,6 +31,19 @@ module Rufio
       @row_count.zero?
     end
 
+    # @return [Array<String>, nil] 1 行
+    def row(index)
+      fetch_rows(index, 1).first
+    end
+
+    # @return [String, nil] 生のセル値（表示用に畳んでいない値）
+    def cell(row_index, column_index)
+      values = row(row_index)
+      return nil unless values
+
+      values[column_index]
+    end
+
     # 列見出し（A, B, ... Z, AA, AB, ...）。Excel の列名と同じ規則。
     def column_label(index)
       return '' if index.negative?

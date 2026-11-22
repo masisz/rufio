@@ -1,7 +1,7 @@
 # 表プレビュー設計（CSV の行列表示 / hjkl セル移動 / y でコピー、将来の SQLite・Excel 対応を含む）
 
 対象バージョン: 1.7.0 想定（1.6.0 時点のコードを調査）
-ステータス: Phase 1 実装済み / Phase 2 以降は検討案
+ステータス: Phase 1・2 実装済み / Phase 3 以降は検討案
 
 ## 1. 目的とスコープ
 
@@ -337,7 +337,7 @@ Rufio::Clipboard.copy(text) # => :pbcopy | :clip | :wl_copy | :xclip | :xsel | :
 | Phase | 内容 | 目安 |
 |---|---|---|
 | 1 | **実装済み**: `TableSource` / `TableDocument` / `CsvTableSource` / `EncodingDetector`（CP932 含む）/ `TableLayout`、`PreviewRegistry`、`FilePreview` の type 追加、分割＋フルスクリーンのグリッド表示（カーソルなし） | 中〜大 |
-| 2 | `PreviewView` プロトコルへの委譲、`TableCursor`、hjkl・ページ・`0`/`$`・`g`/`}`、2 行目のステータス、マウスホイール | 中 |
+| 2 | **実装済み**: `PreviewView` プロトコルへの委譲、`TableCursor`、hjkl・ページ・`0`/`$`・`g`/`}`、2 行目のステータス、マウスホイール | 中 |
 | 3 | `Clipboard`、`y`（セル／ファイルパス）、コピー結果表示、`HealthChecker`、設定項目、ドキュメント | 小〜中 |
 | 4 | `XlsxTableSource`、`SqliteTableSource`、シート切替（`[` / `]`）、`Y`（行コピー）、検索画面プレビューとの統合 | 中 |
 
@@ -417,3 +417,52 @@ fixture（`test/fixtures/`）: 全角混在、引用符、セル内改行、CP93
 - セルカーソルの描画は、`TableLayout#column_x` と `#format_cell` で該当セルだけを反転色で上書きする
   （行は `row_line` で描いてからカーソルセルを重ねる）
 - 横スクロールは `visible_columns(col_offset)` に既に対応済み。`col_offset` を持つのは `TableCursor`
+
+## 17. Phase 2 実装記録
+
+### 追加したファイル
+
+| ファイル | 内容 |
+|---|---|
+| `lib/rufio/preview_view.rb` | `PreviewView` プロトコル（`row_offset` / `reset` / `handle_key` / `scroll` / `page` / `status_line` / `copy_target` / `cursor` / `table?`）、種別を選ぶ `build`、`TextPreviewView` |
+| `lib/rufio/table_preview_view.rb` | 表プレビューのビュー。キー → カーソル操作、セル番地の表示、`copy_target` |
+| `lib/rufio/table_cursor.rb` | セル位置と縦横スクロール位置、クランプ、ページ送り、カーソル追従 |
+
+変更: `navigation_controller.rb`（`focus_preview_pane` でビュー生成、`handle_preview_focus_key` はビューへ委譲、
+`preview_scroll_offset` はビューに問い合わせ）、`keybind_handler.rb`（`preview_view` / `preview_cursor` の委譲）、
+`ui_renderer.rb`（カーソルセルの反転描画、横スクロール、2 行目のステータス、表示行数の通知）、
+`table_layout.rb`（`offset_for`）、`table_document.rb`（`row` / `cell`）、`preview_registry.rb`（パース結果の共有キャッシュ）。
+
+### 設計からの変更点
+
+1. **縦スクロールの責任を分けた**。「何行表示できるか」は描画側しか知らないため、`UIRenderer` が毎フレーム
+   `TableCursor#visible_rows=` で伝え、カーソルはそれを使って `row_offset` を最小限ずらす。
+   ページ送り（Ctrl+D/U）の移動量もこの値を使うので、ペインの高さに追従する
+2. **横スクロール量の計算は `TableLayout#offset_for` に置いた**。列幅はレイアウトしか知らないため、
+   カーソルは `column_offset` を持つだけで、どこまでずらすかはレイアウトが決める
+3. **`preview_scroll_offset` をビューへの委譲にした**。既存の `UIRenderer` は従来どおり
+   `keybind_handler.preview_scroll_offset` を読むだけでよく、テキストプレビューの挙動も変わらない
+4. **パース結果を `PreviewRegistry.load_table` のキャッシュで共有した**。`FilePreview`（描画用）と
+   `PreviewView.build`（カーソル用）が同じファイルを別々にパースしないようにするためで、キーはパス・更新時刻・
+   サイズ・設定。`FuzzyPreviewLoader` が別スレッドから `preview_file` を呼ぶため `Monitor` で保護している
+5. **`reset` をプロトコルに足した**。`reset_preview_scroll`（ファイル選択が変わったときに呼ばれる）が
+   ビューの状態まで戻せず、既存テスト `test_reset_preview_scroll` が失敗したため。
+   テキストは行位置を 0、表はカーソルとスクロール位置を先頭に戻す
+
+### 動作確認
+
+- 新規テスト 2 ファイル（`test_table_cursor.rb` 15 ケース / `test_preview_view.rb` 24 ケース）、
+  `test_table_layout.rb` に `offset_for` の 5 ケース、`test_table_preview.rb` に描画 6 ケースを追加
+- `rake test` 全体で新たな失敗はなし（既存の 13 件は変更前から発生している別件）
+- tmux 上で `bin/rufio` を起動して確認:
+  `hjkl` でのセル移動、カーソルセルが反転表示されること（`ESC[7m` が出力されること）、
+  `}` で最終行へ飛ぶとヘッダ行を残して縦スクロールすること、`$` で右端の列まで横スクロールし
+  最下行が `+2 hidden` になること、`0` で先頭列へ戻ること、`Ctrl+D` の移動量がペインの高さに追従すること、
+  `ESC` で一覧に戻ること、テキストプレビューの表示とスクロールが従来どおりであること
+
+### Phase 3 の着手点
+
+- `y` の配線はビュー側が済んでいる。`TablePreviewView#copy_target` が生のセル値を返すので、
+  `Clipboard.copy(view.copy_target)` を呼ぶだけでよい
+- Files / Config モードの `y`（ファイルパスのコピー）は `KeybindHandler#dispatch` に `:copy_cell` を足す
+- コピー結果の表示は 2 行目のステータス（`TablePreviewView#status_line`）に差し込む場所がある

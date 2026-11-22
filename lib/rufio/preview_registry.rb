@@ -2,6 +2,8 @@
 
 require_relative 'csv_table_source'
 
+require 'monitor'
+
 module Rufio
   # プレビュー種別の登録表。
   #
@@ -12,6 +14,13 @@ module Rufio
   #   PreviewRegistry.register_table_source(SqliteTableSource)
   module PreviewRegistry
     DEFAULT_TABLE_SOURCES = [CsvTableSource].freeze
+
+    # 同じファイルを二度パースしないための小さなキャッシュ（ファイル数）
+    CACHE_LIMIT = 4
+
+    # FilePreview（描画ループ）と FuzzyPreviewLoader（別スレッド）から呼ばれるため
+    # キャッシュはロックで守る
+    LOCK = Monitor.new
 
     class << self
       def table_sources
@@ -35,9 +44,40 @@ module Rufio
         !table_source_for(path).nil?
       end
 
-      # テスト用: 登録を初期状態へ戻す
+      # 表として読み込む。パス・更新時刻・サイズ・設定が同じなら前回の結果を返す。
+      # @return [TableDocument, nil] 表として扱えない場合は nil
+      def load_table(path, limits:, options: {})
+        source = table_source_for(path)
+        return nil unless source
+
+        key = [File.expand_path(path), File.mtime(path).to_f, File.size(path), limits, options]
+        LOCK.synchronize do
+          cached = cache[key]
+          return cached if cached
+        end
+
+        document = source.open(path, limits: limits, options: options)
+        LOCK.synchronize do
+          cache.shift while cache.size >= CACHE_LIMIT
+          cache[key] = document
+        end
+        document
+      end
+
+      def clear_cache!
+        LOCK.synchronize { @cache = {} }
+      end
+
+      # テスト用: 登録とキャッシュを初期状態へ戻す
       def reset!
         @table_sources = DEFAULT_TABLE_SOURCES.dup
+        clear_cache!
+      end
+
+      private
+
+      def cache
+        @cache ||= {}
       end
     end
   end

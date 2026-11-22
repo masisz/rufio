@@ -145,7 +145,7 @@ class TestTablePreview < Minitest::Test
 
   # === UIRenderer ===
 
-  def renderer_for(width: 100, height: 24)
+  def renderer_for(width: 100, height: 24, name: 'sales.csv')
     screen = Rufio::Screen.new(width, height)
     listing = Rufio::DirectoryListing.new(@test_dir)
     handler = Rufio::KeybindHandler.new
@@ -158,8 +158,9 @@ class TestTablePreview < Minitest::Test
     )
 
     entries = listing.list_entries
-    index = entries.index { |entry| entry[:name] == 'sales.csv' }
-    refute_nil index, 'sales.csv がエントリに含まれること'
+    index = entries.index { |entry| entry[:name] == name }
+    refute_nil index, "#{name} がエントリに含まれること"
+
     handler.select_index(index)
 
     [screen, ui, handler]
@@ -201,20 +202,121 @@ class TestTablePreview < Minitest::Test
     assert_match(/\A\s*1 \|/, apple_row)
   end
 
-  def test_scrolling_moves_the_data_rows
+  def test_short_table_does_not_scroll_when_the_cursor_moves
     screen, ui, handler = renderer_for
     handler.focus_preview_pane
     ui.draw_screen(screen)
-    assert_includes screen_text(screen, 24), 'apple'
 
     handler.scroll_preview_down
     screen.clear
     ui.draw_screen(screen)
     text = screen_text(screen, 24)
 
-    refute_includes text, 'apple', '1 行スクロールしたら先頭行が消えること'
-    assert_includes text, 'みかん'
-    assert_includes text, 'A name', 'ヘッダ行は固定されたままであること'
+    assert_includes text, 'apple', '全行が収まっているうちはスクロールしないこと'
+    assert_includes text, 'A name'
+    assert_equal 1, handler.preview_cursor.row
+  end
+
+  def test_cursor_past_the_bottom_scrolls_and_keeps_the_header
+    path = File.join(@test_dir, 'long.csv')
+    File.write(path, "id,label\n#{(1..40).map { |i| "#{i},row#{i}" }.join("\n")}\n")
+
+    screen, ui, handler = renderer_for(name: 'long.csv', height: 12)
+    handler.focus_preview_pane
+    30.times { handler.scroll_preview_down }
+    ui.draw_screen(screen)
+    text = screen_text(screen, 12)
+
+    assert_includes text, 'A id', 'ヘッダ行は固定されたままであること'
+    refute_includes text, 'row1,', '先頭行はスクロールアウトしていること'
+    assert_includes text, 'row31'
+    assert_equal 30, handler.preview_cursor.row
+  end
+
+  # 反転色（選択色）で描かれた文字だけを集める。
+  # 全画面プレビュー中はファイル一覧を描かないので、カーソルセルだけが該当する。
+  def highlighted_text(screen, width, height)
+    selected = Rufio::ColorHelper.color_to_selected_ansi(Rufio::ConfigLoader.colors[:selected])
+    (0...height).flat_map do |y|
+      (0...width).map do |x|
+        cell = screen.get_cell(x, y)
+        cell && cell[:fg] == selected ? cell[:char] : nil
+      end
+    end.compact.join
+  end
+
+  def test_cursor_cell_is_highlighted
+    screen, ui, handler = renderer_for
+    handler.focus_preview_pane
+    ui.draw_screen(screen)
+
+    assert_includes highlighted_text(screen, 100, 24), 'apple', '最初のセルが反転表示されること'
+  end
+
+  def test_cursor_highlight_follows_the_keys
+    screen, ui, handler = renderer_for
+    handler.focus_preview_pane
+    handler.handle_key('j')
+    handler.handle_key('l')
+    ui.draw_screen(screen)
+
+    highlighted = highlighted_text(screen, 100, 24)
+    assert_includes highlighted, '150', 'R2C2 のセルが反転表示されること'
+    refute_includes highlighted, 'apple'
+  end
+
+  def test_status_line_shows_the_cell_address
+    screen, ui, handler = renderer_for
+    handler.focus_preview_pane
+    ui.draw_screen(screen)
+    assert_includes screen_text(screen, 24), 'R1C1 name'
+
+    handler.handle_key('l')
+    screen.clear
+    ui.draw_screen(screen)
+    assert_includes screen_text(screen, 24), 'R1C2 price'
+  end
+
+  def test_text_preview_keeps_the_back_hint
+    screen, ui, handler = renderer_for(name: 'notes.txt')
+    handler.focus_preview_pane
+    ui.draw_screen(screen)
+
+    assert_includes screen_text(screen, 24), 'ESC: Back to files'
+  end
+
+  def test_moving_right_scrolls_the_columns_into_view
+    path = File.join(@test_dir, 'wide.csv')
+    File.write(path, "c1,c2,c3,c4,c5,c6
+#{(1..6).map { |i| "value#{i}" }.join(',')}
+")
+
+    screen, ui, handler = renderer_for(name: 'wide.csv', width: 46)
+    handler.focus_preview_pane
+    ui.draw_screen(screen)
+    refute_includes screen_text(screen, 24), 'value6', '最初は右端の列は見えていない'
+
+    5.times { handler.handle_key('l') }
+    screen.clear
+    ui.draw_screen(screen)
+    text = screen_text(screen, 24)
+
+    assert_includes text, 'value6', 'カーソルに合わせて横スクロールすること'
+    assert_includes highlighted_text(screen, 46, 24), 'value6'
+    assert_operator handler.preview_cursor.column_offset, :>, 0
+  end
+
+  def test_empty_table_has_no_cursor_cell
+    path = File.join(@test_dir, 'header_only2.csv')
+    File.write(path, "a,b
+")
+
+    screen, ui, handler = renderer_for(name: 'header_only2.csv')
+    handler.focus_preview_pane
+    ui.draw_screen(screen)
+
+    assert_empty highlighted_text(screen, 100, 24), 'データ行がなければカーソルを描かないこと'
+    assert_includes screen_text(screen, 24), 'A a'
   end
 
   def test_narrow_pane_reports_hidden_columns

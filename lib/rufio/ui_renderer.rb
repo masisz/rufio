@@ -3,6 +3,7 @@
 require_relative 'text_utils'
 require_relative 'background_status'
 require_relative 'table_layout'
+require_relative 'preview_view'
 
 module Rufio
   # UIレンダリング専用クラス
@@ -22,6 +23,7 @@ module Rufio
     ICON_SIZE_PADDING = 12         # アイコン、選択マーク、サイズ情報分
     BOOKMARK_HIGHLIGHT_DURATION = 0.5  # ブックマークハイライト表示時間（秒）
     TABLE_FOOTER_MIN_HEIGHT = 5      # 表プレビューで最下行に情報行を出す最小の高さ
+    TABLE_GRID_START_ROW = 2         # プレビューペインでグリッドが始まる行（0:ファイル名 1:情報）
     TAB_SEPARATOR = ">"            # タブ間セパレータ
 
     # File display constants
@@ -402,11 +404,20 @@ module Rufio
       table_document, table_layout = table_preview_for(selected_entry, safe_width)
       table_rows = nil
       table_status = nil
+      table_cursor = nil
+      table_col_offset = 0
       if table_layout
+        table_cursor = @keybind_handler&.preview_cursor
+        if table_cursor
+          # カーソルが見えるように、表示できる行数を伝え、横スクロール量を決める
+          table_cursor.visible_rows = table_visible_rows(table_document, height)
+          table_cursor.column_offset = table_layout.offset_for(table_cursor.column, table_cursor.column_offset)
+          table_col_offset = table_cursor.column_offset
+        end
         table_rows = table_document.sheet.fetch_rows(
           @keybind_handler&.preview_scroll_offset || 0, [height, 1].max
         )
-        table_status = table_status_text(table_document, table_layout)
+        table_status = table_status_text(table_document, table_layout, table_col_offset)
       end
 
       (0...height).each do |i|
@@ -427,13 +438,18 @@ module Rufio
           screen.put_string(content_x, line_num, header)
 
         elsif i == 1 && @keybind_handler&.preview_focused?
-          hint = TextUtils.truncate_to_width(' ESC: Back to files', safe_width)
+          # プレビュー種別ごとの情報（表プレビューならセル番地と操作ヒント）
+          status = @keybind_handler&.preview_view&.status_line || PreviewView::BACK_HINT
+          hint = TextUtils.truncate_to_width(" #{status}", safe_width)
           screen.put_string(content_x, line_num, hint + ' ' * (safe_width - TextUtils.display_width(hint)))
 
         elsif i >= 2 && table_layout
           # 行列（グリッド）プレビュー
           screen.put_string(content_x, line_num,
-                            table_line(table_layout, table_document, table_rows, table_status, i, height))
+                            table_line(table_layout, table_document, table_rows, table_status, i, height,
+                                       table_col_offset))
+          draw_table_cursor_to_buffer(screen, content_x, line_num, table_layout, table_document,
+                                      table_cursor, table_rows, i, height)
 
         elsif i >= 2 && highlighted_wrapped_lines
           # シンタックスハイライト付きコンテンツ
@@ -492,35 +508,65 @@ module Rufio
       [document, layout]
     end
 
+    # グリッドでデータ行として使える行数（ヘッダ行と最下行の情報行を除く）
+    def table_visible_rows(document, height)
+      rows = height - TABLE_GRID_START_ROW
+      rows -= 1 if document.sheet.header
+      rows -= 1 if height >= TABLE_FOOTER_MIN_HEIGHT
+      [rows, 1].max
+    end
+
     # 最下行に出す情報（行数・列数・文字コード・切り詰め・隠れている列数）
-    def table_status_text(document, layout)
+    def table_status_text(document, layout, col_offset = 0)
       parts = [document.status_line]
-      hidden = layout.hidden_column_count
+      hidden = layout.hidden_column_count(col_offset)
       # 狭いペインでも最下行に収まるよう短く書く
       parts << "+#{hidden} hidden" if hidden.positive?
       parts.compact.reject(&:empty?).join('  ')
     end
 
     # ペイン内 i 行目（i >= 2）に描くグリッド 1 行分の文字列
-    def table_line(layout, document, rows, status, index, height)
-      if status && !status.empty? && height >= TABLE_FOOTER_MIN_HEIGHT && index == height - 1
-        return TextUtils.pad_string_to_width(status, layout.width)
-      end
+    def table_line(layout, document, rows, status, index, height, col_offset = 0)
+      return TextUtils.pad_string_to_width(status, layout.width) if table_footer_row?(status, index, height)
 
-      grid_row = index - 2
-      if document.sheet.header
-        return layout.header_line if grid_row.zero?
-
-        data_index = grid_row - 1
-      else
-        data_index = grid_row
-      end
+      data_index = table_data_index(document, index)
+      return layout.header_line(col_offset) if data_index.nil?
 
       row = rows && rows[data_index]
       return ' ' * layout.width unless row
 
       scroll_offset = @keybind_handler&.preview_scroll_offset || 0
-      layout.row_line(scroll_offset + data_index + 1, row)
+      layout.row_line(scroll_offset + data_index + 1, row, col_offset)
+    end
+
+    # カーソルのあるセルだけを反転色で上書きする
+    def draw_table_cursor_to_buffer(screen, content_x, line_num, layout, document, cursor, rows, index, height)
+      return if cursor.nil? || cursor.empty?
+      return if table_footer_row?(table_status_text(document, layout, cursor.column_offset), index, height)
+
+      data_index = table_data_index(document, index)
+      return if data_index.nil?
+      return unless cursor.row - cursor.row_offset == data_index
+
+      x = layout.column_x(cursor.column, cursor.column_offset)
+      return if x.nil?
+
+      row = rows && rows[data_index]
+      text = layout.format_cell(row && row[cursor.column], cursor.column)
+      screen.put_string(content_x + x, line_num, text,
+                        fg: ColorHelper.color_to_selected_ansi(ConfigLoader.colors[:selected]))
+    end
+
+    # @return [Integer, nil] 表示中のデータ行の添字。ヘッダ行なら nil
+    def table_data_index(document, index)
+      grid_row = index - TABLE_GRID_START_ROW
+      return nil if document.sheet.header && grid_row.zero?
+
+      document.sheet.header ? grid_row - 1 : grid_row
+    end
+
+    def table_footer_row?(status, index, height)
+      !status.nil? && !status.empty? && height >= TABLE_FOOTER_MIN_HEIGHT && index == height - 1
     end
 
     # ハイライト済みトークン列を1行分 Screen バッファに描画する

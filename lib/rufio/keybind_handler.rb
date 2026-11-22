@@ -83,6 +83,16 @@ module Rufio
       @nav_controller.preview_scroll_offset
     end
 
+    # プレビューモード中のビュー（テキスト / 表）
+    def preview_view
+      @nav_controller.preview_view
+    end
+
+    # 表プレビューのセルカーソル（表でなければ nil）
+    def preview_cursor
+      @nav_controller.preview_cursor
+    end
+
     def filter_query
       @filter_manager.filter_query
     end
