@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.6.0] - Unreleased
+## [1.6.0] - 2026-11-22
 
 ### Added
 - Phase 1 of the internal fuzzy search engine: a persistent Zig candidate index, bounded top-K ranking, UTF-8 match byte offsets, and an equivalent Ruby fallback. Missing or older native libraries and `RUFIO_NATIVE_FUZZY=0` use Ruby. The engine is available through `Rufio::FuzzySearch`
@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `s`, `/` and `F` no longer use fzf, and `rufio -c` no longer checks for it. The keybind actions are renamed to `file_search` / `file_search_alt`; the former `fzf_search` / `fzf_search_alt` names in `KEYBINDS` are still accepted as aliases (the new names win when both are set)
 - G mode file name search uses the same fuzzy matching as `s`: results are ranked, matched characters are highlighted and filtering runs in the background instead of on each keystroke in the UI thread. Content search stays literal. Exclusions, skipped counts and bookmark labels are unchanged
+- `rake native:sync_nvim` (`make -C lib_zig/rufio_native sync-nvim`) copies the shared Zig core (`search.zig`, `os.zig`, `fuzzy.zig` and their tests) to the usurai.nvim Zig tree and rebuilds it there, so both projects stay on one search and fuzzy implementation
 
 ### Performance
 - The fuzzy index narrows from the previous query: when the previous query is a subsequence of the new one (typing more characters), only the previous matches and candidates added since are scored. `Rufio::FuzzySearch#scanned` reports how many candidates the last query scored; the Ruby fallback narrows the same way

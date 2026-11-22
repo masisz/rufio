@@ -4,6 +4,7 @@
 #   make install  現在の環境向けだけを Gem 同梱と同じ設定でビルドして lib/rufio/native/<platform>/ に配置
 #   make dist     Gem 同梱用に全プラットフォームをクロスコンパイル
 #   make test     検索エンジンの単体テスト
+#   make sync-nvim 共通コア (search/os/fuzzy とテスト) を usurai.nvim に同期してビルド
 
 ZIG := zig
 RUBY := ruby
@@ -16,6 +17,8 @@ TARGET := librufio_zig.dylib
 BENCH := rufio_search
 SRC := src/main.zig
 SOURCES := src/main.zig src/search.zig src/os.zig src/zip.zig src/fuzzy.zig
+SHARED_SOURCES := src/search.zig src/os.zig src/search_test.zig src/fuzzy.zig src/fuzzy_test.zig
+NVIM_ZIG_DIR ?= ../../../usurai.nvim/zig
 NATIVE_DIR := ../../lib/rufio/native
 BUILD_DIR := zig-out/dist
 
@@ -69,4 +72,14 @@ install:
 	if [ -z "$$platform" ]; then echo "unsupported platform"; exit 1; fi; \
 	$(MAKE) --no-print-directory dist ONLY=$$platform
 
-.PHONY: all clean install test bench dist
+# 共通の検索・ファジーコアを usurai.nvim に同期してテスト・ビルドする
+sync-nvim: $(SHARED_SOURCES)
+	@if [ ! -d "$(NVIM_ZIG_DIR)/src" ]; then \
+		echo "usurai.nvim Zig directory not found: $(NVIM_ZIG_DIR)/src"; \
+		exit 1; \
+	fi
+	cp $(SHARED_SOURCES) "$(NVIM_ZIG_DIR)/src/"
+	cd "$(NVIM_ZIG_DIR)" && $(ZIG) build test && $(ZIG) build -Doptimize=ReleaseFast
+	@echo "==> Synced $(SHARED_SOURCES) to $(NVIM_ZIG_DIR)/src and rebuilt librufio_zig"
+
+.PHONY: all clean install test bench dist sync-nvim

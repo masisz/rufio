@@ -1,12 +1,13 @@
-//! G mode のコンテンツ検索エンジン。
+//! G mode のコンテンツ検索エンジン & 高速ファイル列挙エンジン（rufio / usurai.nvim 共通モジュール）。
 //!
 //! Ruby 実装（GlobalSearch#scan_roots / #scan_content）と同じ結果を返しつつ、
-//! 次の手法で ripgrep 以上の速度を狙う:
+//! 次の手法で ripgrep / fd 以上の速度を狙う:
 //! - 全 CPU コアでディレクトリを並列走査（ワークスタックで負荷分散）
-//! - getdirentries64 による大きなバッファでの一括ディレクトリ読み込み（macOS）
+//! - getattrlistbulk / getdents64 / FindFirstFileExW による一括ディレクトリ読み込み
 //! - openat/fstatat で親ディレクトリ fd から相対オープン（パス解決を省略）
 //! - 希少バイト 2 点を SIMD で同時比較する大文字小文字無視リテラル検索
 //! - 行番号はマッチ発生時のみ SIMD で改行を数える（非マッチファイルは数えない）
+//! - 2 回目以降の検索はインメモリキャッシュ（Cache）から open/read ゼロで即座に検索
 //! - スレッドローカル出力バッファでロック回数を削減し、上限超過時は背圧で待機
 const std = @import("std");
 const c = std.c;
