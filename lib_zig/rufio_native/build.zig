@@ -39,6 +39,16 @@ pub fn build(b: *std.Build) void {
     });
     const test_step = b.step("test", "検索エンジンの単体テストを実行");
     test_step.dependOn(&b.addRunArtifact(tests).step);
+    // 画像デコード・縮小・符号化（testdata の実ファイルを埋め込む）
+    const image_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/image_test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(image_tests).step);
     const fuzzy_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/fuzzy_test.zig"),

@@ -16,7 +16,8 @@ ZIG_FLAGS := -O ReleaseFast -dynamic -lc
 TARGET := librufio_zig.dylib
 BENCH := rufio_search
 SRC := src/main.zig
-SOURCES := src/main.zig src/search.zig src/os.zig src/zip.zig src/fuzzy.zig
+IMAGE_SOURCES := src/image.zig src/image_png.zig src/image_jpeg.zig src/image_bmp.zig src/image_resize.zig
+SOURCES := src/main.zig src/search.zig src/os.zig src/zip.zig src/fuzzy.zig $(IMAGE_SOURCES)
 SHARED_SOURCES := src/search.zig src/os.zig src/search_test.zig src/fuzzy.zig src/fuzzy_test.zig
 NVIM_ZIG_DIR ?= ../../../usurai.nvim/zig
 NATIVE_DIR := ../../lib/rufio/native
@@ -46,6 +47,7 @@ $(BENCH): src/cli.zig src/search.zig src/os.zig
 test:
 	$(ZIG) test src/search_test.zig
 	$(ZIG) test src/fuzzy_test.zig
+	$(ZIG) test src/image_test.zig -lc
 
 bench: $(BENCH)
 	./bench.sh

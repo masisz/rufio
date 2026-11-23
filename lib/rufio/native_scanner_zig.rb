@@ -79,6 +79,7 @@ module Rufio
             @available = true
             load_search_functions!
             load_zip_functions!
+            load_image_functions!
           rescue StandardError => e
             warn "Failed to load zig extension: #{e.message}" if ENV['RUFIO_DEBUG']
             @available = false
@@ -117,6 +118,12 @@ module Rufio
       def zip_available?
         load! unless @loaded
         @zip_available == true
+      end
+
+      # 画像のデコード・縮小 API（1.7.0 で追加）
+      def image_available?
+        load! unless @loaded
+        @image_available == true
       end
 
       # バージョン取得
@@ -158,6 +165,21 @@ module Rufio
         warn "Zig content search unavailable: #{e.message}" if ENV['RUFIO_DEBUG']
         @search_available = false
         @files_available = false
+      end
+
+      def load_image_functions!
+        extern 'char* core_image_version()'
+        extern 'int32_t core_image_cell_pixels(void*, void*)'
+        extern 'uint64_t core_image_create(const char*, size_t, uint32_t, uint32_t, uint8_t)'
+        extern 'uint8_t core_image_state(uint64_t)'
+        extern 'int32_t core_image_info(uint64_t, void*, void*, void*, void*, void*, void*)'
+        extern 'void* core_image_payload(uint64_t, void*)'
+        extern 'void core_image_cancel(uint64_t)'
+        extern 'void core_image_destroy(uint64_t)'
+        @image_available = true
+      rescue Fiddle::DLError => e
+        warn "Zig image engine unavailable: #{e.message}" if ENV['RUFIO_DEBUG']
+        @image_available = false
       end
 
       def load_zip_functions!
