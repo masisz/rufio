@@ -37,10 +37,13 @@ class TestImagePreview < Minitest::Test
     path
   end
 
-  # 端末が対応している状態にする
-  def with_graphics(supported: true)
+  # 端末が対応している状態にする。ネイティブのデコードは切って直送経路を見る
+  # （ネイティブ経路は test_native_image.rb）
+  def with_graphics(supported: true, native: false)
     Rufio::TerminalGraphics.stub(:supported?, supported) do
-      Rufio::TerminalGraphics.stub(:protocol, supported ? :kitty : :none) { yield }
+      Rufio::TerminalGraphics.stub(:protocol, supported ? :kitty : :none) do
+        Rufio::NativeImage.stub(:available?, native) { yield }
+      end
     end
   end
 
@@ -83,13 +86,20 @@ class TestImagePreview < Minitest::Test
     end
   end
 
-  def test_a_format_that_needs_decoding_is_reported_in_phase_one
-    with_graphics do
+  def test_a_format_that_needs_decoding_is_text_without_the_native_decoder
+    with_graphics(native: false) do
       view = Rufio::PreviewView.build(@jpeg)
 
       assert_instance_of Rufio::ImagePreviewView, view
-      refute view.displayable?, 'PNG 以外は（デコードが入るまで）表示しないこと'
+      refute view.displayable?, 'デコードが使えなければ PNG 以外は表示しないこと'
       assert_includes view.status_line, 'JPEG'
+      assert_includes view.status_line, 'unsupported format'
+    end
+  end
+
+  def test_the_native_decoder_makes_other_formats_displayable
+    with_graphics(native: true) do
+      assert Rufio::PreviewView.build(@jpeg).displayable?, 'デコードが使えれば JPEG も出せること'
     end
   end
 
@@ -107,10 +117,20 @@ class TestImagePreview < Minitest::Test
   end
 
   def test_a_file_over_the_direct_limit_is_not_sent
-    with_graphics do
+    with_graphics(native: false) do
       view = Rufio::PreviewView.build(@png)
       view.stub(:bytes, Rufio::ImagePreviewView::DIRECT_MAX_BYTES + 1) do
-        refute view.displayable?
+        refute view.displayable?, '直送できる上限を超えたら送らないこと'
+        assert_includes view.status_line, 'too large'
+      end
+    end
+  end
+
+  def test_a_file_over_the_native_limit_is_not_sent
+    with_graphics(native: true) do
+      view = Rufio::PreviewView.build(@png)
+      view.stub(:bytes, Rufio::ImagePreviewView::NATIVE_MAX_BYTES + 1) do
+        refute view.displayable?, 'デコードの上限を超えたら送らないこと'
         assert_includes view.status_line, 'too large'
       end
     end

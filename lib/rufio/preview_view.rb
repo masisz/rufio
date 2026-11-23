@@ -140,6 +140,19 @@ module Rufio
       false
     end
 
+    # 描画側が毎フレーム伝えるペインの実ピクセル（画像プレビューだけが使う）
+    def target_pixels=(_size); end
+
+    # 画像のデコード待ちか
+    def loading?
+      false
+    end
+
+    # ビューを捨てるときの後片付け（デコード中のジョブなど）
+    def release
+      false
+    end
+
     # 複数シートを持つ種別だけが 0 以外を返す
     def sheet_index
       0

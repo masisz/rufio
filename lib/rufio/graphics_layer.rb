@@ -23,7 +23,7 @@ module Rufio
     DEFAULT_CACHE_ENTRIES = 4
     DEFAULT_CACHE_BYTES = 8 * 1024 * 1024
 
-    Placement = Struct.new(:source, :key, :payload, :row, :col, :cols, :rows,
+    Placement = Struct.new(:source, :key, :payload, :encoded, :row, :col, :cols, :rows,
                            :format, :pixels, :crop, keyword_init: true)
 
     attr_reader :id
@@ -54,14 +54,15 @@ module Rufio
     # @param col [Integer] 矩形の左上の桁（1 始まりの端末座標）
     # @param crop [Array(Integer, Integer, Integer, Integer), nil] 元画像から切り出す
     #   領域 [x, y, 幅, 高さ]（ズーム）。nil なら全体
-    def request(source:, payload:, row:, col:, cols:, rows:,
+    # @param encoded [Boolean] payload が既に Base64 済みなら true（ネイティブ経路）
+    def request(source:, payload:, row:, col:, cols:, rows:, encoded: false,
                 format: KittyGraphics::FORMAT_PNG, pixels: nil, crop: nil, now: monotonic)
       # 別のファイルに移ったときだけ待つ（最初の 1 枚と置き直しは待たせない）
       @pending_since = now if @last_source && @last_source != source
       @last_source = source
       @desired = Placement.new(source: source, key: [source, row, col, cols, rows, crop],
-                               payload: payload, row: row, col: col, cols: cols, rows: rows,
-                               format: format, pixels: pixels, crop: crop)
+                               payload: payload, encoded: encoded, row: row, col: col,
+                               cols: cols, rows: rows, format: format, pixels: pixels, crop: crop)
       true
     end
 
@@ -177,7 +178,8 @@ module Rufio
       bytes = resolve(desired.payload)
       return nil if bytes.nil? || bytes.empty?
 
-      encoded = [bytes].pack('m0')
+      # ネイティブ経路は Zig 側で Base64 済み（Ruby で数 MB を符号化しない）
+      encoded = desired.encoded ? bytes : [bytes].pack('m0')
       store(key, encoded)
       encoded
     end

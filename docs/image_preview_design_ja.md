@@ -192,20 +192,28 @@ void     core_image_destroy(uint64_t handle);
 - `format=1/2`（生ピクセル）は PNG 再エンコード（zlib 圧縮）を省けるので速い。ただし転送量は増える。**既定は `1`（RGB）**、アルファのある画像は `2`、`IMAGE_PREVIEW.transfer: 'png'` のときだけ `0`。
 - エラーは state=failed と `kind=255` で表し、例外・ログは出さない（描画中に呼ばれるため）。
 
-### 7.2 デコーダ
+### 7.2 デコーダ（自前実装にした経緯）
 
-純 Zig の画像ライブラリ（`zigimg` 等）は依存追加と追従コストが大きいので、**`stb` 系の単一ヘッダを同梱して Zig で C としてコンパイルする**（`link_libc` は既に有効）。
+当初は `stb` 系の単一ヘッダを同梱する前提だったが、実装前に調べて 2 点が分かったため**第三者コードを使わず Zig で書いた**。
 
-| ファイル | 役割 | ライセンス |
+| 分かったこと | 判断 |
+|---|---|
+| stb の上流が `.NO_AI` / CONTRIBUTING.md で「LLM の使用禁止」を掲げている（public domain なので利用はライセンス上問題ないが、LLM が取り込んで配るのは上流の意向に反する） | 採らない |
+| 縮小用の `stb_image_resize2.h` が上流の root から消えている（別経路の調達が必要） | 同上 |
+| Zig 標準ライブラリに inflate / deflate がある（`std.compress.flate`。`zip.zig` で既に使用） | PNG の読み書きは標準ライブラリで足りる |
+
+| ファイル | 役割 | 行数の目安 |
 |---|---|---|
-| `src/vendor/stb_image.h` | PNG / JPEG / GIF / BMP / TGA のデコード | public domain (MIT 選択可) |
-| `src/vendor/stb_image_resize2.h` | 縮小（既定は box、`quality: 'high'` で Mitchell） | 同上 |
-| `src/vendor/stb_image_write.h` | PNG 再エンコード（`format=0` のときだけ） | 同上 |
-| `src/vendor/stb.c` | 上記の実装を 1 回だけ展開する TU | — |
+| `src/image_png.zig` | PNG の読み書き（zlib は `std.compress.flate`）。8/16bit のグレー・RGB・パレット・アルファ付き。書きはフィルタ 0 固定 | 約 330 |
+| `src/image_jpeg.zig` | baseline JPEG（SOF0・ハフマン・4:4:4 / 4:2:2 / 4:2:0・リスタートマーカー・複数表） | 約 530 |
+| `src/image_bmp.zig` | 無圧縮の 24/32bit と 8bit パレット（上下どちらの行順も） | 約 110 |
+| `src/image_resize.zig` | 面積平均（box filter）での縮小。拡大はしない | 約 80 |
+| `src/image.zig` | 形式判定・デコードの振り分け・縮小・PNG 符号化・Base64・スレッド・C ABI | 約 380 |
 
-- `Makefile` / `build.zig` に `-I src/vendor src/vendor/stb.c` を足す。8 プラットフォームのクロスコンパイルは既存の `make dist` の仕組みに乗る（C を混ぜても Zig のクロスコンパイルで通る）。
-- WebP / AVIF は stb が非対応。**拡張点**として `kind=255` を返すだけにし、将来 `libwebp` を同じやり方で足せる形にしておく。
-- メモリは `std.c.malloc` / `free`（既存コードと同じ）。`STBI_MALLOC` などを差し替えて確保経路を 1 つにする。
+- メモリは `std.heap.c_allocator`（既存コードと同じ）。ファイル読みは `os.zig` の読み取り口を使う（Windows でも同じ経路）。
+- 非対応: GIF（LZW 未実装）・プログレッシブ JPEG・算術符号・12bit・CMYK・インターレース PNG。いずれも failed を返し、Ruby 側がテキスト表示に落とす。
+- テストは `src/image_test.zig`（`src/testdata/` の実画像を `@embedFile`）。`make test` に入れた。
+- 将来 WebP / AVIF を足すなら、`decodeImage` の分岐に実装を 1 つ増やすだけで済む形にしてある。
 
 ### 7.3 安全性
 
@@ -275,8 +283,8 @@ NativeImage.available?                 （ライブラリ有無・API 世代・R
 
 | 項目 | 目標 |
 |---|---|
-| 2000×1500 JPEG → 320×320 px のデコード＋縮小 | 30 ms 以下（別スレッド。描画ループは止めない） |
-| 転送量（上と同じ条件、`f=24`） | 400 KB 以下（Base64 込み）。PNG 再エンコードなら 60 KB 前後 |
+| 2000×1500 JPEG → 320×320 px のデコード＋縮小 | 30 ms 以下（別スレッド。描画ループは止めない）→ **実測 32 ms**（PNG は 30 ms） |
+| 転送量（上と同じ条件） | 400 KB 以下（Base64 込み）→ **実測 283 KB**（PNG 再エンコード。試験画像が高エントロピーなので、実際の写真やスクリーンショットではさらに小さい） |
 | 静止時の 1 フレームあたり追加出力 | 0 バイト（変化が無ければ APC を出さない） |
 | j/k で画像を連続で移動 | デバウンス 80 ms。移動中は削除のみ出し、止まってから 1 枚送る |
 | キャッシュ | パス + mtime + 目標ピクセルで直近 4 枚、合計 8 MB まで（Base64 済みを保持） |
@@ -302,7 +310,7 @@ NativeImage.available?                 （ライブラリ有無・API 世代・R
 |---|---|---|
 | 1 | **実装済み**: `TerminalGraphics`（検出）、`KittyGraphics`（組み立て）、`ImageSource`、`ImagePreviewView`、`GraphicsLayer`（最小）、`UIRenderer` の矩形確保、`Screen#reserve`、`Renderer#render` の戻り値、**PNG 直送だけ**で表示（Zig なしで動く）。直送の上限は 8 MiB（縮小が入る Phase 3 で広げる）。オーバーレイ（ヘルプ・検索画面・コマンドモード）中は画像を消す | 中 |
 | 2 | **実装済み**: `GraphicsLayer` の再送（`Renderer#render` が返す行と矩形の交差）・削除・デバウンス（別ファイルへ移ったら先に消して 80ms 待つ）・Base64 キャッシュ（4 枚 / 8 MB、LRU）、終了処理と `refresh_display` の後片付け、ズーム（`+` / `-` / `0` と拡大中の `hjkl`。元画像の切り出し `x,y,w,h` を使うのでデコード不要）。矩形だけ変わったときの `a=p` 再配置は、部分実装の端末で表示が消える恐れがあるため採らず、キャッシュで転送を避ける方針にした | 中 |
-| 3 | Zig `src/image.zig` ＋ stb 同梱、`core_image_*` API、`NativeImage`、JPEG/GIF/BMP 対応と縮小、8 プラットフォームのビルド更新 | 中〜大 |
+| 3 | **実装済み**: Zig の `image.zig` / `image_png.zig` / `image_jpeg.zig` / `image_bmp.zig` / `image_resize.zig`、`core_image_*` API、`NativeImage`、PNG / baseline JPEG / BMP の対応と縮小、8 プラットフォームのビルド更新。**stb は採らず自前実装にした**（§7.2） | 大 |
 | 4 | 設定（`IMAGE_PREVIEW`）、`HealthChecker` の端末グラフィックス検出、ヘルプ・`info/`・ガイド・README、EXIF 回転 | 小〜中 |
 | 5 | （将来）Sixel / iTerm2 プロトコル、WebP、検索画面のプレビューへの展開 | 中 |
 
@@ -313,7 +321,8 @@ Phase 1 だけでも「PNG が端末で見える」価値が出る。Phase 3 を
 - **tmux / screen**: 既定で無効。`allow-passthrough on` の tmux 3.3+ でのみ設定で有効化でき、ペイン切り替え時に画像が残る端末がある
 - **SSH 越し**: 直送のみ（`t=f` は使えない）。縮小前提で転送量を抑える
 - **Windows**: Windows Terminal は Kitty プロトコル非対応。検出で無効になるだけ
-- **アニメーション**: GIF は 1 枚目のみ
+- **アニメーション**: GIF は未対応（LZW 未実装。テキスト表示に落ちる）
+- **プログレッシブ JPEG / インターレース PNG**: 未対応（テキスト表示に落ちる）
 - **SVG / PDF / HEIC / RAW**: 非対応（SVG はテキスト扱いのまま）
 - **半透明**: アルファは端末の背景と合成されるため、見た目は端末依存
 - **フォントの行間**: セル寸法が取れない端末では 8×16 と仮定するため、アスペクト比がわずかにずれる

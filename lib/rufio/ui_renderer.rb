@@ -575,16 +575,27 @@ module Rufio
       view = image_view_for(selected_entry)
       return nil unless view && safe_width > 0
 
-      return view.detail_lines unless view.displayable?
-
       rows = [height - TABLE_GRID_START_ROW, 1].max
       top = TABLE_GRID_START_ROW + CONTENT_START_LINE
+      # ペインの実ピクセルを伝える（ネイティブのデコードはこの大きさに合わせる）
+      cell = TerminalGraphics.cell_pixels
+      view.target_pixels = [safe_width * cell[0], rows * cell[1]]
+
+      return view.detail_lines unless view.displayable?
+
+      transfer = view.transfer
+      # デコード待ちの間は「decoding」と出し、画像はまだ送らない
+      return view.loading_lines if transfer.nil?
+
       # セルを空白で確保する（通知やフッタが割り込んで画像を削らないようにする）
       screen.reserve(content_x, top, safe_width, rows)
       @graphics_layer&.request(
-        source: [view.path, image_mtime(view.path)],
-        # 送ると決まったときだけ読む（毎フレーム数 MB を読まない）
-        payload: -> { view.payload },
+        source: transfer[:key],
+        # 直送のときは、送ると決まってから初めてファイルを読む
+        payload: transfer[:payload],
+        encoded: transfer[:encoded],
+        format: transfer[:format],
+        pixels: transfer[:pixels],
         row: top + 1, col: content_x + 1, # 端末座標は 1 始まり
         cols: safe_width, rows: rows,
         crop: view.crop
@@ -609,12 +620,6 @@ module Rufio
         entry[:image_view] = info ? ImagePreviewView.new(info, path: selected_entry[:path]) : nil
       end
       entry[:image_view]
-    end
-
-    def image_mtime(path)
-      File.mtime(path).to_i
-    rescue SystemCallError
-      0
     end
 
     # テキストプレビューの `/` 検索。一致行（折り返し後の行番号）をビューに渡し、

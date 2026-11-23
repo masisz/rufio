@@ -28,7 +28,7 @@ Complete reference of all keyboard shortcuts in **rufio**.
 
 `.zip` previews list the archive entries (size, method, modified time, name) without extracting them.
 
-Image previews (`.png`, `.jpg`, `.gif`, `.bmp`) use the Kitty graphics protocol when the terminal supports it; otherwise the format, size and dimensions are shown as text. `RUFIO_IMAGE_PREVIEW=0` disables it.
+Image previews (`.png`, `.jpg`, `.bmp`) use the Kitty graphics protocol when the terminal supports it; the bundled native library decodes and scales the picture down to the pane first. Otherwise the format, size and dimensions are shown as text. `RUFIO_IMAGE_PREVIEW=0` disables images, `RUFIO_NATIVE_IMAGE=0` only the decoding (PNG is then sent as-is).
 
 ### Preview of an image
 - **+** / **-**: Zoom in 25% steps, up to 4x

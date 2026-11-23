@@ -38,8 +38,10 @@ class TestImageZoom < Minitest::Test
     path
   end
 
+  # ズームの挙動は直送経路で確かめる（ネイティブ経路との組み合わせは
+  # test_native_image.rb の test_zooming_decodes_at_the_zoomed_resolution）
   def view
-    Rufio::PreviewView.build(@png)
+    Rufio::NativeImage.stub(:available?, false) { return Rufio::PreviewView.build(@png) }
   end
 
   def zoomed_view(steps = 1)
@@ -196,7 +198,7 @@ class TestImageZoom < Minitest::Test
   # === 描画への反映 ===
 
   def test_the_crop_is_sent_to_the_terminal
-    begin
+    Rufio::NativeImage.stub(:available?, false) do
       begin
         screen = Rufio::Screen.new(100, 20)
         listing = Rufio::DirectoryListing.new(@dir)

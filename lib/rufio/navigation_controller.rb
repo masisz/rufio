@@ -182,6 +182,7 @@ module Rufio
       return false unless @preview_focused
 
       @preview_focused = false
+      @preview_view&.release
       @preview_view = nil
       true
     end
@@ -236,7 +237,12 @@ module Rufio
     # 別のファイルを選び直したときなど、プレビューを先頭に戻す
     def reset_preview_scroll
       @preview_scroll_offset = 0
-      @preview_focused ? @preview_view&.reset : @preview_view = nil
+      if @preview_focused
+        @preview_view&.reset
+      else
+        @preview_view&.release
+        @preview_view = nil
+      end
       0
     end
 

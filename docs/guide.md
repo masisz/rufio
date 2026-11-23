@@ -78,9 +78,12 @@ Images (`.png`, `.jpg`, `.gif`, `.bmp`) are drawn in the preview pane by the ter
 
 | Situation | What you see |
 |-----------|--------------|
-| Supported terminal, PNG up to 8 MiB | The picture, fitted to the pane (split view and `P` both work) |
-| Another format (JPEG, GIF, BMP) | Format, pixel size and file size as text (decoding arrives with the native library) |
+| Supported terminal, `.png` / `.jpg` / `.bmp` up to 32 MiB | The picture, fitted to the pane (split view and `P` both work) |
+| No native library (or `RUFIO_NATIVE_IMAGE=0`), PNG up to 8 MiB | The picture, sent as-is and scaled by the terminal |
+| `.gif`, progressive JPEG, interlaced PNG | Format, pixel size and file size as text |
 | Unsupported terminal, or inside tmux | The same text |
+
+The bundled native library (Zig, no third-party image code) decodes the image, scales it down to the pane's real pixel size and re-encodes it as PNG before sending, so a 12 MP photo reaches the terminal as a few hundred KB in about 30 ms, off the main loop. While it works the pane shows `decoding...`.
 
 In preview mode (`P`) the picture can be zoomed:
 
