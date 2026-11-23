@@ -82,7 +82,15 @@ Images (`.png`, `.jpg`, `.gif`, `.bmp`) are drawn in the preview pane by the ter
 | Another format (JPEG, GIF, BMP) | Format, pixel size and file size as text (decoding arrives with the native library) |
 | Unsupported terminal, or inside tmux | The same text |
 
-The cells behind a picture are kept blank so the file list and the status line stay readable, and the picture is removed when you select another file, open the help menu, the search screen or command mode, and when rufio exits. `RUFIO_IMAGE_PREVIEW=0` turns images off entirely. The design and the remaining phases are in [image_preview_design_ja.md](./image_preview_design_ja.md).
+In preview mode (`P`) the picture can be zoomed:
+
+| Key | Action |
+|-----|--------|
+| `+` / `-` | Zoom in 25% steps, up to 4x (the terminal is asked for part of the picture, so nothing is decoded here) |
+| `0` | Fit the picture to the pane |
+| `h` / `j` / `k` / `l` or arrows | Move around the picture while zoomed |
+
+The cells behind a picture are kept blank so the file list and the status line stay readable, and the picture is removed when you select another file, open the help menu, the search screen or command mode, and when rufio exits. Moving to another file removes the picture immediately and sends the new one about 80 ms later, so holding `j` through a folder of images does not flood the terminal; a picture that was painted over (by a notification, say) is put back; and a file you come back to is not read or encoded again. `RUFIO_IMAGE_PREVIEW=0` turns images off entirely. The design and the remaining phases are in [image_preview_design_ja.md](./image_preview_design_ja.md).
 
 ### Searching inside a preview (`/`)
 

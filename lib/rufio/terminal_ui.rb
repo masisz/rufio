@@ -398,9 +398,9 @@ module Rufio
           end
 
           # 差分レンダリング（dirty rowsのみ、オーバーレイを含む）
-          @renderer.render(@screen)
+          rewritten_rows = @renderer.render(@screen)
           # 画像はセルの後に送る（セル差分が画像を上書きしないよう順序を固定する）
-          flush_graphics
+          flush_graphics(rewritten: rewritten_rows)
 
           # 描画後にカーソルを画面外に移動
           if !@command_mode_active
@@ -408,6 +408,9 @@ module Rufio
           end
 
           needs_redraw = false
+        else
+          # 再描画が無いフレームでも、待たせていた画像があれば送る（デバウンス）
+          flush_graphics
         end
 
         # SLEEP phase - CPU使用率削減のため適切にスリープ
@@ -1113,11 +1116,13 @@ module Rufio
 
     # 画像を端末へ送る（オーバーレイが出ている間は隠す）。
     # ヘルプ・検索画面・コマンドモードの窓は文字で描くため、画像が上に残ると読めない
-    def flush_graphics(output = STDOUT)
+    # @param rewritten [Array<Integer>, nil] このフレームで書き換えた画面行。
+    #   画像の矩形と交差していれば置き直す（通知やモード切替で画像が削れたとき）
+    def flush_graphics(output = STDOUT, rewritten: nil)
       return unless @graphics_layer
 
       @graphics_layer.clear if help_dialog_active? || search_active? || @command_mode_active
-      @graphics_layer.flush(output)
+      @graphics_layer.flush(output, rewritten_rows: rewritten)
     end
 
   end

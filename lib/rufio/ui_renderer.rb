@@ -582,11 +582,12 @@ module Rufio
       # セルを空白で確保する（通知やフッタが割り込んで画像を削らないようにする）
       screen.reserve(content_x, top, safe_width, rows)
       @graphics_layer&.request(
-        key: [view.path, image_mtime(view.path), safe_width, rows],
+        source: [view.path, image_mtime(view.path)],
         # 送ると決まったときだけ読む（毎フレーム数 MB を読まない）
         payload: -> { view.payload },
         row: top + 1, col: content_x + 1, # 端末座標は 1 始まり
-        cols: safe_width, rows: rows
+        cols: safe_width, rows: rows,
+        crop: view.crop
       )
       nil
     end

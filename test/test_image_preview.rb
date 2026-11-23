@@ -157,9 +157,10 @@ class TestImagePreview < Minitest::Test
     Rufio::GraphicsLayer.new(id: 1234, debounce: debounce)
   end
 
-  def request(graphics, payload: 'png-bytes', rect: [5, 3, 40, 20], source: ['a.png', 1])
+  def request(graphics, payload: 'png-bytes', rect: [5, 3, 40, 20], source: ['a.png', 1], **options)
     row, col, cols, rows = rect
-    graphics.request(source: source, payload: payload, row: row, col: col, cols: cols, rows: rows)
+    graphics.request(source: source, payload: payload, row: row, col: col,
+                     cols: cols, rows: rows, **options)
   end
 
   def test_the_layer_sends_the_image_once
@@ -214,9 +215,15 @@ class TestImagePreview < Minitest::Test
 
     output.string = +''
     graphics.request(source: ['b.png', 1], payload: 'other', row: 5, col: 3, cols: 40, rows: 20)
+    # 1 フレーム目で古い画像を消し、次のフレームで新しい画像を送る
     assert graphics.flush(output)
     assert_includes output.string, 'a=d', '前の画像を消してから送ること'
+    refute graphics.placed?
+
+    output.string = +''
+    assert graphics.flush(output)
     assert_includes output.string, 'a=T'
+    assert graphics.placed?
   end
 
   def test_moving_the_image_resends_it
@@ -307,6 +314,7 @@ class TestImagePreview < Minitest::Test
     # 別のファイルへ移動: まず古い画像を消す
     output.string = +''
     request(graphics, source: ['b.png', 1], payload: 'other', now: 0.1)
+
     assert graphics.flush(output, now: 0.1)
     assert_includes output.string, 'a=d'
     refute_includes output.string, 'a=T', 'すぐには送らないこと'
@@ -344,6 +352,31 @@ class TestImagePreview < Minitest::Test
     assert_includes output.string, 'c=20'
   end
 
+  def test_the_debounce_survives_the_per_frame_clear
+    graphics = layer(debounce: 0.08)
+    output = StringIO.new
+    # 描画側は毎フレーム clear → request の順で呼ぶ
+    frame = lambda do |source, now|
+      graphics.clear
+      request(graphics, source: source, now: now)
+      graphics.flush(output, now: now)
+    end
+
+    frame.call(['a.png', 1], 0.0)
+    assert graphics.placed?
+
+    output.string = +''
+    assert frame.call(['b.png', 1], 0.1), '古い画像を消すこと'
+    assert_includes output.string, 'a=d'
+
+    output.string = +''
+    refute frame.call(['b.png', 1], 0.14), '待ち時間の間は送らないこと'
+    assert_empty output.string
+
+    assert frame.call(['b.png', 1], 0.2)
+    assert_includes output.string, 'a=T'
+  end
+
   # === Phase 2: キャッシュ ===
 
   def test_the_payload_is_not_read_again_for_the_same_file
@@ -354,11 +387,15 @@ class TestImagePreview < Minitest::Test
 
     graphics.request(source: ['a.png', 1], payload: payload, row: 1, col: 1, cols: 10, rows: 5)
     graphics.flush(output)
-    graphics.request(source: ['b.png', 1], payload: -> { 'bytes-b' }, row: 1, col: 1, cols: 10, rows: 5)
-    graphics.flush(output)
+    2.times do
+      graphics.request(source: ['b.png', 1], payload: -> { 'bytes-b' }, row: 1, col: 1, cols: 10, rows: 5)
+      graphics.flush(output)
+    end
     # 同じファイルに戻る
-    graphics.request(source: ['a.png', 1], payload: payload, row: 1, col: 1, cols: 10, rows: 5)
-    graphics.flush(output)
+    2.times do
+      graphics.request(source: ['a.png', 1], payload: payload, row: 1, col: 1, cols: 10, rows: 5)
+      graphics.flush(output)
+    end
 
     assert_equal 1, reads, '一度読んだ画像は覚えておくこと'
   end
@@ -369,9 +406,9 @@ class TestImagePreview < Minitest::Test
     reads = 0
     graphics.request(source: ['a.png', 1], payload: -> { reads += 1; 'v1' }, row: 1, col: 1, cols: 10, rows: 5)
     graphics.flush(output)
-    # mtime が変わったら別の画像として扱う
+    # mtime が変わったら別の画像として扱う（1 フレーム目は古い画像の削除）
     graphics.request(source: ['a.png', 2], payload: -> { reads += 1; 'v2' }, row: 1, col: 1, cols: 10, rows: 5)
-    graphics.flush(output)
+    2.times { graphics.flush(output) }
 
     assert_equal 2, reads
   end
@@ -380,9 +417,13 @@ class TestImagePreview < Minitest::Test
     graphics = Rufio::GraphicsLayer.new(id: 1, debounce: 0, cache_entries: 2)
     output = StringIO.new
     reads = Hash.new(0)
+    # 実際のループと同じく、1 フレームに 1 回 request / flush する
     show = lambda do |name|
-      graphics.request(source: [name, 1], payload: -> { reads[name] += 1; name }, row: 1, col: 1, cols: 4, rows: 2)
-      graphics.flush(output)
+      2.times do
+        graphics.request(source: [name, 1], payload: -> { reads[name] += 1; name },
+                         row: 1, col: 1, cols: 4, rows: 2)
+        graphics.flush(output)
+      end
     end
 
     %w[a b c a].each { |name| show.call(name) }
@@ -398,10 +439,14 @@ class TestImagePreview < Minitest::Test
     payload = -> { reads += 1; 'x' * 64 }
 
     2.times do
-      graphics.request(source: ['a.png', 1], payload: payload, row: 1, col: 1, cols: 4, rows: 2)
-      graphics.flush(output)
-      graphics.request(source: ['b.png', 1], payload: -> { 'y' }, row: 1, col: 1, cols: 4, rows: 2)
-      graphics.flush(output)
+      2.times do
+        graphics.request(source: ['a.png', 1], payload: payload, row: 1, col: 1, cols: 4, rows: 2)
+        graphics.flush(output)
+      end
+      2.times do
+        graphics.request(source: ['b.png', 1], payload: -> { 'y' }, row: 1, col: 1, cols: 4, rows: 2)
+        graphics.flush(output)
+      end
     end
 
     assert_equal 2, reads, '上限を超える画像は覚えないこと'

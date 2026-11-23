@@ -30,6 +30,12 @@ Complete reference of all keyboard shortcuts in **rufio**.
 
 Image previews (`.png`, `.jpg`, `.gif`, `.bmp`) use the Kitty graphics protocol when the terminal supports it; otherwise the format, size and dimensions are shown as text. `RUFIO_IMAGE_PREVIEW=0` disables it.
 
+### Preview of an image
+- **+** / **-**: Zoom in 25% steps, up to 4x
+- **0**: Fit the picture to the pane
+- **h/j/k/l** or the **arrow keys**: Move around the picture while zoomed
+- **y**: Copy the file path | **ESC**: Back to the file list
+
 `.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm` and `.ods` previews, and SQLite databases when the `sqlite3` command is installed, show the file as a grid: column letters with the header row, row numbers, a fixed header while scrolling, and a last line with the row/column counts, the detected encoding and any truncation. `TABLE_PREVIEW` in `config.rb` changes the limits (`max_bytes`, up to 4 MiB, `max_rows`, `max_columns`, `max_column_width`) and the `header`, `delimiter` and `encoding` handling.
 
 Text previews read at most the first 64 KiB. PDF bodies are not previewed, keeping file navigation responsive.

@@ -4,6 +4,7 @@ require_relative 'test_helper'
 require 'minitest/autorun'
 require 'tmpdir'
 require 'fileutils'
+require 'stringio'
 require_relative '../lib/rufio'
 
 # 画像プレビューのズーム（`+` / `-` / `0`）と、ズーム中の移動（hjkl）。
@@ -12,7 +13,17 @@ class TestImageZoom < Minitest::Test
   def setup
     @dir = Dir.mktmpdir('rufio_image_zoom')
     @png = write_png('shot.png', 400, 300)
+    # 端末が対応している状態にする（応答を与えて本物の判定を通す）
     Rufio::TerminalGraphics.reset!
+    support(true)
+  end
+
+  # @param supported [Boolean] 問い合わせに OK を返す端末として判定させる
+  def support(supported)
+    Rufio::TerminalGraphics.reset!
+    answer = supported ? "\e_Gi=31;OK\e\\\e[?62;c" : "\e[?62;c"
+    Rufio::TerminalGraphics.detect!(input: StringIO.new(answer), output: StringIO.new,
+                                   env: {}, timeout: 0.05)
   end
 
   def teardown
@@ -28,9 +39,7 @@ class TestImageZoom < Minitest::Test
   end
 
   def view
-    Rufio::TerminalGraphics.stub(:supported?, true) do
-      Rufio::TerminalGraphics.stub(:protocol, :kitty) { return Rufio::PreviewView.build(@png) }
-    end
+    Rufio::PreviewView.build(@png)
   end
 
   def zoomed_view(steps = 1)
@@ -147,7 +156,8 @@ class TestImageZoom < Minitest::Test
   # === 表示できないときはズームしない ===
 
   def test_zoom_is_off_when_the_image_cannot_be_shown
-    v = Rufio::TerminalGraphics.stub(:supported?, false) { Rufio::PreviewView.build(@png) }
+    support(false)
+    v = view
 
     refute v.handle_key('+')
     assert_equal 1.0, v.zoom
@@ -157,7 +167,7 @@ class TestImageZoom < Minitest::Test
   def test_zoom_is_off_without_known_dimensions
     path = File.join(@dir, 'no_size.jpg')
     File.binwrite(path, "\xff\xd8".b + ("\x00".b * 32))
-    v = Rufio::TerminalGraphics.stub(:supported?, true) { Rufio::PreviewView.build(path) }
+    v = Rufio::PreviewView.build(path)
 
     refute v.handle_key('+')
     assert_nil v.crop
@@ -186,8 +196,8 @@ class TestImageZoom < Minitest::Test
   # === 描画への反映 ===
 
   def test_the_crop_is_sent_to_the_terminal
-    Rufio::TerminalGraphics.stub(:supported?, true) do
-      Rufio::TerminalGraphics.stub(:protocol, :kitty) do
+    begin
+      begin
         screen = Rufio::Screen.new(100, 20)
         listing = Rufio::DirectoryListing.new(@dir)
         handler = Rufio::KeybindHandler.new

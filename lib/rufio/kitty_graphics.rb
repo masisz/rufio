@@ -26,12 +26,15 @@ module Rufio
       # @param format [Integer] FORMAT_PNG / FORMAT_RGB / FORMAT_RGBA
       # @param pixels [Array(Integer, Integer), nil] 生ピクセルのときの [幅, 高さ]
       # @param passthrough [Boolean] tmux のパススルーで包むか
+      # @param crop [Array(Integer, Integer, Integer, Integer), nil] 元画像から切り出す
+      #   領域 [x, y, 幅, 高さ]（ズーム）
+      # @param encoded [Boolean] payload が既に Base64 済みなら true
       def transmit(id:, payload:, cols:, rows:, format: FORMAT_PNG, placement: 1,
-                   pixels: nil, chunk: CHUNK, passthrough: false)
-        encoded = [payload.to_s].pack('m0')
-        pieces = split(encoded, chunk)
+                   pixels: nil, crop: nil, chunk: CHUNK, passthrough: false, encoded: false)
+        data = encoded ? payload.to_s : [payload.to_s].pack('m0')
+        pieces = split(data, chunk)
         control = control_keys(id: id, cols: cols, rows: rows, format: format,
-                               placement: placement, pixels: pixels)
+                               placement: placement, pixels: pixels, crop: crop)
 
         pieces.each_with_index.map do |piece, index|
           keys = if index.zero?
@@ -76,12 +79,19 @@ module Rufio
 
       private
 
-      def control_keys(id:, cols:, rows:, format:, placement:, pixels:)
+      def control_keys(id:, cols:, rows:, format:, placement:, pixels:, crop: nil)
         keys = ['a=T', "f=#{format}", 't=d', "i=#{id}", "p=#{placement}",
                 "c=#{cols}", "r=#{rows}", 'C=1', 'q=2']
         if pixels
           keys << "s=#{pixels[0]}"
           keys << "v=#{pixels[1]}"
+        end
+        if crop
+          # 元画像の一部だけを同じセル矩形に出す（ズーム）
+          keys << "x=#{crop[0]}"
+          keys << "y=#{crop[1]}"
+          keys << "w=#{crop[2]}"
+          keys << "h=#{crop[3]}"
         end
         keys.join(',')
       end
@@ -91,6 +101,8 @@ module Rufio
         return [''] if encoded.empty?
 
         (0...encoded.bytesize).step(size).map { |offset| encoded.byteslice(offset, size) }
+      rescue RangeError
+        ['']
       end
 
       # tmux の中では ESC を二重にして DCS パススルーで包む

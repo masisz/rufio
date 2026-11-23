@@ -67,6 +67,7 @@ module Rufio
           "#{key(:open_explorer)}: Open directory in file explorer",
           'Preview .zip: Entry list (size, method, date, name)',
           'Preview images: shown by the terminal (kitty graphics); PNG for now',
+          '  +/-: Zoom | 0: Fit | hjkl: Pan while zoomed',
           "#{key(:refresh)}: Refresh directory",
           '', 'Selection and file operations',
           "#{key(:select)}: Select / unselect file",

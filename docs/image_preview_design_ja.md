@@ -301,7 +301,7 @@ NativeImage.available?                 （ライブラリ有無・API 世代・R
 | Phase | 内容 | 目安 |
 |---|---|---|
 | 1 | **実装済み**: `TerminalGraphics`（検出）、`KittyGraphics`（組み立て）、`ImageSource`、`ImagePreviewView`、`GraphicsLayer`（最小）、`UIRenderer` の矩形確保、`Screen#reserve`、`Renderer#render` の戻り値、**PNG 直送だけ**で表示（Zig なしで動く）。直送の上限は 8 MiB（縮小が入る Phase 3 で広げる）。オーバーレイ（ヘルプ・検索画面・コマンドモード）中は画像を消す | 中 |
-| 2 | `GraphicsLayer` の再送・削除・デバウンス・キャッシュ、終了処理と `refresh_display` の後片付け、ズーム | 中 |
+| 2 | **実装済み**: `GraphicsLayer` の再送（`Renderer#render` が返す行と矩形の交差）・削除・デバウンス（別ファイルへ移ったら先に消して 80ms 待つ）・Base64 キャッシュ（4 枚 / 8 MB、LRU）、終了処理と `refresh_display` の後片付け、ズーム（`+` / `-` / `0` と拡大中の `hjkl`。元画像の切り出し `x,y,w,h` を使うのでデコード不要）。矩形だけ変わったときの `a=p` 再配置は、部分実装の端末で表示が消える恐れがあるため採らず、キャッシュで転送を避ける方針にした | 中 |
 | 3 | Zig `src/image.zig` ＋ stb 同梱、`core_image_*` API、`NativeImage`、JPEG/GIF/BMP 対応と縮小、8 プラットフォームのビルド更新 | 中〜大 |
 | 4 | 設定（`IMAGE_PREVIEW`）、`HealthChecker` の端末グラフィックス検出、ヘルプ・`info/`・ガイド・README、EXIF 回転 | 小〜中 |
 | 5 | （将来）Sixel / iTerm2 プロトコル、WebP、検索画面のプレビューへの展開 | 中 |
