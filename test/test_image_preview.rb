@@ -152,13 +152,14 @@ class TestImagePreview < Minitest::Test
 
   # === GraphicsLayer ===
 
-  def layer
-    Rufio::GraphicsLayer.new(id: 1234)
+  # デバウンスはここでは 0（別のテストで確認する）
+  def layer(debounce: 0)
+    Rufio::GraphicsLayer.new(id: 1234, debounce: debounce)
   end
 
-  def request(graphics, payload: 'png-bytes', rect: [5, 3, 40, 20])
+  def request(graphics, payload: 'png-bytes', rect: [5, 3, 40, 20], source: ['a.png', 1])
     row, col, cols, rows = rect
-    graphics.request(key: ['a.png', 1, rect], payload: payload, row: row, col: col, cols: cols, rows: rows)
+    graphics.request(source: source, payload: payload, row: row, col: col, cols: cols, rows: rows)
   end
 
   def test_the_layer_sends_the_image_once
@@ -181,7 +182,7 @@ class TestImagePreview < Minitest::Test
     graphics = layer
     output = StringIO.new
     reads = 0
-    graphics.request(key: ['a.png', 1, [1, 1, 10, 5]], payload: -> { reads += 1; 'bytes' },
+    graphics.request(source: ['a.png', 1], payload: -> { reads += 1; 'bytes' },
                      row: 1, col: 1, cols: 10, rows: 5)
 
     assert_equal 0, reads, '申告だけでファイルを読まないこと'
@@ -195,7 +196,7 @@ class TestImagePreview < Minitest::Test
     graphics = layer
     output = StringIO.new
     attempts = 0
-    graphics.request(key: ['a.png', 1, [1, 1, 10, 5]], payload: -> { attempts += 1; nil },
+    graphics.request(source: ['a.png', 1], payload: -> { attempts += 1; nil },
                      row: 1, col: 1, cols: 10, rows: 5)
 
     refute graphics.flush(output)
@@ -212,7 +213,7 @@ class TestImagePreview < Minitest::Test
     graphics.flush(output)
 
     output.string = +''
-    graphics.request(key: ['b.png', 1, [5, 3, 40, 20]], payload: 'other', row: 5, col: 3, cols: 40, rows: 20)
+    graphics.request(source: ['b.png', 1], payload: 'other', row: 5, col: 3, cols: 40, rows: 20)
     assert graphics.flush(output)
     assert_includes output.string, 'a=d', '前の画像を消してから送ること'
     assert_includes output.string, 'a=T'
@@ -267,9 +268,149 @@ class TestImagePreview < Minitest::Test
     refute graphics.flush(output), '書けない端末でも落ちないこと'
   end
 
+  # === Phase 2: 上書きされたら送り直す ===
+
+  def test_the_image_is_resent_when_its_rows_are_painted_over
+    graphics = layer
+    output = StringIO.new
+    request(graphics, rect: [5, 3, 40, 20]) # 端末座標 5 行目から 20 行
+    graphics.flush(output)
+
+    output.string = +''
+    refute graphics.flush(output, rewritten_rows: [0, 1, 2]), '矩形の外なら送り直さないこと'
+    assert_empty output.string
+
+    assert graphics.flush(output, rewritten_rows: [10]), '矩形の中が書き換わったら送り直すこと'
+    assert_includes output.string, 'a=T'
+  end
+
+  def test_rows_just_outside_the_rect_do_not_resend
+    graphics = layer
+    output = StringIO.new
+    request(graphics, rect: [5, 3, 40, 3]) # 画面行 4..6
+    graphics.flush(output)
+
+    output.string = +''
+    refute graphics.flush(output, rewritten_rows: [3, 7])
+    assert graphics.flush(output, rewritten_rows: [6])
+  end
+
+  # === Phase 2: デバウンス ===
+
+  def test_switching_files_removes_the_old_image_and_waits
+    graphics = layer(debounce: 0.08)
+    output = StringIO.new
+    request(graphics, source: ['a.png', 1])
+    graphics.flush(output, now: 0.0)
+    assert graphics.placed?
+
+    # 別のファイルへ移動: まず古い画像を消す
+    output.string = +''
+    request(graphics, source: ['b.png', 1], payload: 'other', now: 0.1)
+    assert graphics.flush(output, now: 0.1)
+    assert_includes output.string, 'a=d'
+    refute_includes output.string, 'a=T', 'すぐには送らないこと'
+    refute graphics.placed?
+
+    # デバウンスの間は送らない
+    output.string = +''
+    refute graphics.flush(output, now: 0.15)
+    assert_empty output.string
+
+    # 待ち時間が過ぎたら送る
+    assert graphics.flush(output, now: 0.2)
+    assert_includes output.string, 'a=T'
+    assert graphics.placed?
+  end
+
+  def test_the_first_image_is_sent_right_away
+    graphics = layer(debounce: 0.08)
+    output = StringIO.new
+    request(graphics, now: 0.0)
+
+    assert graphics.flush(output, now: 0.0), '最初の 1 枚は待たせないこと'
+    assert_includes output.string, 'a=T'
+  end
+
+  def test_moving_the_same_image_is_not_debounced
+    graphics = layer(debounce: 0.08)
+    output = StringIO.new
+    request(graphics, now: 0.0)
+    graphics.flush(output, now: 0.0)
+
+    output.string = +''
+    request(graphics, rect: [5, 3, 20, 10], now: 0.1)
+    assert graphics.flush(output, now: 0.1), '同じ画像の置き直しは待たせないこと'
+    assert_includes output.string, 'c=20'
+  end
+
+  # === Phase 2: キャッシュ ===
+
+  def test_the_payload_is_not_read_again_for_the_same_file
+    graphics = layer
+    output = StringIO.new
+    reads = 0
+    payload = -> { reads += 1; 'bytes-a' }
+
+    graphics.request(source: ['a.png', 1], payload: payload, row: 1, col: 1, cols: 10, rows: 5)
+    graphics.flush(output)
+    graphics.request(source: ['b.png', 1], payload: -> { 'bytes-b' }, row: 1, col: 1, cols: 10, rows: 5)
+    graphics.flush(output)
+    # 同じファイルに戻る
+    graphics.request(source: ['a.png', 1], payload: payload, row: 1, col: 1, cols: 10, rows: 5)
+    graphics.flush(output)
+
+    assert_equal 1, reads, '一度読んだ画像は覚えておくこと'
+  end
+
+  def test_a_changed_file_is_read_again
+    graphics = layer
+    output = StringIO.new
+    reads = 0
+    graphics.request(source: ['a.png', 1], payload: -> { reads += 1; 'v1' }, row: 1, col: 1, cols: 10, rows: 5)
+    graphics.flush(output)
+    # mtime が変わったら別の画像として扱う
+    graphics.request(source: ['a.png', 2], payload: -> { reads += 1; 'v2' }, row: 1, col: 1, cols: 10, rows: 5)
+    graphics.flush(output)
+
+    assert_equal 2, reads
+  end
+
+  def test_the_cache_keeps_only_a_few_images
+    graphics = Rufio::GraphicsLayer.new(id: 1, debounce: 0, cache_entries: 2)
+    output = StringIO.new
+    reads = Hash.new(0)
+    show = lambda do |name|
+      graphics.request(source: [name, 1], payload: -> { reads[name] += 1; name }, row: 1, col: 1, cols: 4, rows: 2)
+      graphics.flush(output)
+    end
+
+    %w[a b c a].each { |name| show.call(name) }
+
+    assert_equal 2, reads['a'], '古い画像は捨てられるので読み直すこと'
+    assert_equal 1, reads['b']
+  end
+
+  def test_a_huge_image_is_not_cached
+    graphics = Rufio::GraphicsLayer.new(id: 1, debounce: 0, cache_bytes: 16)
+    output = StringIO.new
+    reads = 0
+    payload = -> { reads += 1; 'x' * 64 }
+
+    2.times do
+      graphics.request(source: ['a.png', 1], payload: payload, row: 1, col: 1, cols: 4, rows: 2)
+      graphics.flush(output)
+      graphics.request(source: ['b.png', 1], payload: -> { 'y' }, row: 1, col: 1, cols: 4, rows: 2)
+      graphics.flush(output)
+    end
+
+    assert_equal 2, reads, '上限を超える画像は覚えないこと'
+  end
+
   # === UIRenderer との結線 ===
 
-  def renderer_for(name, width: 100, height: 20, graphics: Rufio::GraphicsLayer.new(id: 77))
+  def renderer_for(name, width: 100, height: 20,
+                   graphics: Rufio::GraphicsLayer.new(id: 77, debounce: 0))
     screen = Rufio::Screen.new(width, height)
     listing = Rufio::DirectoryListing.new(@dir)
     handler = Rufio::KeybindHandler.new
@@ -371,7 +512,7 @@ class TestImagePreview < Minitest::Test
       graphics = Rufio::GraphicsLayer.new(id: 55)
       ui.instance_variable_set(:@graphics_layer, graphics)
       output = StringIO.new
-      graphics.request(key: ['a.png', 1, [1, 1, 10, 5]], payload: 'x', row: 1, col: 1, cols: 10, rows: 5)
+      graphics.request(source: ['a.png', 1], payload: 'x', row: 1, col: 1, cols: 10, rows: 5)
       graphics.flush(output)
 
       output.string = +''
