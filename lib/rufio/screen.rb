@@ -36,6 +36,26 @@ module Rufio
       @cells = Array.new(height) { Array.new(width) { Cell.new(' ', nil, nil, 1) } }
       @overlay_cells = nil  # オーバーレイレイヤー（ダイアログ用）
       @dirty_rows = Set.new  # Phase1: Dirty row tracking
+      @reserved = nil        # 画像が占有している矩形（文字を書かせない）
+    end
+
+    # 画像（端末のグラフィックス機能）が占有する矩形を確保する。
+    # 確保した範囲への put / put_string は無視するので、通知やフッタが
+    # 割り込んで画像を削ることがない。clear で解除される。
+    def reserve(x, y, width, height)
+      return if width.to_i <= 0 || height.to_i <= 0
+
+      @reserved = [x.to_i, y.to_i, x.to_i + width.to_i - 1, y.to_i + height.to_i - 1]
+    end
+
+    def clear_reserved
+      @reserved = nil
+    end
+
+    def reserved?(x, y)
+      return false unless @reserved
+
+      x >= @reserved[0] && x <= @reserved[2] && y >= @reserved[1] && y <= @reserved[3]
     end
 
     # Put a single character at (x, y) with optional color
@@ -48,6 +68,7 @@ module Rufio
     # @param width [Integer, nil] Display width (auto-detected if not provided)
     def put(x, y, char, fg: nil, bg: nil, width: nil)
       return if out_of_bounds?(x, y)
+      return if reserved?(x, y)
 
       # 制御文字は端末を操作してしまうため、バッファに入れる前に空白へ置き換える
       # （幅は置き換え後の文字で数え直す）
@@ -181,6 +202,8 @@ module Rufio
       # Phase1: Clear dirty rows after full clear
       @dirty_rows.clear
       @height.times { |y| @dirty_rows.add(y) } if mark_dirty
+      # 確保は毎フレーム描画側が申告し直す
+      @reserved = nil
     end
 
     # Phase1: Get dirty rows (rows that have been modified since last clear)

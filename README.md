@@ -39,6 +39,7 @@ rufio brings finding files, running scripts, and checking results together in on
 
 - **Vim-like Key Bindings**: Intuitive navigation
 - **Real-time Preview**: Instantly display file contents with syntax highlighting (via `bat`), including `.zip` entry lists
+- **Images in the Terminal**: PNG files are drawn in the preview pane with the Kitty graphics protocol (kitty, Ghostty, WezTerm, Konsole); other terminals show the format and dimensions as text
 - **Tables as a Grid**: `.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm`, `.ods` and SQLite databases (with the `sqlite3` command, recognised by file signature) are shown as rows and columns, with the header row fixed while scrolling and automatic decoding of UTF-8, UTF-16, CP932 and EUC-JP
 - **Sheets and Tables**: `[` and `]` switch between a workbook's sheets or a database's tables and `/` opens the list of sheets or tables to pick from, and only the one on screen is read
 - **Move Between Cells**: In preview mode (`P`), `hjkl` moves a cell cursor through the grid, which scrolls in both directions to follow it

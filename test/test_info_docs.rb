@@ -93,6 +93,20 @@ class TestInfoDocs < Minitest::Test
     end
   end
 
+  # 画像プレビュー（Kitty グラフィックスプロトコル、Phase 1 は PNG 直送）
+  def test_docs_describe_the_image_preview
+    root = File.expand_path('..', __dir__)
+    { 'info/help.md' => ['Kitty graphics protocol', 'RUFIO_IMAGE_PREVIEW=0'],
+      'info/keybindings.md' => ['Kitty graphics protocol'],
+      'docs/guide.md' => ['### Images', 'Kitty graphics protocol'],
+      'docs/guide_ja.md' => ['### 画像', 'Kitty グラフィックスプロトコル'],
+      'README.md' => ['Kitty graphics protocol'],
+      'README_ja.md' => ['Kitty グラフィックスプロトコル'] }.each do |name, words|
+      doc = File.read(File.join(root, name))
+      words.each { |word| assert_includes doc, word, name }
+    end
+  end
+
   # Tab / Shift+Tab のブックマーク巡回は削除した
   def test_docs_do_not_describe_bookmark_cycling
     root = File.expand_path('..', __dir__)

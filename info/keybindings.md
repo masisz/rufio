@@ -28,6 +28,8 @@ Complete reference of all keyboard shortcuts in **rufio**.
 
 `.zip` previews list the archive entries (size, method, modified time, name) without extracting them.
 
+Image previews (`.png`, `.jpg`, `.gif`, `.bmp`) use the Kitty graphics protocol when the terminal supports it; otherwise the format, size and dimensions are shown as text. `RUFIO_IMAGE_PREVIEW=0` disables it.
+
 `.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm` and `.ods` previews, and SQLite databases when the `sqlite3` command is installed, show the file as a grid: column letters with the header row, row numbers, a fixed header while scrolling, and a last line with the row/column counts, the detected encoding and any truncation. `TABLE_PREVIEW` in `config.rb` changes the limits (`max_bytes`, up to 4 MiB, `max_rows`, `max_columns`, `max_column_width`) and the `header`, `delimiter` and `encoding` handling.
 
 Text previews read at most the first 64 KiB. PDF bodies are not previewed, keeping file navigation responsive.

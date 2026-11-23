@@ -34,6 +34,8 @@ module Rufio
       @command_mode_active = false
       @help_menu = HelpMenu.new
       @search_screen = SearchScreen.new
+      # 画像プレビュー（端末のグラフィックス機能）。対応端末でなければ何もしない
+      @graphics_layer = GraphicsLayer.new
       @command_input = ""
       @command_mode = CommandMode.new
       @dialog_renderer = DialogRenderer.new
@@ -59,7 +61,8 @@ module Rufio
         screen_height: @screen_height,
         test_mode: @test_mode,
         left_panel_ratio: ui_opts[:panel_ratio],
-        preview_enabled: ui_opts[:preview_enabled]
+        preview_enabled: ui_opts[:preview_enabled],
+        graphics_layer: @graphics_layer
       )
       @tab_mode_manager = @ui_renderer.tab_mode_manager
       @background_status = @ui_renderer.background_status
@@ -144,6 +147,10 @@ module Rufio
       if STDIN.tty?
         STDIN.raw!
       end
+
+      # 画像表示に対応しているかを 1 回だけ尋ねる（応答を入力ループに混ぜないため、
+      # raw モードにした直後・メインループに入る前に済ませる）
+      TerminalGraphics.detect!(input: STDIN, output: STDOUT) if STDIN.tty? && !@test_mode
 
       # Windows: ブロッキング読み取りスレッドを起動。
       # ConPTY パイプでは IO.select のシグナル遅延で ESC を取りこぼすため、
@@ -237,6 +244,8 @@ module Rufio
 
     def cleanup_terminal
       @search_screen.close
+      # 端末に残した画像を消してから画面を戻す
+      @graphics_layer&.clear_all(STDOUT)
       # マウスレポートを先に無効化して新しいイベントの流入を止める
       if windows?
         print "\e[?1000l\e[?1006l"
@@ -305,6 +314,7 @@ module Rufio
       @screen.clear
       draw_screen_to_buffer(@screen, nil, nil)
       @renderer.render(@screen)
+      flush_graphics
 
       # FPS計測用
       frame_times = []
@@ -389,6 +399,8 @@ module Rufio
 
           # 差分レンダリング（dirty rowsのみ、オーバーレイを含む）
           @renderer.render(@screen)
+          # 画像はセルの後に送る（セル差分が画像を上書きしないよう順序を固定する）
+          flush_graphics
 
           # 描画後にカーソルを画面外に移動
           if !@command_mode_active
@@ -1090,11 +1102,22 @@ module Rufio
     def render_full_screen
       return unless @screen && @renderer
 
+      @graphics_layer.clear_all(STDOUT)
       @renderer.clear
       @screen.clear
       draw_screen_to_buffer(@screen, nil, nil)
       @renderer.render(@screen)
+      flush_graphics
       print "\e[#{@screen_height};#{@screen_width}H"
+    end
+
+    # 画像を端末へ送る（オーバーレイが出ている間は隠す）。
+    # ヘルプ・検索画面・コマンドモードの窓は文字で描くため、画像が上に残ると読めない
+    def flush_graphics(output = STDOUT)
+      return unless @graphics_layer
+
+      @graphics_layer.clear if help_dialog_active? || search_active? || @command_mode_active
+      @graphics_layer.flush(output)
     end
 
   end

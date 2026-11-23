@@ -72,6 +72,18 @@ The right pane previews the selected file. Code is highlighted when `bat` is ins
 | `y` | Copy the file path to the clipboard |
 | `ESC` | Back to the file list |
 
+### Images
+
+Images (`.png`, `.jpg`, `.gif`, `.bmp`) are drawn in the preview pane by the terminal itself, using the Kitty graphics protocol. kitty, Ghostty, WezTerm and Konsole support it; rufio asks the terminal once at startup and silently falls back when the answer is no.
+
+| Situation | What you see |
+|-----------|--------------|
+| Supported terminal, PNG up to 8 MiB | The picture, fitted to the pane (split view and `P` both work) |
+| Another format (JPEG, GIF, BMP) | Format, pixel size and file size as text (decoding arrives with the native library) |
+| Unsupported terminal, or inside tmux | The same text |
+
+The cells behind a picture are kept blank so the file list and the status line stay readable, and the picture is removed when you select another file, open the help menu, the search screen or command mode, and when rufio exits. `RUFIO_IMAGE_PREVIEW=0` turns images off entirely. The design and the remaining phases are in [image_preview_design_ja.md](./image_preview_design_ja.md).
+
 ### Searching inside a preview (`/`)
 
 `/` in a preview searches the previewed file. Type to jump to the first match from where you are, `Enter` keeps the search, `n` and `N` move to the next and previous match (wrapping around), and `ESC` clears it (a second `ESC` leaves the preview). Every match is highlighted and the current one is drawn in a different colour. Preview mode reads up to 20,000 lines of the first 64 KiB of the file, so the search covers what the preview can show.

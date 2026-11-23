@@ -5,6 +5,7 @@ require_relative 'table_source'
 require_relative 'config_loader'
 require_relative 'clipboard'
 require_relative 'search_prompt'
+require_relative 'image_source'
 
 module Rufio
   # プレビューモード中の「見え方」と「キー操作」をまとめた層。
@@ -30,8 +31,12 @@ module Rufio
 
     class << self
       # @param path [String] プレビュー対象
-      # @return [PreviewView] 表として読めれば TablePreviewView、それ以外は TextPreviewView
+      # @return [PreviewView] 画像なら ImagePreviewView、表として読めれば
+      #   TablePreviewView、それ以外は TextPreviewView
       def build(path)
+        info = ImageSource.read(path)
+        return ImagePreviewView.new(info, path: path) if info
+
         document = load_table(path)
         document ? TablePreviewView.new(document, path: path) : TextPreviewView.new(path: path)
       rescue StandardError
@@ -127,6 +132,11 @@ module Rufio
     def apply_matches(_indices); end
 
     def table?
+      false
+    end
+
+    # 端末のグラフィックス機能で表示する種別か
+    def image?
       false
     end
 
@@ -337,3 +347,4 @@ module Rufio
 end
 
 require_relative 'table_preview_view'
+require_relative 'image_preview_view'

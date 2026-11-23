@@ -172,9 +172,37 @@ class TestImagePreview < Minitest::Test
     assert_includes output.string, 'c=40'
     assert_includes output.string, "\e[5;3H"
 
-    output.string = ''
+    output.string = +''
     refute graphics.flush(output), '同じ画像・同じ位置なら送り直さないこと'
     assert_empty output.string
+  end
+
+  def test_the_payload_is_only_read_when_it_is_sent
+    graphics = layer
+    output = StringIO.new
+    reads = 0
+    graphics.request(key: ['a.png', 1, [1, 1, 10, 5]], payload: -> { reads += 1; 'bytes' },
+                     row: 1, col: 1, cols: 10, rows: 5)
+
+    assert_equal 0, reads, '申告だけでファイルを読まないこと'
+    graphics.flush(output)
+    assert_equal 1, reads
+    3.times { graphics.flush(output) }
+    assert_equal 1, reads, '変化が無ければ読み直さないこと'
+  end
+
+  def test_a_payload_that_cannot_be_read_shows_nothing
+    graphics = layer
+    output = StringIO.new
+    attempts = 0
+    graphics.request(key: ['a.png', 1, [1, 1, 10, 5]], payload: -> { attempts += 1; nil },
+                     row: 1, col: 1, cols: 10, rows: 5)
+
+    refute graphics.flush(output)
+    refute graphics.placed?
+
+    3.times { graphics.flush(output) }
+    assert_equal 1, attempts, '読めなかった画像を毎フレーム読み直さないこと'
   end
 
   def test_a_different_image_replaces_the_previous_one
@@ -183,7 +211,7 @@ class TestImagePreview < Minitest::Test
     request(graphics)
     graphics.flush(output)
 
-    output.string = ''
+    output.string = +''
     graphics.request(key: ['b.png', 1, [5, 3, 40, 20]], payload: 'other', row: 5, col: 3, cols: 40, rows: 20)
     assert graphics.flush(output)
     assert_includes output.string, 'a=d', '前の画像を消してから送ること'
@@ -196,7 +224,7 @@ class TestImagePreview < Minitest::Test
     request(graphics)
     graphics.flush(output)
 
-    output.string = ''
+    output.string = +''
     request(graphics, rect: [5, 3, 20, 10])
     assert graphics.flush(output)
     assert_includes output.string, 'c=20'
@@ -208,13 +236,13 @@ class TestImagePreview < Minitest::Test
     request(graphics)
     graphics.flush(output)
 
-    output.string = ''
+    output.string = +''
     graphics.clear
     assert graphics.flush(output)
     assert_includes output.string, 'a=d'
     refute graphics.placed?
 
-    output.string = ''
+    output.string = +''
     refute graphics.flush(output), '消した後は何も出さないこと'
   end
 
@@ -224,7 +252,7 @@ class TestImagePreview < Minitest::Test
     request(graphics)
     graphics.flush(output)
 
-    output.string = ''
+    output.string = +''
     graphics.clear_all(output)
     assert_includes output.string, 'd=A'
     refute graphics.placed?
@@ -302,6 +330,55 @@ class TestImagePreview < Minitest::Test
 
       assert graphics.flush(output)
       assert_includes output.string, 'a=d'
+    end
+  end
+
+  def test_the_image_shows_in_the_split_pane_too
+    with_graphics do
+      screen, ui, handler, graphics = renderer_for('shot.png')
+      # プレビューモードに入らず（分割表示のまま）描く
+      refute handler.preview_focused?
+      ui.draw_screen(screen)
+      output = StringIO.new
+
+      assert graphics.flush(output), '分割表示でも画像を送ること'
+      assert_includes output.string, 'a=T'
+      cols = output.string[/c=(\d+)/, 1].to_i
+      assert_operator cols, :>, 0
+      assert_operator cols, :<, 100, 'ペインの幅に収めること'
+    end
+  end
+
+  def test_moving_to_another_file_removes_the_image
+    with_graphics do
+      screen, ui, handler, graphics = renderer_for('shot.png')
+      ui.draw_screen(screen)
+      graphics.flush(StringIO.new)
+
+      handler.select_index(handler.get_active_entries.index { |entry| entry[:name] == 'notes.txt' })
+      screen.clear
+      ui.draw_screen(screen)
+      output = StringIO.new
+
+      assert graphics.flush(output)
+      assert_includes output.string, 'a=d', '画像でないファイルに移ったら消すこと'
+    end
+  end
+
+  def test_an_overlay_hides_the_image
+    with_graphics do
+      ui = Rufio::TerminalUI.new(test_mode: true)
+      graphics = Rufio::GraphicsLayer.new(id: 55)
+      ui.instance_variable_set(:@graphics_layer, graphics)
+      output = StringIO.new
+      graphics.request(key: ['a.png', 1, [1, 1, 10, 5]], payload: 'x', row: 1, col: 1, cols: 10, rows: 5)
+      graphics.flush(output)
+
+      output.string = +''
+      ui.stub(:help_dialog_active?, true) { ui.send(:flush_graphics, output) }
+
+      assert_includes output.string, 'a=d', 'ヘルプを開いている間は画像を消すこと'
+      refute graphics.placed?
     end
   end
 

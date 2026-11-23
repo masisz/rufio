@@ -54,7 +54,8 @@ module Rufio
                    file_preview: nil, background_executor: nil,
                    test_mode: false,
                    left_panel_ratio: 0.5,
-                   preview_enabled: true)
+                   preview_enabled: true,
+                   graphics_layer: nil)
       @screen_width = screen_width
       @screen_height = screen_height
       @keybind_handler = keybind_handler
@@ -64,6 +65,8 @@ module Rufio
       @test_mode = test_mode
       @left_panel_ratio = left_panel_ratio
       @preview_enabled = preview_enabled
+      # 画像プレビュー（端末のグラフィックス機能）。nil なら画像は出さない
+      @graphics_layer = graphics_layer
 
       # Preview cache
       @preview_cache = {}
@@ -141,6 +144,9 @@ module Rufio
     # @param job_mode_instance [JobMode, nil] ジョブモードインスタンス
     def draw_screen(screen, notification_message: nil, fps: nil,
                     in_job_mode: false, job_manager: nil, job_mode_instance: nil)
+      # 画像は毎フレーム出し直しの申告が要る（プレビューを描かないモードでは消える）
+      @graphics_layer&.clear
+
       if in_job_mode
         # ジョブモード: フッタ y=0（上部）、コンテンツ y=1〜h-2、統合行 y=h-1（下部・パス付き）
         content_height = @screen_height - JOB_HEADER_FOOTER_MARGIN
@@ -436,6 +442,9 @@ module Rufio
       # シート一覧（t）を開いている間は、グリッドの代わりに一覧を描く
       sheet_picker_title, sheet_picker_rows = sheet_picker_for(table_layout, height)
 
+      # 画像プレビュー: セルは空白のまま確保し、画素は GraphicsLayer から端末へ送る
+      image_lines = apply_image_preview(screen, selected_entry, content_x, safe_width, height)
+
       # テキストプレビューの `/` 検索: 折り返し後の行から一致行を求めてビューに渡す
       search_query, search_match_rows = apply_text_search(
         wrapped_lines, highlighted_wrapped_lines, height, safe_width,
@@ -464,6 +473,12 @@ module Rufio
           status = @keybind_handler&.preview_view&.status_line || PreviewView::BACK_HINT
           hint = TextUtils.truncate_to_width(" #{status}", safe_width)
           screen.put_string(content_x, line_num, hint + ' ' * (safe_width - TextUtils.display_width(hint)))
+
+        elsif i >= 2 && image_lines
+          # 画像を出せないときだけ、形式と寸法を文字で出す
+          line = image_lines[i - 2]
+          screen.put_string(content_x, line_num,
+                            TextUtils.pad_string_to_width(line ? " #{line}" : '', safe_width))
 
         elsif i >= 2 && sheet_picker_rows
           # シート（SQLite のテーブル / Excel のシート）一覧
@@ -550,6 +565,55 @@ module Rufio
         sheet, safe_width, max_column_width: ConfigLoader.table_preview[:max_column_width]
       ))
       [document, layout, sheet]
+    end
+
+    # 画像プレビューの扱い。
+    # 送れるときは矩形のセルを確保して GraphicsLayer に依頼し、nil を返す（文字は描かない）。
+    # 送れないとき（非対応端末・PNG 以外・大きすぎる）は、ペインに出す説明の行を返す。
+    # @return [Array<String>, nil]
+    def apply_image_preview(screen, selected_entry, content_x, safe_width, height)
+      view = image_view_for(selected_entry)
+      return nil unless view && safe_width > 0
+
+      return view.detail_lines unless view.displayable?
+
+      rows = [height - TABLE_GRID_START_ROW, 1].max
+      top = TABLE_GRID_START_ROW + CONTENT_START_LINE
+      # セルを空白で確保する（通知やフッタが割り込んで画像を削らないようにする）
+      screen.reserve(content_x, top, safe_width, rows)
+      @graphics_layer&.request(
+        key: [view.path, image_mtime(view.path), safe_width, rows],
+        # 送ると決まったときだけ読む（毎フレーム数 MB を読まない）
+        payload: -> { view.payload },
+        row: top + 1, col: content_x + 1, # 端末座標は 1 始まり
+        cols: safe_width, rows: rows
+      )
+      nil
+    end
+
+    # 画像プレビューのビュー。プレビューモード中はそのビュー、分割表示では
+    # 選択中のファイルから作って（パスごとに）キャッシュする
+    def image_view_for(selected_entry)
+      view = @keybind_handler&.preview_view
+      return view if view&.image?
+      return nil unless selected_entry && selected_entry[:type] == 'file'
+      # プレビューモード中に別種別のビューが出ているなら画像ではない
+      return nil if view
+
+      entry = @preview_cache[selected_entry[:path]]
+      return nil unless entry
+
+      unless entry.key?(:image_view)
+        info = ImageSource.read(selected_entry[:path])
+        entry[:image_view] = info ? ImagePreviewView.new(info, path: selected_entry[:path]) : nil
+      end
+      entry[:image_view]
+    end
+
+    def image_mtime(path)
+      File.mtime(path).to_i
+    rescue SystemCallError
+      0
     end
 
     # テキストプレビューの `/` 検索。一致行（折り返し後の行番号）をビューに渡し、
