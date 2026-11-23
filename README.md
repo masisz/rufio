@@ -8,11 +8,12 @@ Add your own actions in Ruby.
 
 [日本語](./README_ja.md) | **English**
 
-1.7.0 previews tabular files as a grid: `.csv`, `.tsv`, `.xlsx`, `.ods` and SQLite databases.
-`hjkl` moves a cell cursor, `y` copies the cell and `Y` the row, `[` and `]` switch sheets or tables,
-`/` opens the list of sheets or tables, and Shift_JIS files are decoded rather than shown as
-replacement characters.
-See the [design and implementation notes](./docs/csv_cell_preview_design_ja.md).
+2.0.0 brings grid previews for tabular files (`.csv`, `.tsv`, `.xlsx`, `.ods` and SQLite),
+terminal image previews via the Kitty graphics protocol (`.png`, `.jpg`, `.bmp`, decoded and scaled
+by the bundled native library), and a single `/` search key across the file list, text previews and
+tables (removing the old `G` mode and `rga` dependency).
+See the [table preview notes](./docs/csv_cell_preview_design_ja.md) and
+[image preview notes](./docs/image_preview_design_ja.md).
 
 ## What Makes rufio Different
 
@@ -41,7 +42,7 @@ rufio brings finding files, running scripts, and checking results together in on
 - **Real-time Preview**: Instantly display file contents with syntax highlighting (via `bat`), including `.zip` entry lists
 - **Images in the Terminal**: `.png`, `.jpg` and `.bmp` are drawn in the preview pane with the Kitty graphics protocol (kitty, Ghostty, WezTerm, Konsole). The bundled native library decodes and scales the picture down to the pane first, with no third-party image code and no external tools; other terminals show the format and dimensions as text
 - **Tables as a Grid**: `.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm`, `.ods` and SQLite databases (with the `sqlite3` command, recognised by file signature) are shown as rows and columns, with the header row fixed while scrolling and automatic decoding of UTF-8, UTF-16, CP932 and EUC-JP
-- **Sheets and Tables**: `[` and `]` switch between a workbook's sheets or a database's tables and `/` opens the list of sheets or tables to pick from, and only the one on screen is read
+- **Sheets and Tables**: `[` and `]` switch between a workbook's sheets or a database's tables and `t` opens the list of sheets or tables to pick from, and only the one on screen is read
 - **Move Between Cells**: In preview mode (`P`), `hjkl` moves a cell cursor through the grid, which scrolls in both directions to follow it
 - **Pick Columns**: `Space` selects columns, and `y` then copies the cursor row's selected columns joined with commas
 - **Copy with `y`**: Copies the cell under the cursor (`Y` for the whole row), or the current and selected file paths in the file list, using your clipboard command or OSC 52 over SSH

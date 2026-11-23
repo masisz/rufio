@@ -55,7 +55,7 @@ class TestKeybindConfig < Minitest::Test
   def test_default_keybinds_search_is_slash
     keybinds = Rufio::ConfigLoader.default_keybinds
     assert_equal '/', keybinds[:search]
-    # 1.7.0 で検索は / 一本に統合した
+    # 2.0.0 で検索は / 一本に統合した
     %i[fzf_search fzf_search_alt file_search file_search_alt rga_search global_search].each do |action|
       refute keybinds.key?(action), "#{action} は廃止したこと"
     end

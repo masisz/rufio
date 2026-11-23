@@ -120,7 +120,7 @@ module Rufio
         @zip_available == true
       end
 
-      # 画像のデコード・縮小 API（1.7.0 で追加）
+      # 画像のデコード・縮小 API（2.0.0 で追加）
       def image_available?
         load! unless @loaded
         @image_available == true

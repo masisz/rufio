@@ -106,7 +106,7 @@ ZIP extraction and compression run as background jobs. Check progress in Jobs mo
 - **Y**: Copy the whole row as one CSV line
 - **[/]**: Previous / next sheet, for a workbook's sheets or a database's tables
 - **/**: Filter the rows. `price > 100, name a%` means price over 100 and a name starting with `a`; a term without a column is searched in every column. `Enter` applies it, `ESC` clears it. A SQLite table is filtered with a read-only `SELECT ... WHERE` inside the database, so rows past the preview's row limit are found too
-- **t**: Open the list of sheets or tables. `j`/`k` or the arrow keys move, `Ctrl+D/U` page, `g/}` jump to the first and last entry, `Enter` opens the selected one, `ESC` or `/` closes the list. `>` marks the sheet on screen. A single-sheet file has no list
+- **t**: Open the list of sheets or tables. `j`/`k` or the arrow keys move, `Ctrl+D/U` page, `g/}` jump to the first and last entry, `Enter` opens the selected one, `ESC` closes the list. `>` marks the sheet on screen. A single-sheet file has no list
 - The line under the file name shows the cell address and the column name, e.g. `R3C2 price`, and the result of a copy
 - **ESC**: Back to the file list
 

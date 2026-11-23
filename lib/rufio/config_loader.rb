@@ -15,7 +15,7 @@ module Rufio
     YAML_CONFIG_PATH = Config::YAML_CONFIG_PATH
     LOCAL_YAML_PATH = Config::LOCAL_YAML_PATH
     # 改名・統合したアクション（旧名 => 新名）。ユーザー設定の旧名も受け付ける。
-    # 1.7.0 で検索を :search 一本にまとめたため、旧 s / / / F / G の設定は :search に移す
+    # 2.0.0 で検索を :search 一本にまとめたため、旧 s / / / F / G の設定は :search に移す
     LEGACY_KEYBIND_ACTIONS = {
       fzf_search: :search, fzf_search_alt: :search,
       file_search: :search, file_search_alt: :search,

@@ -9,8 +9,8 @@ A TUI file manager that executes and coordinates tools and scripts from files.
 - **Tool Runtime** - Execute scripts and rake tasks from command mode
 - **Vim-like Keybindings** - Navigate with `j/k/h/l` keys
 - **Real-time Filtering** - Press `f` to filter files instantly
-- **One Search Key** - Press `/` to search: file names or contents under the current directory, inside a preview, or the rows of a table
-- **Global Search** - Press `G` to search names or contents (including PDF/Excel/PowerPoint) across all bookmarks
+- **One Search Key** - Press `/` to search: file names or contents (including PDF/Excel/PowerPoint) under the current directory, inside a preview, or the rows of a table
+- **Grid & Image Previews** - View `.csv` / `.tsv` / `.xlsx` / `.ods` / SQLite as grids and `.png` / `.jpg` / `.bmp` in Kitty-compatible terminals
 - **ZIP Support** - Preview `.zip` contents, extract or compress selected items with `z`
 - **Bookmark Support** - Quick access to favorite directories
 - **Job Management** - Run commands in the background

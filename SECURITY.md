@@ -49,7 +49,7 @@ rufio is a local TUI tool run by you, on files you can already access.
 
 - A preview reads the file it shows, so a parser bug in a bundled library (`roo` for spreadsheets, Ruby's `csv`) is reachable by moving the cursor onto a file. Previews are bounded (512 KiB of text, 1000 rows, 10 MiB for a spreadsheet) and a file that cannot be parsed falls back to the archive or binary view
 - A SQLite preview runs the `sqlite3` command on the file. A view's body is SQL written by whoever made the file; it is executed read-only and in `-safe` mode where available, and the CLI refuses `writefile()`, `readfile()`, `edit()` and `load_extension()` outside a direct statement. A `sqlite3` older than 3.32 does not carry those refusals
-- The optional native extension under `lib_zig` is not shipped in the gem and has not been independently audited
+- The optional native library (`lib_zig`, prebuilt under `lib/rufio/native/` and compiled with `-O ReleaseSafe`) is shipped in the gem for faster search, directory scanning, and image preview decoding, and has not been independently audited. Image preview native decoding can be disabled with `RUFIO_NATIVE_IMAGE=0`, and image preview itself with `RUFIO_IMAGE_PREVIEW=0`
 
 ---
 
@@ -100,4 +100,4 @@ rufioは、あなた自身がアクセスできるファイルに対して、ロ
 
 - プレビューは対象ファイルを解析するため、同梱ライブラリ（表計算は `roo`、CSV は Ruby の `csv`）の解析不具合にはカーソルを合わせるだけで到達します。読み込み量には上限があり（テキスト 512 KiB、1000 行、表計算 10 MiB）、解析できないファイルはアーカイブ表示またはバイナリ表示に戻ります
 - SQLite のプレビューは `sqlite3` コマンドをファイルに対して実行します。ビューの本体はファイル作成者が書いた SQL です。読み取り専用かつ（対応していれば）`-safe` で実行し、CLI 側も直接の文以外からの `writefile()`・`readfile()`・`edit()`・`load_extension()` を拒否します。3.32 より古い `sqlite3` にはこの拒否がありません
-- `lib_zig` のネイティブ拡張（任意機能）はgemに同梱しておらず、第三者による監査も受けていません
+- `lib_zig` のネイティブライブラリ（`lib/rufio/native/` に `-O ReleaseSafe` でビルド済みバイナリを同梱）は、検索・ディレクトリ走査・画像プレビューのデコード高速化のために利用され、第三者による監査は受けていません。画像プレビューのネイティブデコードは `RUFIO_NATIVE_IMAGE=0`、画像プレビュー自体は `RUFIO_IMAGE_PREVIEW=0` で無効化できます
