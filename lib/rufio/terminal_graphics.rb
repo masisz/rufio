@@ -16,8 +16,12 @@ module Rufio
     QUERY_ID = 31
     # 応答を待つ上限（秒）
     DEFAULT_TIMEOUT = 0.2
+    # 端末応答の読み込み上限（異常な出力でのメモリ枯渇を防ぐ）
+    MAX_RESPONSE_BYTES = 4096
     # セルのピクセル寸法が分からない端末での仮の値
     DEFAULT_CELL_PIXELS = [8, 16].freeze
+    # 異常な端末応答で極端なセル寸法が入るのを防ぐ上限
+    MAX_CELL_PIXELS = 1024
     # Primary DA の応答（これが来たら読み終わり）
     DA_PATTERN = /\e\[\?[0-9;]*c/.freeze
     # CSI 16t の応答: \e[6;<セルの高さ>;<セルの幅>t
@@ -25,6 +29,7 @@ module Rufio
 
     @protocol = nil
     @cell_pixels = DEFAULT_CELL_PIXELS
+    @cell_pixels_known = false
 
     class << self
       # @return [Symbol] :kitty / :none（未判定なら :none）
@@ -41,6 +46,11 @@ module Rufio
         @cell_pixels || DEFAULT_CELL_PIXELS
       end
 
+      # 端末から実測したセル寸法か（既定値 8x16 の仮置きなら false）
+      def cell_pixels_known?
+        @cell_pixels_known == true
+      end
+
       def detected?
         !@protocol.nil?
       end
@@ -52,13 +62,18 @@ module Rufio
 
         @protocol = :none
         @cell_pixels = DEFAULT_CELL_PIXELS
+        @cell_pixels_known = false
         return @protocol unless enabled?(env)
 
         response = ask(input, output, timeout)
         return @protocol if response.nil?
 
         @protocol = KittyGraphics.ok?(response, id: QUERY_ID) ? :kitty : :none
-        @cell_pixels = parse_cell_pixels(response) || DEFAULT_CELL_PIXELS
+        measured = parse_cell_pixels(response) || native_cell_pixels(output)
+        if measured
+          @cell_pixels = measured
+          @cell_pixels_known = true
+        end
         @protocol
       end
 
@@ -66,9 +81,20 @@ module Rufio
       def reset!
         @protocol = nil
         @cell_pixels = DEFAULT_CELL_PIXELS
+        @cell_pixels_known = false
       end
 
       private
+
+      # CSI 16t に応答しない端末では、ネイティブの TIOCGWINSZ からセル寸法を補う
+      def native_cell_pixels(output)
+        return nil unless output.respond_to?(:tty?) && output.tty?
+        return nil unless defined?(NativeImage)
+
+        NativeImage.cell_pixels
+      rescue StandardError
+        nil
+      end
 
       # 設定より手前の足切り。Windows の端末と tmux / screen の中では既定で使わない
       def enabled?(env)
@@ -108,7 +134,7 @@ module Rufio
           break if chunk.nil? || chunk.empty?
 
           buffer << chunk
-          break if buffer.match?(DA_PATTERN)
+          break if buffer.bytesize >= MAX_RESPONSE_BYTES || buffer.match?(DA_PATTERN)
         end
         buffer
       end
@@ -133,7 +159,7 @@ module Rufio
 
         height = match[1].to_i
         width = match[2].to_i
-        return nil unless width.positive? && height.positive?
+        return nil unless width.between?(1, MAX_CELL_PIXELS) && height.between?(1, MAX_CELL_PIXELS)
 
         [width, height]
       end

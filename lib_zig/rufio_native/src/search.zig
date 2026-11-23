@@ -170,17 +170,21 @@ pub fn countNewlines(bytes: []const u8) usize {
     const zero: Vec = @splat(0);
     var total: usize = 0;
     var i: usize = 0;
-    while (i + VLEN <= bytes.len) {
-        var acc: Vec = zero;
-        var rounds: usize = 0;
-        while (rounds < 255 and i + VLEN <= bytes.len) : ({
-            rounds += 1;
-            i += VLEN;
-        }) {
-            const v: Vec = bytes[i..][0..VLEN].*;
-            acc += @select(u8, v == nl, one, zero);
+    if (bytes.len >= VLEN) {
+        const limit = bytes.len - VLEN;
+        while (i <= limit) {
+            var acc: Vec = zero;
+            var rounds: usize = 0;
+            while (rounds < 255 and i <= limit) : ({
+                rounds += 1;
+                i += VLEN;
+            }) {
+                const v: Vec = bytes[i..][0..VLEN].*;
+                acc +%= @select(u8, v == nl, one, zero);
+            }
+            const wide: @Vector(VLEN, u16) = acc;
+            total += @reduce(.Add, wide);
         }
-        total += @reduce(.Add, @as(@Vector(VLEN, u16), acc));
     }
     for (bytes[i..]) |b| total += @intFromBool(b == '\n');
     return total;

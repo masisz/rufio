@@ -45,6 +45,7 @@ module Rufio
       @job = nil
       @job_key = nil
       @decoded = nil
+      @needs_redraw = false
       reset_zoom
     end
 
@@ -94,6 +95,54 @@ module Rufio
 
       start_decode
       @decoded.nil? && !@job.nil? && @job.running?
+    end
+
+    # 非同期デコードの完了をポーリングする（メインループから毎フレーム呼ぶ）。
+    # 結果が確定し、まだ描画側へ渡していないときだけ true を返す
+    def poll
+      return false if @released
+
+      start_decode if @job && @decoded.nil? && !@job.running?
+      return false unless @needs_redraw
+
+      @needs_redraw = false
+      true
+    end
+
+    # 元のアスペクト比を保ち、画面（ペイン）に無理にフィットさせない配置サイズを決める。
+    #
+    # - 拡大しない（ペインより小さい画像は元のサイズのまま）
+    # - ペインより大きい画像は元のアスペクト比を保って収める
+    # - 等倍かつセル寸法が実測済みで、転送する画像がペイン内に収まっていれば c / r を
+    #   省略（nil）し、端末に実ピクセルのまま描画させる（丸めによる歪みも防ぐ）
+    #
+    # @return [Hash] { cols: Integer|nil, rows: Integer|nil, area_rows: Integer }
+    def placement(max_cols:, max_rows:, cell_pixels:, cell_pixels_known: false)
+      cell_w = [cell_pixels[0].to_i, 1].max
+      cell_h = [cell_pixels[1].to_i, 1].max
+      pane_w = max_cols * cell_w
+      pane_h = max_rows * cell_h
+
+      src_w, src_h = source_dimensions
+      if src_w <= 0 || src_h <= 0
+        return { cols: max_cols, rows: max_rows, area_rows: max_rows }
+      end
+
+      # 拡大はせず、ペインに収まる範囲で元のアスペクト比を保つ
+      scale = [1.0, pane_w.to_f / src_w, pane_h.to_f / src_h].min
+      disp_w = src_w * scale
+      disp_h = src_h * scale
+      area_rows = (disp_h / cell_h.to_f).ceil.clamp(1, max_rows)
+
+      trans_w, trans_h = transmitted_size
+      if !zoomed? && cell_pixels_known && trans_w.positive? && trans_h.positive? &&
+         trans_w <= pane_w && trans_h <= pane_h
+        return { cols: nil, rows: nil, area_rows: area_rows }
+      end
+
+      disp_cols = (disp_w / cell_w.to_f).round.clamp(1, max_cols)
+      disp_rows = (disp_h / cell_h.to_f).round.clamp(1, max_rows)
+      { cols: disp_cols, rows: disp_rows, area_rows: disp_rows }
     end
 
     # 端末へ渡すもの。まだ用意できていなければ nil
@@ -219,6 +268,7 @@ module Rufio
       start_decode
       return nil if @decoded.nil?
 
+      @needs_redraw = false
       {
         key: @decoded[:key],
         payload: @decoded[:payload],
@@ -228,8 +278,14 @@ module Rufio
       }
     end
 
+    # TOCTOU でファイルが差し替えられても上限を超えてメモリに読まない
     def read_file
-      File.binread(@path)
+      return nil unless File.file?(@path)
+
+      data = File.binread(@path, DIRECT_MAX_BYTES + 1)
+      return nil if data.nil? || data.bytesize > DIRECT_MAX_BYTES
+
+      data
     rescue SystemCallError, IOError
       nil
     end
@@ -266,12 +322,22 @@ module Rufio
       if @job.done?
         payload = @job.payload
         info = @job.info
-        @decoded = { key: key, payload: payload, size: [info[:width], info[:height]] } if payload && info
+        # 結果を Ruby 側へ取り込んだらネイティブハンドルとスレッド資源を即解放する
+        @job.close
+        @job = nil
+        if payload && info
+          @decoded = { key: key, payload: payload, size: [info[:width], info[:height]] }
+          @needs_redraw = true
+        else
+          @native_failed = true
+          @needs_redraw = true
+        end
       elsif @job.failed?
         # デコードできなかった画像は、以後ネイティブ経路を使わない
         @job.close
         @job = nil
         @native_failed = true
+        @needs_redraw = true
       end
     end
 
@@ -281,12 +347,19 @@ module Rufio
       @job = nil
       @job_key = nil
       @decoded = nil
+      @needs_redraw = false
     end
 
     def mtime
       File.mtime(@path).to_i
     rescue SystemCallError
       0
+    end
+
+    def source_dimensions
+      return [@info.width, @info.height] if @info&.dimensions?
+
+      transmitted_size
     end
 
     # === 表示 ===

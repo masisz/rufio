@@ -9,8 +9,8 @@
 ZIG := zig
 RUBY := ruby
 
-# コンパイルフラグ
-ZIG_FLAGS := -O ReleaseFast -dynamic -lc
+# コンパイルフラグ（外部ファイル解析の境界・オーバーフロー検証を保つため ReleaseSafe）
+ZIG_FLAGS := -O ReleaseSafe -dynamic -lc
 
 # ターゲット
 TARGET := librufio_zig.dylib
@@ -61,7 +61,7 @@ dist: $(SOURCES)
 		mkdir -p $(BUILD_DIR)/$$dir $(NATIVE_DIR)/$$dir || exit 1; \
 		$(ZIG) build-lib $(SRC) -target $$triple $(ZIG_FLAGS) -fstrip \
 			-femit-bin=$(BUILD_DIR)/$$dir/$$file || exit 1; \
-		cp $(BUILD_DIR)/$$dir/$$file $(NATIVE_DIR)/$$dir/$$file || exit 1; \
+		rm -f $(NATIVE_DIR)/$$dir/$$file && cp $(BUILD_DIR)/$$dir/$$file $(NATIVE_DIR)/$$dir/$$file || exit 1; \
 	done
 
 clean:

@@ -24,7 +24,7 @@ module Rufio
     DEFAULT_CACHE_BYTES = 8 * 1024 * 1024
 
     Placement = Struct.new(:source, :key, :payload, :encoded, :row, :col, :cols, :rows,
-                           :format, :pixels, :crop, keyword_init: true)
+                           :area_rows, :format, :pixels, :crop, keyword_init: true)
 
     attr_reader :id
 
@@ -55,14 +55,16 @@ module Rufio
     # @param crop [Array(Integer, Integer, Integer, Integer), nil] 元画像から切り出す
     #   領域 [x, y, 幅, 高さ]（ズーム）。nil なら全体
     # @param encoded [Boolean] payload が既に Base64 済みなら true（ネイティブ経路）
-    def request(source:, payload:, row:, col:, cols:, rows:, encoded: false,
+    def request(source:, payload:, row:, col:, cols: nil, rows: nil, area_rows: nil, encoded: false,
                 format: KittyGraphics::FORMAT_PNG, pixels: nil, crop: nil, now: monotonic)
       # 別のファイルに移ったときだけ待つ（最初の 1 枚と置き直しは待たせない）
       @pending_since = now if @last_source && @last_source != source
       @last_source = source
+      occupied_rows = (area_rows || rows).to_i
       @desired = Placement.new(source: source, key: [source, row, col, cols, rows, crop],
                                payload: payload, encoded: encoded, row: row, col: col,
-                               cols: cols, rows: rows, format: format, pixels: pixels, crop: crop)
+                               cols: cols, rows: rows, area_rows: occupied_rows,
+                               format: format, pixels: pixels, crop: crop)
       true
     end
 
@@ -127,9 +129,10 @@ module Rufio
     # 画像の矩形（端末座標の 1 始まり）と、書き換えられた画面行（0 始まり）が重なるか
     def painted_over?(rewritten_rows)
       return false if rewritten_rows.nil? || rewritten_rows.empty?
+      return false unless @placed.area_rows.to_i.positive?
 
       top = @placed.row - 1
-      bottom = top + @placed.rows - 1
+      bottom = top + @placed.area_rows - 1
       rewritten_rows.any? { |row| row >= top && row <= bottom }
     end
 

@@ -117,4 +117,18 @@ class TestTerminalGraphics < Minitest::Test
 
     refute Rufio::TerminalGraphics.supported?, '書けない端末でも落ちずに非対応にすること'
   end
+
+  def test_huge_terminal_response_is_bounded
+    flood = 'A' * (Rufio::TerminalGraphics::MAX_RESPONSE_BYTES * 4) + "\e_Gi=31;OK\e\\\e[?62;c"
+    detect(flood)
+
+    refute Rufio::TerminalGraphics.supported?, '応答サイズ上限を超えた後ろは読まないこと'
+  end
+
+  def test_out_of_range_cell_size_is_ignored
+    detect("\e_Gi=31;OK\e\\\e[6;999999;999999t\e[?62;c")
+
+    assert_equal Rufio::TerminalGraphics::DEFAULT_CELL_PIXELS, Rufio::TerminalGraphics.cell_pixels
+    refute Rufio::TerminalGraphics.cell_pixels_known?, '異常なセル寸法は実測済みとして扱わないこと'
+  end
 end

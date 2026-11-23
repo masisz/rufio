@@ -86,3 +86,10 @@ test "extension helpers follow Ruby semantics" {
     try std.testing.expectEqualStrings("", search.extname("Makefile"));
     try std.testing.expectEqualStrings(".gz", search.extname("a.tar.gz"));
 }
+
+test "counts newlines across large chunks without overflow" {
+    const buf = try std.testing.allocator.alloc(u8, 300 * 1024);
+    defer std.testing.allocator.free(buf);
+    @memset(buf, '\n');
+    try std.testing.expectEqual(@as(usize, 300 * 1024), search.countNewlines(buf));
+}

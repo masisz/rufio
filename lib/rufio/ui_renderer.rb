@@ -71,6 +71,7 @@ module Rufio
       # Preview cache
       @preview_cache = {}
       @last_preview_path = nil
+      @active_image_view = nil
 
       # Syntax highlighter（bat が利用可能な場合のみ動作）
       @syntax_highlighter = SyntaxHighlighter.new
@@ -97,8 +98,17 @@ module Rufio
     # ============================
 
     def clear_preview_cache
+      @preview_cache.each_value { |entry| entry[:image_view]&.release }
       @preview_cache.clear
       @last_preview_path = nil
+      @active_image_view = nil
+    end
+
+    # 非同期画像デコードの完了をポーリングする（メインループから毎フレーム呼ぶ）
+    def poll_image_preview
+      return false unless @active_image_view
+
+      @active_image_view.poll
     end
 
     def clear_bookmark_cache
@@ -146,6 +156,7 @@ module Rufio
                     in_job_mode: false, job_manager: nil, job_mode_instance: nil)
       # 画像は毎フレーム出し直しの申告が要る（プレビューを描かないモードでは消える）
       @graphics_layer&.clear
+      @active_image_view = nil
 
       if in_job_mode
         # ジョブモード: フッタ y=0（上部）、コンテンツ y=1〜h-2、統合行 y=h-1（下部・パス付き）
@@ -355,6 +366,7 @@ module Rufio
            (cache_entry[:max_lines] || 0) < max_lines
           full_preview = @file_preview.preview_file(selected_entry[:path], max_lines: max_lines)
           preview_content = extract_preview_lines(full_preview)
+          existing_image_view = cache_entry&.dig(:image_view)
           @preview_cache[selected_entry[:path]] = {
             content: preview_content,
             preview_data: full_preview,
@@ -363,6 +375,7 @@ module Rufio
             wrapped: {},
             highlighted_wrapped: {}
           }
+          @preview_cache[selected_entry[:path]][:image_view] = existing_image_view if cache_entry&.key?(:image_view)
           @last_preview_path = selected_entry[:path]
         else
           preview_content = cache_entry[:content]
@@ -575,6 +588,7 @@ module Rufio
       view = image_view_for(selected_entry)
       return nil unless view && safe_width > 0
 
+      @active_image_view = view
       rows = [height - TABLE_GRID_START_ROW, 1].max
       top = TABLE_GRID_START_ROW + CONTENT_START_LINE
       # ペインの実ピクセルを伝える（ネイティブのデコードはこの大きさに合わせる）
@@ -589,6 +603,12 @@ module Rufio
 
       # セルを空白で確保する（通知やフッタが割り込んで画像を削らないようにする）
       screen.reserve(content_x, top, safe_width, rows)
+      placement = view.placement(
+        max_cols: safe_width,
+        max_rows: rows,
+        cell_pixels: cell,
+        cell_pixels_known: TerminalGraphics.cell_pixels_known?
+      )
       @graphics_layer&.request(
         source: transfer[:key],
         # 直送のときは、送ると決まってから初めてファイルを読む
@@ -597,7 +617,8 @@ module Rufio
         format: transfer[:format],
         pixels: transfer[:pixels],
         row: top + 1, col: content_x + 1, # 端末座標は 1 始まり
-        cols: safe_width, rows: rows,
+        cols: placement[:cols], rows: placement[:rows],
+        area_rows: placement[:area_rows],
         crop: view.crop
       )
       nil

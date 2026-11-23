@@ -48,24 +48,30 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8, max_pixels: u64) Error
     const height: u32 = @intCast(@abs(height_raw));
     // 高さが正なら下から上へ並ぶ（bottom-up）
     const bottom_up = height_raw > 0;
+    if (width > 16384 or height > 16384) return Error.TooLarge;
     if (@as(u64, width) * height > max_pixels) return Error.TooLarge;
 
+    // header_size の加算オーバーフローを防ぐ
+    if (header_size > data.len or data.len - header_size < 14) return Error.InvalidBmp;
     // 8bit はパレット（BGRA の並び）を見る
-    const palette_offset = 14 + header_size;
+    const palette_offset: usize = 14 + @as(usize, header_size);
     const palette: []const u8 = if (bits == 8) blk: {
         if (palette_offset + 4 > data.len) return Error.InvalidBmp;
-        const end = @min(pixel_offset, data.len);
+        const end = @min(@as(usize, pixel_offset), data.len);
         if (end <= palette_offset) return Error.InvalidBmp;
         break :blk data[palette_offset..end];
     } else &.{};
 
-    const src_stride = ((@as(usize, width) * bits / 8) + 3) & ~@as(usize, 3); // 4 バイト境界
+    const raw_row_bytes = std.math.mul(usize, width, bits / 8) catch return Error.TooLarge;
+    const src_stride = (raw_row_bytes + 3) & ~@as(usize, 3); // 4 バイト境界
+    const required_body = std.math.mul(usize, src_stride, height) catch return Error.TooLarge;
     if (pixel_offset >= data.len) return Error.InvalidBmp;
     const body = data[pixel_offset..];
-    if (body.len < src_stride * height) return Error.InvalidBmp;
+    if (body.len < required_body) return Error.InvalidBmp;
 
     const channels: u8 = if (bits == 32) 4 else 3;
-    const pixels = alloc.alloc(u8, @as(usize, width) * height * channels) catch return Error.OutOfMemory;
+    const out_bytes = std.math.mul(usize, std.math.mul(usize, width, height) catch return Error.TooLarge, channels) catch return Error.TooLarge;
+    const pixels = alloc.alloc(u8, out_bytes) catch return Error.OutOfMemory;
     errdefer alloc.free(pixels);
 
     var y: u32 = 0;

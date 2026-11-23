@@ -45,10 +45,12 @@ module Rufio
         return nil unless available?
 
         target = path.to_s
-        return nil if target.empty?
+        return nil if target.empty? || target.include?("\0")
 
+        clamped_w = max_w.to_i.clamp(0, 65_535)
+        clamped_h = max_h.to_i.clamp(0, 65_535)
         handle = NativeScannerZigFFI.core_image_create(target, target.bytesize,
-                                                       [max_w.to_i, 0].max, [max_h.to_i, 0].max, format)
+                                                       clamped_w, clamped_h, format)
         return nil if handle.zero?
 
         Job.new(handle)
@@ -73,15 +75,26 @@ module Rufio
     # 実行中のデコード。ハンドルだけを持ち、結果は done になってから取り出す
     class Job
       def initialize(handle)
-        @handle = handle
+        @handle_box = [handle]
         @payload = nil
         @info = nil
+        ObjectSpace.define_finalizer(self, self.class.finalizer(@handle_box))
+      end
+
+      def self.finalizer(handle_box)
+        proc do
+          handle = handle_box[0]
+          if handle && !handle.zero?
+            handle_box[0] = 0
+            NativeScannerZigFFI.core_image_destroy(handle)
+          end
+        end
       end
 
       def state
         return STATE_FAILED if closed?
 
-        NativeScannerZigFFI.core_image_state(@handle)
+        NativeScannerZigFFI.core_image_state(handle)
       end
 
       def running?
@@ -104,7 +117,7 @@ module Rufio
         slots = Array.new(4) { Fiddle::Pointer.malloc(4, Fiddle::RUBY_FREE) }
         channels = Fiddle::Pointer.malloc(1, Fiddle::RUBY_FREE)
         kind = Fiddle::Pointer.malloc(1, Fiddle::RUBY_FREE)
-        result = NativeScannerZigFFI.core_image_info(@handle, slots[0], slots[1], slots[2], slots[3],
+        result = NativeScannerZigFFI.core_image_info(handle, slots[0], slots[1], slots[2], slots[3],
                                                      channels, kind)
         return nil unless result.zero?
 
@@ -124,7 +137,7 @@ module Rufio
         return nil if closed? || !done?
 
         length = Fiddle::Pointer.malloc(8, Fiddle::RUBY_FREE)
-        pointer = NativeScannerZigFFI.core_image_payload(@handle, length)
+        pointer = NativeScannerZigFFI.core_image_payload(handle, length)
         return nil if pointer.null?
 
         size = length[0, 8].unpack1('J')
@@ -136,20 +149,28 @@ module Rufio
       def cancel
         return if closed?
 
-        NativeScannerZigFFI.core_image_cancel(@handle)
+        NativeScannerZigFFI.core_image_cancel(handle)
       end
 
       # ハンドルを解放する（実行中のスレッドの終了を待つ）
       def close
         return if closed?
 
-        handle = @handle
-        @handle = 0
-        NativeScannerZigFFI.core_image_destroy(handle)
+        current = @handle_box[0]
+        @handle_box[0] = 0
+        ObjectSpace.undefine_finalizer(self)
+        NativeScannerZigFFI.core_image_destroy(current)
       end
 
       def closed?
-        @handle.nil? || @handle.zero?
+        h = handle
+        h.nil? || h.zero?
+      end
+
+      private
+
+      def handle
+        @handle_box[0]
       end
     end
   end

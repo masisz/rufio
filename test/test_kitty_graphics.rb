@@ -36,6 +36,15 @@ class TestKittyGraphics < Minitest::Test
     assert_includes control, 't=d'
   end
 
+  def test_omitting_cols_and_rows_keeps_native_aspect_ratio
+    sequence = Rufio::KittyGraphics.transmit(id: 7, payload: 'hello', cols: nil, rows: nil)
+    control, = chunks(sequence).first
+
+    assert_includes control, 'a=T'
+    refute_match(/(?:\A|,)c=/, control, 'cols を省略したら c= を付けないこと')
+    refute_match(/(?:\A|,)r=/, control, 'rows を省略したら r= を付けないこと')
+  end
+
   def test_the_cursor_is_not_moved_and_responses_are_suppressed
     control, = chunks(Rufio::KittyGraphics.transmit(id: 1, payload: 'a', cols: 1, rows: 1)).first
 
@@ -129,5 +138,19 @@ class TestKittyGraphics < Minitest::Test
 
     assert_equal wrapped.scan("\ePtmux;").length, wrapped.scan("\e\e_G").length,
                  'チャンクごとに包むこと'
+  end
+
+  # === セキュリティ ===
+
+  def test_encoded_payload_rejects_escape_sequence_injection
+    malicious = "AAAA\e\\\e]52;c;aGVsbG8=\a"
+    assert_equal '', Rufio::KittyGraphics.transmit(id: 1, payload: malicious, encoded: true)
+    assert_equal '', Rufio::KittyGraphics.place_at(row: 1, col: 1, id: 1, payload: malicious, encoded: true)
+  end
+
+  def test_query_sanitizes_image_id_as_integer
+    sequence = Rufio::KittyGraphics.query(id: "31\e\\;injected")
+    assert_includes sequence, 'i=31,'
+    refute_includes sequence, 'injected'
   end
 end

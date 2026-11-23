@@ -15,6 +15,8 @@ module Rufio
     FORMAT_PNG = 100
     FORMAT_RGB = 24
     FORMAT_RGBA = 32
+    # Base64 ペイロードに許す文字だけを通し、APC 終了や任意のエスケープ注入を防ぐ
+    BASE64_PATTERN = /\A[A-Za-z0-9+\/=]*\z/.freeze
 
     class << self
       # 画像を転送して表示する（左上は送信時のカーソル位置）
@@ -29,9 +31,11 @@ module Rufio
       # @param crop [Array(Integer, Integer, Integer, Integer), nil] 元画像から切り出す
       #   領域 [x, y, 幅, 高さ]（ズーム）
       # @param encoded [Boolean] payload が既に Base64 済みなら true
-      def transmit(id:, payload:, cols:, rows:, format: FORMAT_PNG, placement: 1,
+      def transmit(id:, payload:, cols: nil, rows: nil, format: FORMAT_PNG, placement: 1,
                    pixels: nil, crop: nil, chunk: CHUNK, passthrough: false, encoded: false)
         data = encoded ? payload.to_s : [payload.to_s].pack('m0')
+        return '' if encoded && !BASE64_PATTERN.match?(data)
+
         pieces = split(data, chunk)
         control = control_keys(id: id, cols: cols, rows: rows, format: format,
                                placement: placement, pixels: pixels, crop: crop)
@@ -49,18 +53,21 @@ module Rufio
       # カーソルを矩形の左上（1 始まり）へ動かしてから送り、カーソルを戻す。
       # C=1 を付けているのでカーソルは動かないが、位置の起点をはっきりさせる
       def place_at(row:, col:, passthrough: false, **options)
-        move = "\e[#{row};#{col}H"
-        "#{move}#{transmit(passthrough: passthrough, **options)}\e[H"
+        body = transmit(passthrough: passthrough, **options)
+        return '' if body.empty?
+
+        move = "\e[#{row.to_i};#{col.to_i}H"
+        "#{move}#{body}\e[H"
       end
 
       # 既に送った画像を、送り直さずに今のカーソル位置へ置く
       def place(id:, cols:, rows:, placement: 1, passthrough: false)
-        keys = ["a=p", "i=#{id}", "p=#{placement}", "c=#{cols}", "r=#{rows}", 'C=1', 'q=2']
+        keys = ['a=p', "i=#{id.to_i}", "p=#{placement.to_i}", "c=#{cols.to_i}", "r=#{rows.to_i}", 'C=1', 'q=2']
         sequence(keys.join(','), passthrough: passthrough)
       end
 
       def delete(id:, passthrough: false)
-        sequence("a=d,d=i,i=#{id},q=2", passthrough: passthrough)
+        sequence("a=d,d=i,i=#{id.to_i},q=2", passthrough: passthrough)
       end
 
       def delete_all(passthrough: false)
@@ -69,7 +76,7 @@ module Rufio
 
       # 対応判定用の問い合わせ（1x1 の RGB を送って応答だけを見る）
       def query(id:, passthrough: false)
-        sequence("i=#{id},s=1,v=1,a=q,t=d,f=24;AAAA", passthrough: passthrough)
+        sequence("i=#{id.to_i},s=1,v=1,a=q,t=d,f=24;AAAA", passthrough: passthrough)
       end
 
       # 応答が「この問い合わせへの OK」かどうか
@@ -80,18 +87,21 @@ module Rufio
       private
 
       def control_keys(id:, cols:, rows:, format:, placement:, pixels:, crop: nil)
-        keys = ['a=T', "f=#{format}", 't=d', "i=#{id}", "p=#{placement}",
-                "c=#{cols}", "r=#{rows}", 'C=1', 'q=2']
+        keys = ['a=T', "f=#{format.to_i}", 't=d', "i=#{id.to_i}", "p=#{placement.to_i}"]
+        # c / r を両方省略すると端末は画像の元ピクセル（元アスペクト比）のまま描画する
+        keys << "c=#{cols.to_i}" if cols && cols.to_i.positive?
+        keys << "r=#{rows.to_i}" if rows && rows.to_i.positive?
+        keys.concat(['C=1', 'q=2'])
         if pixels
-          keys << "s=#{pixels[0]}"
-          keys << "v=#{pixels[1]}"
+          keys << "s=#{pixels[0].to_i}"
+          keys << "v=#{pixels[1].to_i}"
         end
         if crop
           # 元画像の一部だけを同じセル矩形に出す（ズーム）
-          keys << "x=#{crop[0]}"
-          keys << "y=#{crop[1]}"
-          keys << "w=#{crop[2]}"
-          keys << "h=#{crop[3]}"
+          keys << "x=#{crop[0].to_i}"
+          keys << "y=#{crop[1].to_i}"
+          keys << "w=#{crop[2].to_i}"
+          keys << "h=#{crop[3].to_i}"
         end
         keys.join(',')
       end

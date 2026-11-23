@@ -299,4 +299,91 @@ class TestNativeImage < Minitest::Test
     assert_includes output.string, 'a=T'
     assert_includes output.string, 'f=100'
   end
+
+  def test_polling_reports_when_background_decoding_finishes
+    native_or_skip
+    screen, ui, handler, graphics = renderer_for('gradient.jpg')
+    assert handler.focus_preview_pane
+
+    # 1 フレーム目はデコード開始（まだ結果はない）
+    ui.draw_screen(screen)
+    refute graphics.flush(StringIO.new)
+
+    # メインループ相当: 入力が無くても poll_image_preview が完了を検知して true を返す
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
+    ready = false
+    until ready
+      flunk 'poll_image_preview が完了を報告しない' if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      ready = ui.poll_image_preview
+      sleep 0.005 unless ready
+    end
+
+    # 完了検知後の 2 回目は false（不要な再描画を繰り返さない）
+    refute ui.poll_image_preview
+
+    screen.clear
+    ui.draw_screen(screen)
+    output = StringIO.new
+    assert graphics.flush(output), '完了後の再描画で画像が送られること'
+    assert_includes output.string, 'a=T'
+  end
+
+  def test_returning_to_a_decoded_image_reuses_the_cached_view
+    native_or_skip
+    screen, ui, handler, graphics = renderer_for('gradient.jpg')
+    ui.draw_screen(screen)
+
+    # 完了を待つ
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
+    until ui.poll_image_preview
+      flunk 'デコードが終わらない' if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      sleep 0.005
+    end
+    screen.clear
+    ui.draw_screen(screen)
+    assert graphics.flush(StringIO.new)
+
+    # 別のファイルに移ってから戻る
+    entries = handler.get_active_entries
+    handler.select_index(entries.index { |e| e[:name] == 'notes.txt' })
+    screen.clear
+    ui.draw_screen(screen)
+    graphics.flush(StringIO.new)
+
+    handler.select_index(entries.index { |e| e[:name] == 'gradient.jpg' })
+    screen.clear
+    ui.draw_screen(screen)
+    output = StringIO.new
+    # デコードし直さず、即座に画像が送られること
+    assert graphics.flush(output), '同じ画像へ戻ったときに再デコード待ちにならないこと'
+    assert_includes output.string, 'a=T'
+  end
+
+  # === セキュリティ ===
+
+  def test_null_byte_in_path_is_rejected
+    native_or_skip
+    assert_nil Rufio::NativeImage.decode("#{path('gradient.png')}\0.jpg", max_w: 8, max_h: 8)
+  end
+
+  def test_fifo_does_not_hang_and_fails_immediately
+    native_or_skip
+    skip 'POSIX のみ' unless File.respond_to?(:mkfifo)
+
+    fifo = path('trap.png')
+    File.mkfifo(fifo)
+    job = settle(Rufio::NativeImage.decode(fifo, max_w: 8, max_h: 8), timeout: 1)
+
+    assert job.failed?, '名前付きパイプ（FIFO）でハングせず失敗すること'
+    job.close
+  end
+
+  def test_completed_native_job_is_closed_immediately_after_fetching_result
+    native_or_skip
+    view = settle_view(view_for('gradient.jpg', pixels: [8, 8]))
+
+    refute_nil view.transfer
+    assert_nil view.instance_variable_get(:@job), '結果を取り込んだらネイティブジョブを即解放すること'
+    view.release
+  end
 end

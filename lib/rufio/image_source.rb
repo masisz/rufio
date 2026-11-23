@@ -129,7 +129,11 @@ module Rufio
           end
 
           marker = header.getbyte(offset + 1)
-          offset += 2 and next if marker == 0xff || marker.nil?
+          break if marker.nil?
+          if marker == 0xff
+            offset += 1
+            next
+          end
 
           # 長さを持たないマーカー（RSTn / SOI / EOI / TEM）
           if (0xd0..0xd9).cover?(marker) || marker == 0x01

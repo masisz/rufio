@@ -322,6 +322,20 @@ class TestImagePreview < Minitest::Test
     assert graphics.flush(output, rewritten_rows: [6])
   end
 
+  def test_unscaled_image_still_detects_paint_over_using_area_rows
+    graphics = layer
+    output = StringIO.new
+    graphics.request(source: ['a.png', 1], payload: 'png-bytes',
+                     row: 5, col: 3, cols: nil, rows: nil, area_rows: 3)
+    assert graphics.flush(output)
+    refute_match(/(?:\A|,)c=/, output.string)
+    refute_match(/(?:\A|,)r=/, output.string)
+
+    output.string = +''
+    refute graphics.flush(output, rewritten_rows: [3, 7])
+    assert graphics.flush(output, rewritten_rows: [5]), 'area_rows の範囲が書き換わったら再送すること'
+  end
+
   # === Phase 2: デバウンス ===
 
   def test_switching_files_removes_the_old_image_and_waits
@@ -596,6 +610,75 @@ class TestImagePreview < Minitest::Test
 
       refute graphics.flush(StringIO.new)
       assert_includes screen_text(screen, 20), 'hello'
+    end
+  end
+
+  # === アスペクト比保持（画面に無理にフィットさせない） ===
+
+  def test_a_large_image_preserves_its_aspect_ratio_instead_of_stretching_to_the_pane
+    # 100x20 の画面、フルスクリーン（safe_width=100, rows=15, 既定セル 8x16 → ペイン 800x240 px）
+    # 400x300 (4:3) を高さ 240px に収めると 320x240px → 40x15 セル（100x15 に引き伸ばさない）
+    with_graphics do
+      screen, ui, handler, graphics = renderer_for('shot.png', width: 100, height: 20)
+      handler.focus_preview_pane
+      ui.draw_screen(screen)
+      output = StringIO.new
+
+      assert graphics.flush(output)
+      cols = output.string[/c=(\d+)/, 1].to_i
+      rows = output.string[/r=(\d+)/, 1].to_i
+      assert_equal 15, rows
+      assert_equal 40, cols, 'ペイン全幅(100)に引き伸ばさず 4:3 の幅に収めること'
+    end
+  end
+
+  def test_a_small_image_is_not_stretched_to_fit_the_pane
+    write_png('tiny.png', 80, 64) # 既定セル 8x16 なら 10x4 セル相当（ペイン 100x16 よりずっと小さい）
+    with_graphics do
+      screen, ui, handler, graphics = renderer_for('tiny.png', width: 100, height: 20)
+      handler.focus_preview_pane
+      ui.draw_screen(screen)
+      output = StringIO.new
+
+      assert graphics.flush(output)
+      cols = output.string[/c=(\d+)/, 1].to_i
+      rows = output.string[/r=(\d+)/, 1].to_i
+      assert_equal 10, cols, '小さい画像をペイン幅まで拡大しないこと'
+      assert_equal 4, rows, '小さい画像をペイン高さまで拡大しないこと'
+    end
+  end
+
+  def test_an_image_within_the_pane_omits_c_and_r_when_cell_pixels_are_known
+    write_png('tiny.png', 80, 64)
+    # CSI 16t でセル寸法（10x20）が取得済みの状態にする
+    Rufio::TerminalGraphics.detect!(
+      input: StringIO.new("\e_Gi=31;OK\e\\\e[6;20;10t\e[?62;c"),
+      output: StringIO.new,
+      env: {},
+      timeout: 0.05
+    )
+    Rufio::NativeImage.stub(:available?, false) do
+      screen, ui, handler, graphics = renderer_for('tiny.png', width: 100, height: 20)
+      handler.focus_preview_pane
+      ui.draw_screen(screen)
+      output = StringIO.new
+
+      assert graphics.flush(output)
+      refute_match(/(?:\A|,)c=/, output.string, 'ペイン内に収まる画像は c= を付けず実ピクセルで出すこと')
+      refute_match(/(?:\A|,)r=/, output.string, 'ペイン内に収まる画像は r= を付けず実ピクセルで出すこと')
+    end
+  end
+
+  # === セキュリティ ===
+
+  def test_direct_read_enforces_size_limit_even_if_file_grows_after_header_read
+    with_graphics(native: false) do
+      view = Rufio::PreviewView.build(@png)
+      # ヘッダ読み込み後にファイルが上限を超えて肥大化した（TOCTOU）ケースを再現
+      oversized = 'x' * (Rufio::ImagePreviewView::DIRECT_MAX_BYTES + 1)
+      File.stub(:binread, ->(_path, _len = nil) { oversized }) do
+        assert_nil view.transfer[:payload].call, '上限超過ファイルは読み込まず nil を返すこと'
+      end
     end
   end
 end
