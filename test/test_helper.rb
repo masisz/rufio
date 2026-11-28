@@ -64,6 +64,13 @@ end
 
 # 手動でminitestを実行
 Minitest.run if __FILE__ == $0
+
+# 実行中のプラットフォームが Windows か。HostOsStub で RbConfig の host_os を
+# 差し替えても RUBY_PLATFORM は変わらないので、本当の OS 依存のスキップに使う
+def windows_platform?
+  RUBY_PLATFORM.match?(/mingw|mswin|cygwin/)
+end
+
 # 画像プレビューは Windows の端末では既定で無効（TerminalGraphics.enabled?）なので、
 # 対応端末として判定を通したいテストでは非 Windows の host_os に見せる。
 # Windows で無効になること自体は test_terminal_graphics.rb の専用テストで確かめる

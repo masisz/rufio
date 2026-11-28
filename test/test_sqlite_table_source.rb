@@ -134,7 +134,7 @@ class TestSqliteTableSource < Minitest::Test
     end
 
     path_argument = queries.first[-2]
-    assert path_argument.start_with?('/'), "#{path_argument.inspect} が絶対パスであること"
+    assert File.absolute_path?(path_argument), "#{path_argument.inspect} が絶対パスであること"
     refute path_argument.start_with?('-')
   end
 

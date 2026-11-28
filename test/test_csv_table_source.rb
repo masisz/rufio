@@ -17,7 +17,8 @@ class TestCsvTableSource < Minitest::Test
 
   def write(name, content)
     path = File.join(@test_dir, name)
-    content.is_a?(String) && content.encoding == Encoding::BINARY ? File.binwrite(path, content) : File.write(path, content)
+    # セル内改行を含むフィクスチャがあるので、どの OS でも書いたバイト列のままにする
+    File.binwrite(path, content)
     path
   end
 

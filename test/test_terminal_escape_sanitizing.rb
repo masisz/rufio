@@ -176,6 +176,8 @@ class TestTerminalEscapeSanitizing < Minitest::Test
   end
 
   def test_file_name_does_not_reach_the_terminal
+    skip 'Windows ではファイル名に制御文字を使えない' if windows_platform?
+
     File.write(File.join(@dir, "inno#{OSC52}cent.txt"), 'x')
     File.write(File.join(@dir, 'plain.txt'), 'x')
 
