@@ -93,11 +93,11 @@ class TestWindowsInputLog < Minitest::Test
     puts "\n入力ログ: #{@log_path}"
   end
 
-  # 実機での入力をまとめて確認する（G mode の矢印キー → 入力ダイアログ）
+  # 実機での入力をまとめて確認する（検索画面の矢印キー → 入力ダイアログ）
   def test_record_windows_key_input
     log_environment
     with_terminal do
-      record_g_mode_keys
+      record_search_screen_keys
       record_input_dialog
     end
 
@@ -106,7 +106,7 @@ class TestWindowsInputLog < Minitest::Test
     arrows = keys.count { |k| ARROW_KEYS.include?(k) }
     @log.note("SUMMARY arrows=#{arrows} misread_as_esc=#{misread}")
 
-    assert_operator arrows, :>, 0, "G mode で矢印キーが 1 回も認識されなかった（ログ: #{@log_path}）"
+    assert_operator arrows, :>, 0, "検索画面で矢印キーが 1 回も認識されなかった（ログ: #{@log_path}）"
     assert_equal 0, misread, "矢印キーが ESC + 文字として誤認された（ログ: #{@log_path}）"
     assert_equal 'rufio', @dialog_result, "入力ダイアログの結果が一致しない（ログ: #{@log_path}）"
   end
@@ -128,14 +128,14 @@ class TestWindowsInputLog < Minitest::Test
     @ui.send(:cleanup_terminal)
   end
 
-  # G mode を実際に検索させた状態で、矢印キーの判定結果を記録する
-  def record_g_mode_keys
-    @log.note("PHASE g_mode read_next_input_byte timeout=#{@ui.send(:windows?) ? '0.1s' : 'n/a'}")
-    global_search = @ui.instance_variable_get(:@global_search)
-    global_search.open(bookmark_roots)
+  # 検索画面を実際に動かした状態で、矢印キーの判定結果を記録する
+  def record_search_screen_keys
+    @log.note("PHASE search_screen read_next_input_byte timeout=#{@ui.send(:windows?) ? '0.1s' : 'n/a'}")
+    search_screen = @ui.instance_variable_get(:@search_screen)
+    search_screen.open(bookmark_roots)
     log = @log
     done = false
-    @ui.define_singleton_method(:handle_global_search_input) do |input|
+    @ui.define_singleton_method(:handle_search_input) do |input|
       log.key(input)
       done = true if input == 'q'
       true
@@ -153,14 +153,14 @@ class TestWindowsInputLog < Minitest::Test
         break unless @ui.send(:handle_input_nonblocking)
         break if done
       end
-      global_search.poll
-      global_search.draw(screen)
+      search_screen.poll
+      search_screen.draw(screen)
       screen.put_string(0, height - 1, message, fg: "\e[1;33m")
       renderer.render(screen)
       sleep 0.008
     end
-    @log.note("PHASE g_mode end (#{done ? 'q' : 'timeout'}) scanning=#{global_search.scanning?} results=#{global_search.results.length}")
-    global_search.close
+    @log.note("PHASE search_screen end (#{done ? 'q' : 'timeout'}) scanning=#{search_screen.scanning?} results=#{search_screen.results.length}")
+    search_screen.close
   end
 
   # ブックマーク名入力と同じダイアログで、1 回の入力で文字が入るかを記録する

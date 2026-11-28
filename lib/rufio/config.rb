@@ -63,7 +63,7 @@ module Rufio
       'health.title' => 'rufio Health Check',
       'health.ruby_version' => 'Ruby version',
       'health.required_gems' => 'Required gems',
-      'health.rga' => 'rga (content search)',
+      'health.sqlite3' => 'sqlite3 (SQLite preview)',
       'health.zoxide' => 'zoxide (directory history)',
       'health.bat' => 'bat (syntax highlight)',
       'health.clipboard' => 'Clipboard (y to copy)',
@@ -91,7 +91,6 @@ module Rufio
       'health.install_brew' => 'Install: brew install',
       'health.install_apt' => 'Install: apt install',
       'health.install_guide' => 'Install: Check the installation guide for your platform',
-      'health.rga_releases' => 'Install: https://github.com/phiresky/ripgrep-all/releases',
       'health.ruby_upgrade_needed' => 'Please upgrade Ruby to version 2.7.0 or higher'
     }.freeze
 

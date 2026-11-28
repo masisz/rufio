@@ -24,6 +24,15 @@ module Rufio
     BOOKMARK_HIGHLIGHT_DURATION = 0.5  # ブックマークハイライト表示時間（秒）
     TABLE_FOOTER_MIN_HEIGHT = 5      # 表プレビューで最下行に情報行を出す最小の高さ
     TABLE_GRID_START_ROW = 2         # プレビューペインでグリッドが始まる行（0:ファイル名 1:情報）
+    SHEET_LIST_START_ROW = 3         # シート一覧が始まる行（0:ファイル名 1:情報 2:一覧の見出し）
+    # プレビュー内検索（`/`）の一致の色。現在の一致だけ背景を変える
+    SEARCH_MATCH_FG = "\e[30m"
+    SEARCH_MATCH_BG = "\e[43m"
+    # 現在の一致（n / N で動かしている位置）。モードタブのシアンと区別する
+    CURRENT_MATCH_FG = "\e[30m\e[1m"
+    CURRENT_MATCH_BG = "\e[45m"
+    # Space で選んだカラムの印（ファイル一覧の選択済みアイテムと同じ緑背景・黒文字）
+    MARKED_COLUMN_COLOR = "\e[42m\e[30m"
     TAB_SEPARATOR = ">"            # タブ間セパレータ
 
     # File display constants
@@ -45,7 +54,8 @@ module Rufio
                    file_preview: nil, background_executor: nil,
                    test_mode: false,
                    left_panel_ratio: 0.5,
-                   preview_enabled: true)
+                   preview_enabled: true,
+                   graphics_layer: nil)
       @screen_width = screen_width
       @screen_height = screen_height
       @keybind_handler = keybind_handler
@@ -55,10 +65,13 @@ module Rufio
       @test_mode = test_mode
       @left_panel_ratio = left_panel_ratio
       @preview_enabled = preview_enabled
+      # 画像プレビュー（端末のグラフィックス機能）。nil なら画像は出さない
+      @graphics_layer = graphics_layer
 
       # Preview cache
       @preview_cache = {}
       @last_preview_path = nil
+      @active_image_view = nil
 
       # Syntax highlighter（bat が利用可能な場合のみ動作）
       @syntax_highlighter = SyntaxHighlighter.new
@@ -69,7 +82,7 @@ module Rufio
       @cached_bookmark_time = nil
       @bookmark_cache_ttl = 1.0
 
-      # Bookmark highlight (Tab ジャンプ時に 500ms ハイライト)
+      # Bookmark highlight (1-9 のジャンプ時に 500ms ハイライト)
       @highlighted_bookmark_index = nil
       @highlighted_bookmark_time = nil
 
@@ -85,8 +98,17 @@ module Rufio
     # ============================
 
     def clear_preview_cache
+      @preview_cache.each_value { |entry| entry[:image_view]&.release }
       @preview_cache.clear
       @last_preview_path = nil
+      @active_image_view = nil
+    end
+
+    # 非同期画像デコードの完了をポーリングする（メインループから毎フレーム呼ぶ）
+    def poll_image_preview
+      return false unless @active_image_view
+
+      @active_image_view.poll
     end
 
     def clear_bookmark_cache
@@ -132,6 +154,10 @@ module Rufio
     # @param job_mode_instance [JobMode, nil] ジョブモードインスタンス
     def draw_screen(screen, notification_message: nil, fps: nil,
                     in_job_mode: false, job_manager: nil, job_mode_instance: nil)
+      # 画像は毎フレーム出し直しの申告が要る（プレビューを描かないモードでは消える）
+      @graphics_layer&.clear
+      @active_image_view = nil
+
       if in_job_mode
         # ジョブモード: フッタ y=0（上部）、コンテンツ y=1〜h-2、統合行 y=h-1（下部・パス付き）
         content_height = @screen_height - JOB_HEADER_FOOTER_MARGIN
@@ -333,20 +359,26 @@ module Rufio
       highlighted_wrapped_lines = nil
 
       if selected_entry && selected_entry[:type] == 'file'
-        if @last_preview_path != selected_entry[:path]
-          full_preview = @file_preview.preview_file(selected_entry[:path])
+        # プレビューモード中は、スクロールとファイル内検索（/）のために多めの行を読む
+        max_lines = fullscreen ? FilePreview::PREVIEW_MODE_MAX_LINES : FilePreview::DEFAULT_MAX_LINES
+        cache_entry = @preview_cache[selected_entry[:path]]
+        if @last_preview_path != selected_entry[:path] || cache_entry.nil? ||
+           (cache_entry[:max_lines] || 0) < max_lines
+          full_preview = @file_preview.preview_file(selected_entry[:path], max_lines: max_lines)
           preview_content = extract_preview_lines(full_preview)
+          existing_image_view = cache_entry&.dig(:image_view)
           @preview_cache[selected_entry[:path]] = {
             content: preview_content,
             preview_data: full_preview,
+            max_lines: max_lines,
             highlighted: nil,
             wrapped: {},
             highlighted_wrapped: {}
           }
+          @preview_cache[selected_entry[:path]][:image_view] = existing_image_view if cache_entry&.key?(:image_view)
           @last_preview_path = selected_entry[:path]
         else
-          cache_entry = @preview_cache[selected_entry[:path]]
-          preview_content = cache_entry[:content] if cache_entry
+          preview_content = cache_entry[:content]
         end
 
         # 表プレビューはグリッドとして描くので、折り返しもハイライトも通さない
@@ -417,8 +449,20 @@ module Rufio
         table_rows = table_sheet.fetch_rows(
           @keybind_handler&.preview_scroll_offset || 0, [height, 1].max
         )
-        table_status = table_status_text(table_document, table_layout, table_col_offset)
+        table_status = table_status_text(table_document, table_layout, table_sheet, table_col_offset)
       end
+
+      # シート一覧（t）を開いている間は、グリッドの代わりに一覧を描く
+      sheet_picker_title, sheet_picker_rows = sheet_picker_for(table_layout, height)
+
+      # 画像プレビュー: セルは空白のまま確保し、画素は GraphicsLayer から端末へ送る
+      image_lines = apply_image_preview(screen, selected_entry, content_x, safe_width, height)
+
+      # テキストプレビューの `/` 検索: 折り返し後の行から一致行を求めてビューに渡す
+      search_query, search_match_rows = apply_text_search(
+        wrapped_lines, highlighted_wrapped_lines, height, safe_width,
+        selected_entry && @preview_cache[selected_entry[:path]]
+      )
 
       (0...height).each do |i|
         line_num = i + CONTENT_START_LINE
@@ -443,11 +487,25 @@ module Rufio
           hint = TextUtils.truncate_to_width(" #{status}", safe_width)
           screen.put_string(content_x, line_num, hint + ' ' * (safe_width - TextUtils.display_width(hint)))
 
+        elsif i >= 2 && image_lines
+          # 画像を出せないときだけ、形式と寸法を文字で出す
+          line = image_lines[i - 2]
+          screen.put_string(content_x, line_num,
+                            TextUtils.pad_string_to_width(line ? " #{line}" : '', safe_width))
+
+        elsif i >= 2 && sheet_picker_rows
+          # シート（SQLite のテーブル / Excel のシート）一覧
+          draw_sheet_picker_line_to_buffer(screen, content_x, line_num, i, safe_width,
+                                           sheet_picker_title, sheet_picker_rows)
+
         elsif i >= 2 && table_layout
           # 行列（グリッド）プレビュー
           screen.put_string(content_x, line_num,
                             table_line(table_layout, table_sheet, table_rows, table_status, i, height,
                                        table_col_offset))
+          # 選択カラムの印を先に置き、カーソルセルを後から重ねる（カーソルを隠さない）
+          draw_selected_columns_to_buffer(screen, content_x, line_num, table_layout, table_sheet,
+                                          table_rows, table_status, i, height, table_col_offset)
           draw_table_cursor_to_buffer(screen, content_x, line_num, table_layout, table_sheet,
                                       table_cursor, table_rows, table_status, i, height)
 
@@ -457,8 +515,13 @@ module Rufio
           display_line_index = i - 2 + scroll_offset
 
           if display_line_index < highlighted_wrapped_lines.length
-            draw_highlighted_line_to_buffer(screen, content_x, line_num,
-                                            highlighted_wrapped_lines[display_line_index], safe_width)
+            tokens = highlighted_wrapped_lines[display_line_index]
+            draw_highlighted_line_to_buffer(screen, content_x, line_num, tokens, safe_width)
+            if search_match_rows&.key?(display_line_index)
+              plain = " #{tokens.map { |token| token[:text] }.join}"
+              draw_text_matches_to_buffer(screen, content_x, line_num, plain, search_query,
+                                          search_match_rows[display_line_index], safe_width)
+            end
           else
             screen.put_string(content_x, line_num, ' ' * safe_width)
           end
@@ -477,6 +540,10 @@ module Rufio
           remaining_space = safe_width - TextUtils.display_width(content_to_print)
           content_to_print += ' ' * remaining_space if remaining_space > 0
           screen.put_string(content_x, line_num, content_to_print)
+          if search_match_rows&.key?(display_line_index)
+            draw_text_matches_to_buffer(screen, content_x, line_num, content_to_print, search_query,
+                                        search_match_rows[display_line_index], safe_width)
+          end
 
         else
           screen.put_string(content_x, line_num, ' ' * safe_width)
@@ -501,15 +568,163 @@ module Rufio
       view = @keybind_handler&.preview_view
       document = view&.table? ? view.document : preview_data[:document]
       sheet_index = view&.table? ? view.sheet_index : 0
-      sheet = document&.sheet(sheet_index)
+      # 絞り込み（`/`）中はビューが持つシートを描く
+      sheet = view&.table? ? view.sheet : document&.sheet(sheet_index)
       return [nil, nil, nil] unless sheet
 
       cache_entry[:table_layout] ||= {}
-      key = [document.object_id, sheet_index, safe_width]
+      key = [document.object_id, sheet.object_id, safe_width]
       layout = (cache_entry[:table_layout][key] ||= TableLayout.build(
         sheet, safe_width, max_column_width: ConfigLoader.table_preview[:max_column_width]
       ))
       [document, layout, sheet]
+    end
+
+    # 画像プレビューの扱い。
+    # 送れるときは矩形のセルを確保して GraphicsLayer に依頼し、nil を返す（文字は描かない）。
+    # 送れないとき（非対応端末・PNG 以外・大きすぎる）は、ペインに出す説明の行を返す。
+    # @return [Array<String>, nil]
+    def apply_image_preview(screen, selected_entry, content_x, safe_width, height)
+      view = image_view_for(selected_entry)
+      return nil unless view && safe_width > 0
+
+      @active_image_view = view
+      rows = [height - TABLE_GRID_START_ROW, 1].max
+      top = TABLE_GRID_START_ROW + CONTENT_START_LINE
+      # ペインの実ピクセルを伝える（ネイティブのデコードはこの大きさに合わせる）
+      cell = TerminalGraphics.cell_pixels
+      view.target_pixels = [safe_width * cell[0], rows * cell[1]]
+
+      return view.detail_lines unless view.displayable?
+
+      transfer = view.transfer
+      # デコード待ちの間は「decoding」と出し、画像はまだ送らない
+      return view.loading_lines if transfer.nil?
+
+      # セルを空白で確保する（通知やフッタが割り込んで画像を削らないようにする）
+      screen.reserve(content_x, top, safe_width, rows)
+      placement = view.placement(
+        max_cols: safe_width,
+        max_rows: rows,
+        cell_pixels: cell,
+        cell_pixels_known: TerminalGraphics.cell_pixels_known?
+      )
+      @graphics_layer&.request(
+        source: transfer[:key],
+        # 直送のときは、送ると決まってから初めてファイルを読む
+        payload: transfer[:payload],
+        encoded: transfer[:encoded],
+        format: transfer[:format],
+        pixels: transfer[:pixels],
+        row: top + 1, col: content_x + 1, # 端末座標は 1 始まり
+        cols: placement[:cols], rows: placement[:rows],
+        area_rows: placement[:area_rows],
+        crop: view.crop
+      )
+      nil
+    end
+
+    # 画像プレビューのビュー。プレビューモード中はそのビュー、分割表示では
+    # 選択中のファイルから作って（パスごとに）キャッシュする
+    def image_view_for(selected_entry)
+      view = @keybind_handler&.preview_view
+      return view if view&.image?
+      return nil unless selected_entry && selected_entry[:type] == 'file'
+      # プレビューモード中に別種別のビューが出ているなら画像ではない
+      return nil if view
+
+      entry = @preview_cache[selected_entry[:path]]
+      return nil unless entry
+
+      unless entry.key?(:image_view)
+        info = ImageSource.read(selected_entry[:path])
+        entry[:image_view] = info ? ImagePreviewView.new(info, path: selected_entry[:path]) : nil
+      end
+      entry[:image_view]
+    end
+
+    # テキストプレビューの `/` 検索。一致行（折り返し後の行番号）をビューに渡し、
+    # 描画用に { 行番号 => 現在の一致か } を返す。
+    # 折り返しは幅に依存するため、一致行を求めるのは（幅を知っている）ここが担当する。
+    # @return [Array(String, Hash), Array(nil, nil)]
+    def apply_text_search(wrapped_lines, highlighted_lines, height, width, cache_entry)
+      view = @keybind_handler&.preview_view
+      return [nil, nil] unless view && !view.table?
+
+      query = view.search_query
+      view.visible_rows = [height - TABLE_GRID_START_ROW, 1].max
+      if query.nil? || query.empty?
+        view.apply_matches([])
+        return [nil, nil]
+      end
+
+      rows = -> { wrapped_lines || highlighted_lines&.map { |tokens| tokens.map { |token| token[:text] }.join } }
+      matches = cached_search_matches(cache_entry, query, width, rows)
+      view.apply_matches(matches)
+
+      current = view.current_match
+      [query, matches.each_with_object({}) { |index, map| map[index] = index == current }]
+    end
+
+    # 同じ検索語・同じ幅のあいだは一致行を数え直さない
+    def cached_search_matches(cache_entry, query, width, rows)
+      key = [query, width]
+      cache = cache_entry && (cache_entry[:search_matches] ||= {})
+      return cache[:matches] if cache && cache[:key] == key
+
+      needle = query.downcase
+      lines = rows.call || []
+      matches = lines.each_index.select { |index| lines[index].to_s.downcase.include?(needle) }
+      if cache
+        cache[:key] = key
+        cache[:matches] = matches
+      end
+      matches
+    end
+
+    # 画面に出した 1 行のうち、検索語に一致した部分だけを塗り替える
+    def draw_text_matches_to_buffer(screen, content_x, line_num, text, query, current, safe_width)
+      return if query.nil? || query.empty?
+
+      needle = query.downcase
+      lowered = text.downcase
+      offset = 0
+      background = current ? CURRENT_MATCH_BG : SEARCH_MATCH_BG
+      foreground = current ? CURRENT_MATCH_FG : SEARCH_MATCH_FG
+      while (found = lowered.index(needle, offset))
+        prefix_width = TextUtils.display_width(text[0, found])
+        break if prefix_width >= safe_width
+
+        matched = TextUtils.truncate_to_width(text[found, needle.length].to_s, safe_width - prefix_width)
+        screen.put_string(content_x + prefix_width, line_num, matched, fg: foreground, bg: background)
+        offset = found + needle.length
+      end
+    end
+
+    # シート一覧を開いているなら、見出しと描く行を返す（開いていなければ [nil, nil]）
+    # @return [Array(String, Array<Hash>)]
+    def sheet_picker_for(table_layout, height)
+      return [nil, nil] unless table_layout
+
+      view = @keybind_handler&.preview_view
+      return [nil, nil] unless view&.table? && view.picker_open?
+
+      # 見出しの下に収まる行数を毎フレーム伝える（選択行が見えるようにスクロールする）
+      view.picker.visible_rows = [height - SHEET_LIST_START_ROW, 1].max
+      [view.picker_title, view.picker_rows]
+    end
+
+    # 一覧のペイン内 i 行目（2:見出し、3 行目以降:シート名）を描く
+    def draw_sheet_picker_line_to_buffer(screen, content_x, line_num, index, safe_width, title, rows)
+      if index == TABLE_GRID_START_ROW
+        screen.put_string(content_x, line_num, TextUtils.pad_string_to_width(" #{title}", safe_width))
+        return
+      end
+
+      row = rows[index - SHEET_LIST_START_ROW]
+      text = TextUtils.pad_string_to_width(" #{row ? row[:text] : ''}", safe_width)
+      fg = row && row[:selected] ? ColorHelper.color_to_selected_ansi(ConfigLoader.colors[:selected]) : nil
+      screen.put_string(content_x, line_num, text, fg: fg)
     end
 
     # グリッドでデータ行として使える行数（ヘッダ行と最下行の情報行を除く）
@@ -521,9 +736,9 @@ module Rufio
     end
 
     # 最下行に出す情報（シート名・行数・列数・文字コード・切り詰め・隠れている列数）
-    def table_status_text(document, layout, col_offset = 0)
+    def table_status_text(document, layout, sheet, col_offset = 0)
       view = @keybind_handler&.preview_view
-      parts = [document.status_line(view&.table? ? view.sheet_index : 0)]
+      parts = [document.status_line(view&.table? ? view.sheet_index : 0, sheet)]
       hidden = layout.hidden_column_count(col_offset)
       # 狭いペインでも最下行に収まるよう短く書く
       parts << "+#{hidden} hidden" if hidden.positive?
@@ -542,6 +757,30 @@ module Rufio
 
       scroll_offset = @keybind_handler&.preview_scroll_offset || 0
       layout.row_line(scroll_offset + data_index + 1, row, col_offset)
+    end
+
+    # Space で選んだカラムのセル（見出し行も含む）を選択マーク色で上書きする
+    def draw_selected_columns_to_buffer(screen, content_x, line_num, layout, sheet, rows, status,
+                                        index, height, col_offset)
+      view = @keybind_handler&.preview_view
+      return unless view&.table?
+
+      selected = view.selected_columns
+      return if selected.empty?
+      return if table_footer_row?(status, index, height)
+
+      data_index = table_data_index(sheet, index)
+      row = data_index.nil? ? nil : rows && rows[data_index]
+      # データのない行（表の下の空白）には印を付けない
+      return if !data_index.nil? && row.nil?
+
+      selected.each do |column|
+        x = layout.column_x(column, col_offset)
+        next if x.nil?
+
+        text = data_index.nil? ? layout.format_header_cell(column) : layout.format_cell(row[column], column)
+        screen.put_string(content_x + x, line_num, text, fg: MARKED_COLUMN_COLOR)
+      end
     end
 
     # カーソルのあるセルだけを反転色で上書きする
@@ -617,7 +856,7 @@ module Rufio
         footer_content = help_text.ljust(@screen_width)[0...@screen_width]
         screen.put_string(0, y, footer_content, fg: "\e[7m")
       else
-        # ブックマークをキャッシュ（Tab移動と同じソース：keybind_handler経由で取得）
+        # ブックマークをキャッシュ（keybind_handler 経由で取得）
         current_time = Time.now
         if @cached_bookmarks.nil? || @cached_bookmark_time.nil? || (current_time - @cached_bookmark_time) > @bookmark_cache_ttl
           @cached_bookmarks = @keybind_handler.bookmark_list
@@ -686,7 +925,7 @@ module Rufio
         end
         screen.put_string(0, y, footer_content, fg: "\e[90m")
 
-        # Tab ジャンプ時：対象ブックマークを 500ms ハイライト（セカンドパス）
+        # 1-9 のジャンプ時：対象ブックマークを 500ms ハイライト（セカンドパス）
         if @highlighted_bookmark_index && !bookmark_highlight_expired? && available_width > 3
           highlight_idx = @highlighted_bookmark_index
           if highlight_idx < bookmark_parts.length
@@ -936,9 +1175,7 @@ module Rufio
     def sync_tab_mode_with_keybind_handler
       return unless @keybind_handler
 
-      current_mode = if @keybind_handler.global_search_mode?
-                       :global
-                     elsif @keybind_handler.in_job_mode?
+      current_mode = if @keybind_handler.in_job_mode?
                        :jobs
                      elsif @keybind_handler.help_mode?
                        :help

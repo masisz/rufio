@@ -4,9 +4,9 @@ require_relative 'test_helper'
 require 'minitest/autorun'
 require 'timeout'
 
-class TestGlobalSearchProgress < Minitest::Test
+class TestSearchScreenProgress < Minitest::Test
   def test_searching_indicator_animates_even_without_matches_and_stops_on_completion
-    search = Rufio::GlobalSearch.new
+    search = Rufio::SearchScreen.new
     gate = Queue.new
     now = 10.0
     screen = Rufio::Screen.new(80, 24)
@@ -39,7 +39,7 @@ class TestGlobalSearchProgress < Minitest::Test
   end
 
   def test_empty_content_query_is_ready_instead_of_searching
-    search = Rufio::GlobalSearch.new
+    search = Rufio::SearchScreen.new
     search.open([])
     search.handle_key("\t")
     screen = Rufio::Screen.new(80, 24)

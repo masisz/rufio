@@ -114,13 +114,11 @@ class TestBookmarkController < Minitest::Test
     refute result, "directory_listingがなければfalseを返すこと"
   end
 
-  # === goto_next_bookmark テスト ===
+  # === ブックマーク巡回（Tab / Shift+Tab）は削除済み ===
 
-  def test_goto_next_bookmark_returns_nil_or_integer
-    result = @controller.goto_next_bookmark
-    # ブックマークがない場合はnil、ある場合はインデックス（整数）を返す
-    assert result.nil? || result.is_a?(Integer),
-           "goto_next_bookmarkはnil（ブックマークなし）かIntegerを返すこと"
+  def test_bookmark_cycling_is_removed
+    refute_respond_to @controller, :goto_next_bookmark, "Tab のブックマーク巡回は削除したこと"
+    refute_respond_to @controller, :goto_prev_bookmark, "Shift+Tab のブックマーク巡回は削除したこと"
   end
 
   # === メソッド存在確認テスト ===

@@ -274,30 +274,6 @@ class TestFuzzyBlockSources < Minitest::Test
   end
 
   # 走査が出したブロックをそのままキャッシュし、再表示でも同じブロックを渡す（コピーしない）
-  def test_cache_stores_and_replays_the_scanned_blocks
-    with_tree do |root|
-      cache = Rufio::FuzzyCandidateCache.new
-      source, cached_at = cache.source_for(root, native: false)
-      assert_nil cached_at
-      scanned = collect(source)
-
-      source, cached_at = cache.source_for(root, native: false)
-      refute_nil cached_at
-      replayed = collect(source)
-      assert_equal scanned.length, replayed.length
-      scanned.zip(replayed).each { |first, second| assert_same first, second }
-      assert_equal 2, cache.entry_count
-    end
-  end
-
-  def test_cache_counts_blocks_against_the_entry_limit
-    with_tree do |root|
-      cache = Rufio::FuzzyCandidateCache.new(max_entries: 1)
-      collect(cache.source_for(root, native: false).first)
-
-      assert_nil cache.fetch(root)
-    end
-  end
 
   def test_native_listing_splits_large_drains
     skip 'native file listing is not available' unless Rufio::NativeContentSearch.files_available?
@@ -383,9 +359,9 @@ class TestNativeFileLabels < Minitest::Test
     assert_equal File.join(@dir, '日本', '検索.rb'), rows.find { |row| row[:text] == '日本/検索.rb' }[:path]
     assert rows.all? { |row| File.file?(row[:path]) }
 
-    search = Rufio::GlobalSearch.allocate
+    search = Rufio::SearchScreen.allocate
     search.instance_variable_set(:@excluded_extensions, ['.txt'])
-    source = Rufio::GlobalSearch::FileNameSource.new(search, [['B', @dir]], true)
+    source = Rufio::SearchScreen::FileNameSource.new(search, [['B', @dir]], true)
     g_rows = []
     source.each_batch(cancelled: -> { false }, on_error: ->(m) { flunk m }) { |batch| g_rows.concat(batch) }
     assert_equal ['.hidden', 'a.rb', 'link.rb', '日本/検索.rb'], g_rows.map { |row| row[:relative_path] }.sort

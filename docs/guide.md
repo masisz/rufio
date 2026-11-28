@@ -13,7 +13,7 @@ Inside rufio, press `?` to open the help menu at any time.
 - [File Operations](#file-operations)
 - [ZIP Archives](#zip-archives)
 - [Filter and Search](#filter-and-search)
-- [Global Search (G mode)](#global-search-g-mode)
+- [Search Screen (`/` in the file list)](#search-screen--in-the-file-list)
 - [Bookmarks and History](#bookmarks-and-history)
 - [Command Mode](#command-mode)
 - [Scripts](#scripts)
@@ -72,6 +72,33 @@ The right pane previews the selected file. Code is highlighted when `bat` is ins
 | `y` | Copy the file path to the clipboard |
 | `ESC` | Back to the file list |
 
+### Images
+
+Images (`.png`, `.jpg`, `.gif`, `.bmp`) are drawn in the preview pane by the terminal itself, using the Kitty graphics protocol. kitty, Ghostty, WezTerm and Konsole support it; rufio asks the terminal once at startup and silently falls back when the answer is no.
+
+| Situation | What you see |
+|-----------|--------------|
+| Supported terminal, `.png` / `.jpg` / `.bmp` up to 32 MiB | The picture, fitted to the pane (split view and `P` both work) |
+| No native library (or `RUFIO_NATIVE_IMAGE=0`), PNG up to 8 MiB | The picture, sent as-is and scaled by the terminal |
+| `.gif`, progressive JPEG, interlaced PNG | Format, pixel size and file size as text |
+| Unsupported terminal, or inside tmux | The same text |
+
+The bundled native library (Zig, no third-party image code) decodes the image, scales it down to the pane's real pixel size and re-encodes it as PNG before sending, so a 12 MP photo reaches the terminal as a few hundred KB in about 30 ms, off the main loop. While it works the pane shows `decoding...`.
+
+In preview mode (`P`) the picture can be zoomed:
+
+| Key | Action |
+|-----|--------|
+| `+` / `-` | Zoom in 25% steps, up to 4x (the terminal is asked for part of the picture, so nothing is decoded here) |
+| `0` | Fit the picture to the pane |
+| `h` / `j` / `k` / `l` or arrows | Move around the picture while zoomed |
+
+The cells behind a picture are kept blank so the file list and the status line stay readable, and the picture is removed when you select another file, open the help menu, the search screen or command mode, and when rufio exits. Moving to another file removes the picture immediately and sends the new one about 80 ms later, so holding `j` through a folder of images does not flood the terminal; a picture that was painted over (by a notification, say) is put back; and a file you come back to is not read or encoded again. `RUFIO_IMAGE_PREVIEW=0` turns images off entirely. The design and the remaining phases are in [image_preview_design_ja.md](./image_preview_design_ja.md).
+
+### Searching inside a preview (`/`)
+
+`/` in a preview searches the previewed file. Type to jump to the first match from where you are, `Enter` keeps the search, `n` and `N` move to the next and previous match (wrapping around), and `ESC` clears it (a second `ESC` leaves the preview). Every match is highlighted and the current one is drawn in a different colour. Preview mode reads up to 20,000 lines of the first 64 KiB of the file, so the search covers what the preview can show.
+
 ### Tables as a Grid
 
 `.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm` and `.ods` files, and SQLite databases when the `sqlite3` command is installed, are shown as rows and columns:
@@ -96,10 +123,34 @@ In preview mode the cell cursor moves:
 | `Ctrl+D` / `Ctrl+U` | Move one screen of rows |
 | `g` / `}` | First / last row |
 | `0` / `$` | First / last column |
-| `y` | Copy the cell under the cursor |
+| `Space` | Select / unselect the column under the cursor |
+| `/` | Filter the rows (see below) |
+| `y` | Copy the cell under the cursor, or the cursor row's selected columns joined with commas |
 | `Y` | Copy the whole row as one CSV line |
 | `[` / `]` | Previous / next sheet, for a workbook's sheets or a database's tables |
+| `t` | Open the list of sheets or tables (`j`/`k` to move, `Enter` to open, `ESC` to close) |
 | `ESC` | Back to the file list |
+
+`Space` marks the column under the cursor the way a selected file is marked, and the line under the file name lists the selection (`cols A,C`). With columns selected, `y` copies the cursor row's cells from those columns, in column order, joined with commas as one CSV line (`apple,30`), so a cell holding a comma or a newline is quoted. `Y` still copies the whole row, and switching sheets clears the selection.
+
+### Filtering rows (`/`)
+
+`/` in a table preview filters its rows. Write conditions separated by commas:
+
+| Input | Means |
+|-------|-------|
+| `price > 100` | A comparison (`=`, `!=`, `<>`, `>`, `>=`, `<`, `<=`); numeric when both sides are numbers |
+| `name a%` | `LIKE 'a%'`: `%` is any text, `_` is one character |
+| `name apple` | `LIKE '%apple%'`: matches anywhere in the column |
+| `note "red, sweet"` | Quote a value to keep its commas and spaces |
+| `apple` | No column named: searched in every column |
+| `price > 100, name a%` | Several conditions, all of which must match |
+
+Column names ignore case and the column letters (`A`, `B`, …) work too. `Enter` applies the filter, and the line under the file name shows it (`filter: price > 100 (2 rows)`). `ESC` clears the filter; a second `ESC` leaves the preview. Switching sheets clears it as well.
+
+For a SQLite table the conditions become a read-only `SELECT ... WHERE` run inside the database, so the filter finds rows past the preview's row limit. Values are always passed as quoted literals and the column names are resolved against the table's own columns, so the input cannot become SQL of its own. A spreadsheet or CSV is filtered in Ruby over the rows that were read.
+
+`t` lists a workbook's sheets or a database's tables, with `>` beside the one on screen; `Ctrl+D`/`Ctrl+U` page through a long list and `g`/`}` jump to its first and last entry. A file with a single sheet has no list.
 
 Cell movement follows your `move_up` / `move_down` / `navigate_parent` / `navigate_enter` keybinds, so rebinding `hjkl` applies here too.
 
@@ -143,32 +194,19 @@ With nothing selected, `z` opens zoxide history instead.
 | Key | Action |
 |-----|--------|
 | `f` | Filter the current list as you type (`Enter` keeps the filter, `ESC` clears it) |
-| `s` or `/` | Fuzzy search file names under the current directory (no external tools needed) |
-| `F` | Search file contents with rga, then pick a result in the same screen |
-| `G` | Global search across all bookmarks (no external tools needed) |
+| `/` | Search, scoped to where you are |
 
-### Fuzzy Search Screen (`s`, `/`, `F`)
+`/` is the only search key, and what it searches depends on the mode:
 
-`s` and `/` list every file under the current directory, including hidden files and links to regular files, while the list is still being scanned. Typing narrows it with fuzzy matching: the query characters must appear in order but need not be adjacent (`sctrl` finds `search_controller.rb`). ASCII letters ignore case and Japanese text is matched as is. Matches after the last `/`, at word boundaries and in consecutive runs rank higher, and matched characters are highlighted.
+| Where you press `/` | What it searches |
+|---------------------|------------------|
+| The file list | Every file under the current directory: names (fuzzy) or contents (literal) |
+| A preview (`P`) | Inside the previewed file |
+| A table preview | Filters the rows of the sheet or table on screen |
 
-| Key | Action |
-|-----|--------|
-| Type | Filter the list |
-| `Up` / `Down`, `Ctrl+J` / `Ctrl+K`, `Ctrl+N` / `Ctrl+P` | Select a result |
-| `Enter` | Open the file (`F`: at the matching line) |
-| `Ctrl+U` | Clear the query |
-| `Ctrl+R` | Rescan the directory (keeps the query) |
-| `ESC` | Return to the file list |
+## Search Screen (`/` in the file list)
 
-`F` asks for the text to search, runs rga in the background and streams its `file:line:text` results into this screen; typing then filters those lines. The matching itself uses the bundled Zig library when available and falls back to Ruby otherwise (`RUFIO_NATIVE_FUZZY=0` forces Ruby).
-
-On screens at least 80 columns wide, the right half shows a preview of the selected file, loaded in the background and limited to the first 64 KiB. `F` results scroll the preview to the matching line and highlight it. `preview_enabled: false` in `UI_OPTIONS` hides it.
-
-Reopening `s` in a directory scanned in the last 5 minutes shows the cached list immediately; the title reads `Cached 2m ago | Ctrl+R: Rescan`. By default the cache keeps up to 4 directories and 200,000 files in total (see `FUZZY_SEARCH_CACHE` below), so new, deleted or changed files may be missing until you press `Ctrl+R`. Selecting a file that no longer exists keeps the screen open and shows `File no longer exists`.
-
-## Global Search (G mode)
-
-`G` searches recursively under every bookmarked directory. Add bookmarks with `b` first. File names use the same fuzzy matching as `s` (best matches first, matched characters highlighted, filtered in the background); content search stays literal.
+`/` searches recursively under the current directory; bookmarks are not searched. File names are matched with fuzzy matching (best matches first, matched characters highlighted, filtered in the background); content search stays literal and case-insensitive. Hidden files and links to regular files are included, and results appear while the tree is still being scanned.
 
 | Key | Action |
 |-----|--------|
@@ -177,11 +215,13 @@ Reopening `s` in a directory scanned in the last 5 minutes shows the cached list
 | `Up` / `Down`, `Ctrl+J` / `Ctrl+K`, `Ctrl+N` / `Ctrl+P` | Select a result |
 | `Enter` | Go to the file in Files mode |
 | `Ctrl+U` | Clear the query |
-| `ESC` | Return to the previous mode |
+| `ESC` | Return to Files mode |
 
+- Fuzzy matching means the query characters must appear in order but need not be adjacent (`sctrl` finds `search_controller.rb`). ASCII letters ignore case and Japanese text is matched as is.
 - Matches are highlighted. Content results show the file, line number and matching text.
 - A yellow `Searching...` indicator animates while scanning and turns into a green `Search complete` when done.
 - Inaccessible directories and directory symlinks are skipped. Plain text is read as UTF-8, and files with NUL bytes in the first 8 KB are treated as binary.
+- The matching uses the bundled Zig library when available and falls back to Ruby otherwise (`RUFIO_NATIVE_FUZZY=0` forces Ruby).
 
 ### Documents
 
@@ -200,7 +240,7 @@ Extracted text is cached in memory (up to 64 documents, about 16 MiB) and re-ext
 Add this to `~/.config/rufio/config.rb` and restart rufio. It applies to both file names and contents:
 
 ```ruby
-GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.png .jpg .zip .tar.gz .log /.git /node_modules /.DS_Store].freeze
+SEARCH_EXCLUDED_EXTENSIONS = %w[.png .jpg .zip .tar.gz .log /.git /node_modules /.DS_Store].freeze
 ```
 
 Extensions ignore case, the leading dot is optional, and the default `[]` excludes nothing. An entry starting with `/` is a name: a directory with that name is skipped with everything under it, and a file with exactly that name is skipped.
@@ -212,7 +252,6 @@ Extensions ignore case, the leading dot is optional, and the default `[]` exclud
 | `b` | Bookmark the current directory |
 | `B` | Bookmark menu |
 | `1`–`9` | Jump to bookmark 1–9 |
-| `Tab` / `Shift+Tab` | Next / previous bookmark (Files and Config modes) |
 | `z` | zoxide history (when nothing is selected) |
 
 The `B` menu has four items:
@@ -378,22 +417,11 @@ APPLICATIONS = {
   :default => 'open'
 }.freeze
 
-# Extensions (and /names of directories or files) excluded from G mode search
-GLOBAL_SEARCH_EXCLUDED_EXTENSIONS = %w[.log /node_modules].freeze
-
-# File list cache for reopening s / / (omitted keys keep their defaults)
-FUZZY_SEARCH_CACHE = { max_entries: 500_000, max_roots: 8, ttl: 900 }.freeze
+# Extensions (and /names of directories or files) excluded from the / search
+SEARCH_EXCLUDED_EXTENSIONS = %w[.log /node_modules].freeze
 ```
 
-`FUZZY_SEARCH_CACHE` keys:
-
-| Key | Default | Maximum | Meaning |
-|-----|---------|---------|---------|
-| `max_entries` | 200,000 | 1,000,000 | Files kept across all cached directories |
-| `max_roots` | 4 | 16 | Directories kept (least recently used is dropped first) |
-| `ttl` | 300 | 86,400 | Seconds before a cached list is scanned again |
-
-Values above the maximum are capped, invalid values fall back to the default, and `0` disables caching (`max_entries` / `max_roots`) or expires lists immediately (`ttl`). About 90 bytes are used per cached file.
+The older name `GLOBAL_SEARCH_EXCLUDED_EXTENSIONS` is still read if `SEARCH_EXCLUDED_EXTENSIONS` is not set.
 
 Action names for `KEYBINDS`:
 
@@ -401,11 +429,11 @@ Action names for `KEYBINDS`:
 |-------|-----------------------|
 | Navigation | `move_up` (k), `move_down` (j), `navigate_parent` (h), `navigate_enter` (l), `top` (g), `bottom` (}), `refresh` (R) |
 | Files | `open_file` (o), `preview` (P), `rename` (r), `delete` (d), `create_file` (a), `create_dir` (A), `move_selected` (m), `copy_selected` (c), `delete_selected` (x), `open_explorer` (e) |
-| Selection and search | `select` (Space), `filter` (f), `file_search` (s), `file_search_alt` (/), `rga_search` (F) |
+| Selection and search | `select` (Space), `filter` (f), `search` (/) |
 | Bookmarks | `add_bookmark` (b), `bookmark_menu` (B), `zoxide` (z), `start_dir` (0) |
-| Modes | `job_mode` (J), `global_search` (G), `config_mode` (C), `help` (?), `log_viewer` (L), `command_mode` (:), `quit` (q), `quit_cd` (T) |
+| Modes | `job_mode` (J), `config_mode` (C), `help` (?), `log_viewer` (L), `command_mode` (:), `quit` (q), `quit_cd` (T) |
 
-The former names `fzf_search` / `fzf_search_alt` are still accepted as aliases of `file_search` / `file_search_alt`.
+The former names `fzf_search`, `fzf_search_alt`, `file_search`, `file_search_alt`, `rga_search` and `global_search` are all accepted as aliases of `search`.
 
 ### script_paths.yml and bookmarks.yml
 
@@ -440,17 +468,15 @@ All tools are optional. Without them, rufio disables the feature or falls back t
 
 | Tool | Used for | Key |
 |------|----------|-----|
-| rga | File content search | `F` |
 | zoxide | Directory history | `z` |
 | bat | Syntax highlighting in the preview | — |
 
 ```bash
 # macOS
-brew install bat rga zoxide
+brew install bat zoxide
 
 # Ubuntu/Debian
 apt install bat zoxide
-# rga: https://github.com/phiresky/ripgrep-all
 ```
 
 ## Command-line Options
@@ -470,7 +496,7 @@ rufio -h                   # Help
 
 The gem bundles a Zig library for macOS (arm64/x86_64), Linux (x86_64/aarch64, glibc 2.17+ or musl) and Windows (x64/arm64). Other platforms use the Ruby implementation automatically.
 
-- **G mode content search**: parallel scanning with an in-memory file cache. Repeated searches are about 10x faster than `rg`. Queries with non-ASCII cased letters use the Ruby search. Set `RUFIO_NATIVE_SEARCH=0` to disable it.
+- **Content search**: parallel scanning with an in-memory file cache. Repeated searches are about 10x faster than `rg`. Queries with non-ASCII cased letters use the Ruby search. Set `RUFIO_NATIVE_SEARCH=0` to disable it.
 - **ZIP**: decompresses entries and compresses files of 1 MiB or more in parallel (about 4.6x faster to compress and 3.2x faster to extract than Ruby on 8 × 64 MB files with 4 CPUs). Archive validation always stays in Ruby. Set `RUFIO_NATIVE_ZIP=0` to disable it.
 
 To rebuild the bundled binaries (requires Zig 0.17):

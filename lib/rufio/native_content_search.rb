@@ -6,7 +6,7 @@ require_relative 'native_scanner_zig'
 
 module Rufio
   # Zig 実装のコンテンツ検索（G mode 用）。
-  # Ruby 実装（GlobalSearch#scan_content）と同じ結果を、並列走査と SIMD 検索で返す。
+  # Ruby 実装（SearchScreen#scan_content）と同じ結果を、並列走査と SIMD 検索で返す。
   class NativeContentSearch
     HEADER_SIZE = 25
     HEADER_FORMAT = 'CL<Q<L<L<L<'

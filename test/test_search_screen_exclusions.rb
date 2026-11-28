@@ -4,7 +4,7 @@ require_relative 'test_helper'
 require 'minitest/autorun'
 require 'timeout'
 
-class TestGlobalSearchExclusions < Minitest::Test
+class TestSearchScreenExclusions < Minitest::Test
   def setup
     @root = Dir.mktmpdir('rufio-search-exclusions')
     %w[keep.txt skip.LOG archive.TAR.GZ catalog catalogger log .env].each do |name|
@@ -12,7 +12,7 @@ class TestGlobalSearchExclusions < Minitest::Test
     end
     FileUtils.mkdir_p(File.join(@root, 'folder.log'))
     File.write(File.join(@root, 'folder.log', 'inside.txt'), "needle\n")
-    @search = Rufio::GlobalSearch.new
+    @search = Rufio::SearchScreen.new
   end
 
   def teardown
@@ -30,7 +30,7 @@ class TestGlobalSearchExclusions < Minitest::Test
   end
 
   def test_exclusions_apply_to_file_names_and_contents_with_case_and_compound_suffixes
-    Rufio::ConfigLoader.stub(:load_config, { global_search_excluded_extensions: ['log', '.tar.gz', '.env'] }) do
+    Rufio::ConfigLoader.stub(:load_config, { search_excluded_extensions: ['log', '.tar.gz', '.env'] }) do
       @search.open([{ name: 'Test', path: @root }])
       wait_for_scan
       expected = %w[catalog catalogger inside.txt keep.txt log]
@@ -52,12 +52,12 @@ class TestGlobalSearchExclusions < Minitest::Test
   end
 
   def test_invalid_entries_are_ignored_and_extensions_are_normalized
-    config = { global_search_excluded_extensions: [' LOG ', '.ZIP', '/node_modules', '/', '', '.', nil, 123, 'log'] }
+    config = { search_excluded_extensions: [' LOG ', '.ZIP', '/node_modules', '/', '', '.', nil, 123, 'log'] }
     Rufio::ConfigLoader.stub(:load_config, config) do
-      assert_equal %w[.log .zip /node_modules], Rufio::ConfigLoader.global_search_excluded_extensions
+      assert_equal %w[.log .zip /node_modules], Rufio::ConfigLoader.search_excluded_extensions
     end
-    Rufio::ConfigLoader.stub(:load_config, { global_search_excluded_extensions: 123 }) do
-      assert_empty Rufio::ConfigLoader.global_search_excluded_extensions
+    Rufio::ConfigLoader.stub(:load_config, { search_excluded_extensions: 123 }) do
+      assert_empty Rufio::ConfigLoader.search_excluded_extensions
     end
   end
 
@@ -72,7 +72,7 @@ class TestGlobalSearchExclusions < Minitest::Test
     loader.send(:remove_const, :CONFIG_PATH)
     loader.const_set(:CONFIG_PATH, config_path)
     config = loader.send(:load_config_file)
-    assert_equal %w[.log .zip], config[:global_search_excluded_extensions]
+    assert_equal %w[.log .zip], config[:search_excluded_extensions]
   ensure
     loader.send(:remove_const, :CONFIG_PATH)
     loader.const_set(:CONFIG_PATH, original_path)

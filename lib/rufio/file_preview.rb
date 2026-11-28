@@ -8,6 +8,9 @@ module Rufio
   class FilePreview
     BINARY_THRESHOLD = 0.3  # treat as binary if 30% or more binary characters
     DEFAULT_MAX_LINES = 50
+    # プレビューモード（P）はスクロールとファイル内検索（/）で先の行まで見るため、
+    # 行数の上限を広げる。読み込む量そのものは MAX_PREVIEW_BYTES が決める
+    PREVIEW_MODE_MAX_LINES = 20_000
     MAX_LINE_LENGTH = 500
     MAX_PREVIEW_BYTES = 64 * 1024
 
@@ -114,8 +117,10 @@ module Rufio
         type: 'table',
         language: nil,
         document: document,
+        # グリッドの文字列は表示を知らない利用側向けの控えなので、行数は既定の上限で足りる
         lines: TableLayout.plain_lines(
-          document, max_lines: max_lines, max_column_width: settings[:max_column_width]
+          document, max_lines: [max_lines, DEFAULT_MAX_LINES].min,
+          max_column_width: settings[:max_column_width]
         ),
         truncated: document.truncated?,
         size: File.size(file_path),

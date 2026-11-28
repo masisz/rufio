@@ -180,26 +180,29 @@ class TestRenderer < Minitest::Test
     assert_match /Frame 2/, output2
   end
 
-  def test_render_returns_false_when_nothing_to_render
+  # 戻り値は「書き換えた行番号」。画像（GraphicsLayer）が再送の判断に使う
+  def test_render_returns_no_rows_when_nothing_to_render
     output = StringIO.new
     renderer = Rufio::Renderer.new(20, 5, output: output)
     screen = Rufio::Screen.new(20, 5)
 
     result = renderer.render(screen)
 
-    assert_equal false, result
+    assert_equal [], result
     assert_equal "", output.string
   end
 
-  def test_render_returns_true_when_rows_updated
+  def test_render_returns_the_rows_it_updated
     output = StringIO.new
     renderer = Rufio::Renderer.new(20, 5, output: output)
     screen = Rufio::Screen.new(20, 5)
     screen.put_string(0, 0, "Hello")
+    screen.put_string(0, 3, "World")
 
     result = renderer.render(screen)
 
-    assert_equal true, result
+    assert_equal [0, 3], result.sort
+    assert_equal [], renderer.render(screen), '変化が無ければ空を返すこと'
   end
 
   def test_render_with_fullwidth_chars

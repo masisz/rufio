@@ -11,7 +11,7 @@
 - [Bookmarks & Navigation](#bookmarks--navigation)
 - [Command Mode](#command-mode)
 - [Tool Runtime](#tool-runtime)
-- [Global Search & Config Mode](#global-search--config-mode)
+- [Search & Config Mode](#search--config-mode)
 - [Modes & Help Menu](#modes--help-menu)
 
 ---
@@ -43,15 +43,21 @@
 | `A` | Create new directory |
 | `y` | Copy the current or selected paths to the clipboard |
 
-In a preview, `j/k` scroll, `Ctrl+D/U` page down/up and `ESC` returns to the file list.
+In a preview, `j/k` scroll, `Ctrl+D/U` page down/up and `ESC` returns to the file list. `/` searches inside the file: type to jump to the first match, `Enter` keeps it, `n` / `N` move between matches and `ESC` clears the search (another `ESC` leaves the preview). Matches are highlighted, the current one in a different colour.
 
-In a table preview, `h/j/k/l` and the arrow keys move a cell cursor instead, `g/}` jump to the first and last row, `0/$` to the first and last column, `y` copies the cell under the cursor, `Y` the whole row as a CSV line, `[`/`]` switch between a workbook's sheets or a database's tables, and the line under the file name shows the cell address and column name (`R3C2 price`). The grid scrolls in both directions to keep the cursor visible.
+In a table preview, `h/j/k/l` and the arrow keys move a cell cursor instead, `g/}` jump to the first and last row, `0/$` to the first and last column, `Space` selects the column under the cursor (its cells are marked like a selected file), `y` copies the cell under the cursor, or the cursor row's selected columns joined with commas when any column is selected, `Y` the whole row as a CSV line, `[`/`]` switch between a workbook's sheets or a database's tables, `t` opens the list of sheets or tables (`j`/`k` to move, `Enter` to open the selected one, `ESC` to close), `/` filters the rows (see below), and the line under the file name shows the cell address and column name (`R3C2 price`). The grid scrolls in both directions to keep the cursor visible.
 
 Copying uses `pbcopy`, `clip`, `wl-copy`, `xclip` or `xsel` when available and OSC 52 otherwise; `CLIPBOARD_COMMAND` in `config.rb` overrides it and `rufio -c` shows which one is used.
 
 Text previews read at most the first 64 KiB. PDF bodies are not previewed, keeping file navigation responsive.
 
+Images (`.png`, `.jpg`, `.bmp`, recognised by the file's own signature) are shown in the preview pane on terminals that speak the Kitty graphics protocol (kitty, Ghostty, WezTerm, Konsole). The pane's cells are left blank and the picture is drawn by the terminal, so the file list stays readable. The bundled native library decodes the image and scales it down to the pane before sending, so a 12 MP photo travels as a few hundred KB; files up to 32 MiB are read. Without that library (or with `RUFIO_NATIVE_IMAGE=0`) PNG files up to 8 MiB are still sent as they are, since terminals decode PNG themselves. On other terminals, inside tmux, for `.gif`, for progressive JPEG or for an interlaced PNG, the format, size and pixel dimensions are shown as text instead. `RUFIO_IMAGE_PREVIEW=0` turns images off.
+
+In preview mode (`P`) on an image, `+` and `-` zoom in 25% steps up to 4x, `0` fits the picture to the pane again, and `h/j/k/l` or the arrow keys move around while zoomed (the terminal is asked for a part of the picture, so no decoding is needed). Moving to another file removes the picture first and sends the new one a moment later, so holding `j` through a folder of images does not flood the terminal, and a picture that was painted over by a notification is put back.
+
 `.zip` previews list the archive entries (size, method, modified time, name) without extracting them.
+
+`/` in a table preview filters its rows. Write conditions separated by commas: `price > 100, name a%` keeps the rows where price is over 100 and the name starts with `a`. A term without a column (`apple`) is searched in every column, `=`, `!=`, `<>`, `>`, `>=`, `<` and `<=` compare (numerically when both sides are numbers), and anything else matches with `LIKE`: `a%` and `a_c` use the wildcards as written, a plain word matches anywhere in the column. Quote a value to keep its commas and spaces (`note "red, sweet"`). Column names ignore case, and the column letters (`A`, `B`, …) work too. `Enter` applies the filter and the line under the file name shows it (`filter: price > 100 (2 rows)`), `ESC` clears it. For a SQLite table the filter runs as a read-only `SELECT ... WHERE` inside the database, so it finds rows past the preview's row limit; a spreadsheet or CSV is filtered over the rows that were read.
 
 `.csv`, `.tsv`, `.tab`, `.xlsx`, `.xlsm` and `.ods` files, and SQLite databases when the `sqlite3` command is installed (recognised by the file's own signature, whatever its extension), are shown as a grid with column letters, the header row kept in place while you scroll, and a last line reporting the row and column counts, the detected character encoding and any truncation. UTF-8, UTF-16 (with BOM), CP932 and EUC-JP files are decoded automatically. A `.csv` or `.tsv` is read up to 512 KiB.
 
@@ -72,19 +78,14 @@ ZIP jobs show progress in Jobs mode (`J`). `x`: Cancel the selected job there; a
 | Key | Action |
 |-----|--------|
 | `f` | Start filter mode |
-| `s` | Fuzzy search file names |
-| `/` | Fuzzy search file names (same as `s`) |
-| `F` | Search file contents with rga (ripgrep-all) and pick a result |
-| `G` | Global search: file names or contents across all bookmarks |
+| `/` | Search, scoped to where you are |
 
-**Fuzzy Search (`s`, `/`, `F`):**
-- `s` / `/` list every file under the current directory (including hidden files) in a built-in search screen; no external tools are needed
-- Type to narrow results with fuzzy (in-order, non-contiguous) matching; matched characters are highlighted
-- `Up/Down` or `Ctrl+J/K or Ctrl+N/P`: Select | `Enter`: Open | `Ctrl+U`: Clear | `ESC`: Back
-- `F` asks for text, runs rga in the background and shows its `file:line:text` results in the same screen. `Enter` opens the file at that line
-- Screens at least 80 columns wide show a preview of the selected file on the right (`F` centers and highlights the matching line). Set `preview_enabled: false` in `UI_OPTIONS` to hide it
-- Reopening `s` in the same directory within 5 minutes shows the cached list (`Cached ... ago` in the title). `Ctrl+R`: Rescan. A file deleted since then shows `File no longer exists`
-- The cache keeps 4 directories, 200,000 files and 5 minutes by default. Change it with `FUZZY_SEARCH_CACHE = { max_entries: 500_000, max_roots: 8, ttl: 900 }` in `~/.config/rufio/config.rb` (up to 1,000,000 files, 16 directories and 86,400 seconds; `0` disables)
+**Search (`/`):**
+- `/` is the only search key. What it searches depends on the mode: the file list searches the current directory tree, a preview searches inside the file, and a table preview filters its rows
+- In the file list it opens the search screen over every file under the current directory (hidden files included); no external tools are needed. Bookmarks are not searched
+- `Tab`: Switch between fuzzy (in-order, non-contiguous) file names and literal, case insensitive contents. Matched characters are highlighted
+- `Up/Down` or `Ctrl+J/K or Ctrl+N/P`: Select | `Enter`: Go to the file in Files mode | `Ctrl+U`: Clear | `ESC`: Back
+- Content results show the file, the line number and the matching text, and also read `.pdf` (page), `.xlsx` (sheet/cell) and `.pptx` (slide)
 
 **Filter Mode:**
 - Type characters to filter files in real-time
@@ -99,8 +100,6 @@ ZIP jobs show progress in Jobs mode (`J`). `x`: Cancel the selected job there; a
 | `B` | Bookmark menu (view/add/remove/script paths) |
 | `0` | Jump to startup directory |
 | `1-9` | Jump to bookmark 1-9 |
-| `Tab` | Cycle to next bookmark (Files mode) |
-| `Shift+Tab` | Cycle to previous bookmark (Files mode) |
 | `z` | Navigate using zoxide history (when nothing is selected) |
 
 ---
@@ -155,17 +154,17 @@ Press `B` then select script path management to:
 
 ---
 
-## Global Search & Config Mode
+## Search & Config Mode
 
-### Global Search (`G`)
+### Search (`/`)
 
-Search file names or text inside every bookmarked directory.
+Search file names or text under the current directory.
 
-- `Tab`: Switch between fuzzy file names (same matching as `s`, best matches first) and literal content (case insensitive)
+- `Tab`: Switch between fuzzy file names (best matches first) and literal content (case insensitive)
 - Content search also reads `.pdf` (page), `.xlsx` (sheet/cell) and `.pptx` (slide)
 - `Up/Down` or `Ctrl+J/K or Ctrl+N/P`: Select a result | `Enter`: Go to the file in Files mode
-- `Ctrl+U`: Clear the query | `ESC`: Return to the previous mode
-- Exclude extensions (or `/name` directories and files) with `GLOBAL_SEARCH_EXCLUDED_EXTENSIONS` in `~/.config/rufio/config.rb`
+- `Ctrl+U`: Clear the query | `ESC`: Return to Files mode
+- Exclude extensions (or `/name` directories and files) with `SEARCH_EXCLUDED_EXTENSIONS` in `~/.config/rufio/config.rb` (the older `GLOBAL_SEARCH_EXCLUDED_EXTENSIONS` is still read)
 
 ### Config Mode (`C`)
 
@@ -178,7 +177,6 @@ and file operations as Files mode. Leaving the directory returns to Files mode.
 
 | Key | Action |
 |-----|--------|
-| `G` | Global search mode |
 | `C` | Config mode: open `~/.config/rufio/` |
 | `J` | Job mode |
 | `L` | Execution logs |
@@ -187,7 +185,7 @@ and file operations as Files mode. Leaving the directory returns to Files mode.
 | `q` | Quit rufio (with confirmation) |
 | `T` | Quit rufio and cd the shell to the current directory (requires `rufio --shell-init`) |
 
-In Files mode, `Tab` / `Shift+Tab` cycle bookmarks. In other modes, `Shift+Tab` switches to the previous mode.
+In modes other than Files and Config, `Shift+Tab` switches to the previous mode.
 
 ### Help Menu
 
@@ -203,11 +201,11 @@ In Files mode, `Tab` / `Shift+Tab` cycle bookmarks. In other modes, `Shift+Tab` 
 
 1. **Quick navigation**: Use `g` and `G` to jump to top/bottom
 2. **Bulk operations**: Select multiple files with `Space`, then use `m/c/x`
-3. **Filter + Search**: Use `f` for real-time filtering, `s` for fuzzy search
+3. **Filter + Search**: Use `f` for real-time filtering, `/` to search the directory tree
 4. **Bookmarks**: Save frequently used directories with `b`, access with `1-9`
 5. **Rake tasks**: If your project has a Rakefile, use `:rake:` with Tab completion
 6. **Background jobs**: Long-running commands and ZIP jobs execute in background, view with `J`
-7. **Global search**: Press `G` to search names or contents across all bookmarks
+7. **Search**: Press `/` to search names or contents under the current directory
 
 ---
 

@@ -4,7 +4,7 @@ require_relative 'test_helper'
 require 'minitest/autorun'
 require 'timeout'
 
-class TestGlobalContentSearch < Minitest::Test
+class TestSearchScreenContent < Minitest::Test
   def setup
     @root = Dir.mktmpdir('rufio-content')
     @a = File.join(@root, 'a')
@@ -13,7 +13,7 @@ class TestGlobalContentSearch < Minitest::Test
     File.write(File.join(@a, 'first.txt'), "header\nHello WORLD\n日本語の検索\n")
     File.write(File.join(@b, 'second.txt'), "world again\nno match\nWORLD twice\n")
     File.binwrite(File.join(@b, 'binary.dat'), "\x00world\xff")
-    @search = Rufio::GlobalSearch.new
+    @search = Rufio::SearchScreen.new
     @search.open([{ name: 'A', path: @a }, { name: 'B', path: @b }])
   end
 

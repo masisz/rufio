@@ -1,6 +1,7 @@
 const std = @import("std");
 comptime {
     _ = @import("fuzzy.zig");
+    _ = @import("image.zig");
 }
 const c = std.c;
 const search = @import("search.zig");

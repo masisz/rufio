@@ -134,7 +134,7 @@ class TestSqliteTableSource < Minitest::Test
     end
 
     path_argument = queries.first[-2]
-    assert path_argument.start_with?('/'), "#{path_argument.inspect} が絶対パスであること"
+    assert File.absolute_path?(path_argument), "#{path_argument.inspect} が絶対パスであること"
     refute path_argument.start_with?('-')
   end
 
@@ -186,6 +186,27 @@ class TestSqliteTableSource < Minitest::Test
     end
 
     assert_equal [true, false], document.sheets.map(&:loaded?)
+  end
+
+  def test_the_table_list_is_labelled_as_tables
+    document = with_runner({ 'sqlite_master' => TABLE_LIST }) { open_db }
+
+    assert_equal 'Tables', document.sheet_label, '一覧の見出しは「シート」ではなく「テーブル」にすること'
+  end
+
+  def test_the_table_list_does_not_read_any_table
+    document = with_runner({ 'sqlite_master' => TABLE_LIST, 'FROM' => ROWS }) do
+      doc = open_db
+      view = Rufio::TablePreviewView.new(doc, path: @path)
+
+      assert view.handle_key('t'), 't でテーブル一覧を開くこと'
+      assert_equal %w[items sales], view.picker.names
+      assert_equal 'Tables (2)', view.picker_title
+      assert_equal 1, queries.length, '一覧を出すだけではテーブルの中身を読まないこと'
+      doc
+    end
+
+    assert_equal [false, false], document.sheets.map(&:loaded?)
   end
 
   def test_row_limit_marks_truncation

@@ -13,11 +13,15 @@ class TestClipboard < Minitest::Test
   def setup
     @dir = Dir.mktmpdir('rufio_clipboard_test')
     @saved_env = ENV_KEYS.to_h { |key| [key, ENV[key]] }
+    @saved_host_os = RbConfig::CONFIG['host_os']
+    # macOS / Windows 環境で実クリップボード（pbcopy / clip）へ誤送信しないよう、既定は OS コマンド無しに揃える
+    RbConfig::CONFIG['host_os'] = 'linux-gnu'
     ENV_KEYS.each { |key| ENV.delete(key) }
     Rufio::Clipboard.reset!
   end
 
   def teardown
+    RbConfig::CONFIG['host_os'] = @saved_host_os
     @saved_env.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
     Rufio::Clipboard.reset!
     FileUtils.rm_rf(@dir) if @dir && Dir.exist?(@dir)
@@ -86,6 +90,8 @@ class TestClipboard < Minitest::Test
   # === 設定されたコマンド ===
 
   def test_configured_command_receives_the_text_on_stdin
+    skip 'POSIX の実行可能スクリプトが必要' if windows_platform?
+
     output = File.join(@dir, 'clipboard.txt')
     script = File.join(@dir, 'fake-copy')
     File.write(script, "#!/bin/sh\ncat > #{output}\n")
@@ -247,6 +253,8 @@ class TestClipboard < Minitest::Test
   end
 
   def test_available_command_reports_the_configured_command
+    skip 'POSIX の実行可能スクリプトが必要' if windows_platform?
+
     script = File.join(@dir, 'fake-copy')
     File.write(script, "#!/bin/sh\ncat > /dev/null\n")
     FileUtils.chmod(0o755, script)

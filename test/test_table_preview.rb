@@ -280,12 +280,12 @@ class TestTablePreview < Minitest::Test
     assert_includes screen_text(screen, 24), 'R1C2 price'
   end
 
-  def test_text_preview_keeps_the_back_hint
+  def test_text_preview_keeps_the_scroll_hint
     screen, ui, handler = renderer_for(name: 'notes.txt')
     handler.focus_preview_pane
     ui.draw_screen(screen)
 
-    assert_includes screen_text(screen, 24), 'ESC: Back to files'
+    assert_includes screen_text(screen, 24), Rufio::TextPreviewView::SCROLL_HINT
   end
 
   def test_moving_right_scrolls_the_columns_into_view
@@ -388,5 +388,134 @@ class TestTablePreview < Minitest::Test
     text = screen_text(screen, 24)
 
     assert_includes text, '+1 hidden', '収まらない列数を最下行に出すこと'
+  end
+
+  # === テーブル／シート一覧（/） ===
+
+  def workbook_renderer
+    path = File.join(@test_dir, 'book.xlsx')
+    write_xlsx(path, [['Sales', [%w[name price], ['apple', 120]]],
+                      ['Stock', [%w[item count], ['mikan', 30]]]])
+    screen, ui, handler = renderer_for(name: 'book.xlsx')
+    handler.focus_preview_pane
+    [screen, ui, handler]
+  end
+
+  def test_t_draws_the_sheet_list
+    screen, ui, handler = workbook_renderer
+    handler.handle_key('t')
+    ui.draw_screen(screen)
+    text = screen_text(screen, 24)
+
+    assert_includes text, 'Sheets (2)', '一覧の見出しを出すこと'
+    assert_includes text, 'Sales'
+    assert_includes text, 'Stock'
+    refute_includes text, 'A name', '一覧を開いている間はグリッドを描かないこと'
+    assert_includes text, 'Enter: open'
+  end
+
+  def test_the_selected_entry_is_highlighted_in_the_list
+    screen, ui, handler = workbook_renderer
+    handler.handle_key('t')
+    handler.handle_key('j')
+    ui.draw_screen(screen)
+
+    highlighted = highlighted_text(screen, 100, 24)
+    assert_includes highlighted, 'Stock', '選択中の行を反転表示すること'
+    refute_includes highlighted, 'Sales'
+  end
+
+  def test_choosing_from_the_list_draws_the_selected_grid
+    screen, ui, handler = workbook_renderer
+    handler.handle_key('t')
+    handler.handle_key('j')
+    handler.handle_key("\r")
+    screen.clear
+    ui.draw_screen(screen)
+    text = screen_text(screen, 24)
+
+    assert_includes text, 'A item', '選んだシートのグリッドを描くこと'
+    assert_includes text, 'mikan'
+    assert_includes text, '2/2 Stock'
+    refute_includes text, 'Sheets (2)'
+  end
+
+  # SQLite は「テーブル一覧」として同じ一覧に出る（sqlite3 コマンドがある環境のみ）
+  def test_the_list_shows_the_tables_of_a_database
+    skip 'sqlite3 コマンドがない' unless Rufio::CommandLocator.available?('sqlite3')
+
+    path = File.join(@test_dir, 'shop.db')
+    IO.popen(['sqlite3', path], 'w') do |io|
+      io.write("CREATE TABLE items (id INTEGER, name TEXT);\n" \
+               "INSERT INTO items VALUES (1, 'apple');\n" \
+               "CREATE TABLE sales (id INTEGER, total REAL);\n" \
+               "INSERT INTO sales VALUES (1, 120.0);\n")
+    end
+
+    screen, ui, handler = renderer_for(name: 'shop.db')
+    assert handler.focus_preview_pane
+    handler.handle_key('t')
+    ui.draw_screen(screen)
+    text = screen_text(screen, 24)
+
+    assert_includes text, 'Tables (2)', 'SQLite ではテーブル一覧として出すこと'
+    assert_includes text, 'items'
+    assert_includes text, 'sales'
+  end
+
+  # === カラム選択（Space）の描画 ===
+
+  # 選択マーク色（ファイル一覧の選択済みアイテムと同じ緑背景・黒文字）で
+  # 描かれた文字だけを集める
+  def marked_text(screen, width, height)
+    (0...height).flat_map do |y|
+      (0...width).map do |x|
+        cell = screen.get_cell(x, y)
+        cell && cell[:fg] == Rufio::UIRenderer::MARKED_COLUMN_COLOR ? cell[:char] : nil
+      end
+    end.compact.join
+  end
+
+  def test_a_selected_column_is_marked
+    screen, ui, handler = renderer_for
+    handler.focus_preview_pane
+    handler.handle_key(' ')
+    ui.draw_screen(screen)
+
+    marked = marked_text(screen, 100, 24)
+    assert_includes marked, 'name', '選択したカラムの見出しに印を付けること'
+    assert_includes marked, 'みかん', 'そのカラムのセルにも印を付けること'
+    refute_includes marked, 'price', '選んでいないカラムには印を付けないこと'
+    refute_includes marked, '150'
+  end
+
+  def test_the_cursor_cell_stays_visible_in_a_selected_column
+    screen, ui, handler = renderer_for
+    handler.focus_preview_pane
+    handler.handle_key(' ')
+    ui.draw_screen(screen)
+
+    assert_includes highlighted_text(screen, 100, 24), 'apple',
+                    '選択カラムの中でもカーソルセルは反転表示のままであること'
+  end
+
+  def test_unselecting_removes_the_mark
+    screen, ui, handler = renderer_for
+    handler.focus_preview_pane
+    handler.handle_key(' ')
+    handler.handle_key(' ')
+    screen.clear
+    ui.draw_screen(screen)
+
+    assert_empty marked_text(screen, 100, 24)
+  end
+
+  def test_the_status_line_lists_the_selected_columns
+    screen, ui, handler = renderer_for
+    handler.focus_preview_pane
+    handler.handle_key(' ')
+    ui.draw_screen(screen)
+
+    assert_includes screen_text(screen, 24), 'cols A'
   end
 end

@@ -8,7 +8,6 @@ require_relative 'filter_manager'
 require_relative 'navigation_controller'
 require_relative 'file_operation_controller'
 require_relative 'bookmark_controller'
-require_relative 'search_controller'
 require_relative 'selection_manager'
 require_relative 'file_operations'
 require_relative 'bookmark_manager'
@@ -30,12 +29,16 @@ module Rufio
       @nav_controller.preview_focused?
     end
 
-    def global_search_mode?
-      @terminal_ui&.global_search_active? || false
+    def search_mode?
+      @terminal_ui&.search_active? || false
     end
 
-    def start_global_search
-      @terminal_ui&.start_global_search(@bookmark_manager.list)
+    # `/`: 現在のディレクトリ配下を検索する画面を開く（対象はここだけ）
+    def start_search
+      return false unless @terminal_ui
+
+      path = @directory_listing&.current_path || Dir.pwd
+      @terminal_ui.start_search([{ name: File.basename(path), path: path }])
     end
 
     def config_directory
@@ -69,7 +72,6 @@ module Rufio
       when :logs   then enter_log_viewer_mode
       when :jobs   then enter_job_mode
       when :config then enter_config_mode
-      when :global then start_global_search
       when :help   then show_help_dialog
       else false
       end
@@ -147,8 +149,6 @@ module Rufio
         nil, @dialog_renderer, @selection_manager, @job_manager, @notification_manager
       )
 
-      # SearchController（内蔵ファジー検索・rga検索を担当）
-      @search_controller = SearchController.new(nil, @file_opener, @dialog_renderer)
 
       # Help mode
       @in_help_mode = false
@@ -168,7 +168,6 @@ module Rufio
       @nav_controller.set_directory_listing(directory_listing)
       @file_op_controller.set_directory_listing(directory_listing)
       @bookmark_controller.set_directory_listing(directory_listing)
-      @search_controller.set_directory_listing(directory_listing)
       @archive_controller.set_directory_listing(directory_listing)
     end
 
@@ -178,7 +177,6 @@ module Rufio
       @file_op_controller.set_terminal_ui(terminal_ui)
       @archive_controller.set_terminal_ui(terminal_ui)
       @bookmark_controller.set_terminal_ui(terminal_ui)
-      @search_controller.set_terminal_ui(terminal_ui)
       # terminal_ui が設定されたら、bookmark_manager と zoxide_integration にも渡す
       @bookmark_manager.set_terminal_ui(terminal_ui)
       @zoxide_integration.set_terminal_ui(terminal_ui)
@@ -204,10 +202,6 @@ module Rufio
 
       if @key_map[key] == :help && !@filter_manager.filter_mode
         return show_help_dialog
-      end
-
-      if @key_map[key] == :global_search && !@filter_manager.filter_mode
-        return start_global_search
       end
 
       if @key_map[key] == :config_mode && !@filter_manager.filter_mode
@@ -432,17 +426,7 @@ module Rufio
       @nav_controller.reset_preview_scroll
     end
 
-    # Tabキー: 次のブックマークへ循環移動
-    def goto_next_bookmark
-      @bookmark_controller.goto_next_bookmark
-    end
-
-    # Shift+Tabキー: 前のブックマークへ循環移動
-    def goto_prev_bookmark
-      @bookmark_controller.goto_prev_bookmark
-    end
-
-    # UIRenderer 用：Tab移動と同じブックマークリストを返す
+    # UIRenderer 用：ブックマークリストを返す
     def bookmark_list
       @bookmark_manager.list
     end
@@ -505,8 +489,7 @@ module Rufio
         else
           @nav_controller.start_filter_mode
         end
-      when :file_search, :file_search_alt then file_search
-      when :rga_search      then rga_search
+      when :search          then start_search
       when :add_bookmark    then add_bookmark
       when :bookmark_menu   then show_bookmark_menu
       when :zoxide          then archive_or_zoxide
@@ -532,14 +515,6 @@ module Rufio
       return false if @in_help_mode || @in_log_viewer_mode
 
       :quit_cd
-    end
-
-    def file_search
-      @search_controller.file_search
-    end
-
-    def rga_search
-      @search_controller.rga_search
     end
 
     def start_filter_mode

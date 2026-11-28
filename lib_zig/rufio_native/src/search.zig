@@ -170,17 +170,21 @@ pub fn countNewlines(bytes: []const u8) usize {
     const zero: Vec = @splat(0);
     var total: usize = 0;
     var i: usize = 0;
-    while (i + VLEN <= bytes.len) {
-        var acc: Vec = zero;
-        var rounds: usize = 0;
-        while (rounds < 255 and i + VLEN <= bytes.len) : ({
-            rounds += 1;
-            i += VLEN;
-        }) {
-            const v: Vec = bytes[i..][0..VLEN].*;
-            acc += @select(u8, v == nl, one, zero);
+    if (bytes.len >= VLEN) {
+        const limit = bytes.len - VLEN;
+        while (i <= limit) {
+            var acc: Vec = zero;
+            var rounds: usize = 0;
+            while (rounds < 255 and i <= limit) : ({
+                rounds += 1;
+                i += VLEN;
+            }) {
+                const v: Vec = bytes[i..][0..VLEN].*;
+                acc +%= @select(u8, v == nl, one, zero);
+            }
+            const wide: @Vector(VLEN, u16) = acc;
+            total += @reduce(.Add, wide);
         }
-        total += @reduce(.Add, @as(@Vector(VLEN, u16), acc));
     }
     for (bytes[i..]) |b| total += @intFromBool(b == '\n');
     return total;
@@ -256,32 +260,47 @@ const Buf = struct {
     }
 };
 
-const Job = struct {
+pub const Job = struct {
     next: ?*Job,
     root: u32,
     len: usize,
 
-    fn path(self: *Job) [:0]u8 {
+    pub fn path(self: *Job) [:0]u8 {
         const base: [*]u8 = @ptrCast(self);
         return base[@sizeOf(Job)..][0..self.len :0];
     }
 
-    fn create(root: u32, parent: []const u8, name: []const u8) ?*Job {
-        const len = if (name.len == 0) parent.len else parent.len + 1 + name.len;
-        const mem = c.malloc(@sizeOf(Job) + len + 1) orelse return null;
-        const job: *Job = @ptrCast(@alignCast(mem));
+    /// Job 1 個に要るバイト数（構造体＋パス＋終端 NUL）
+    pub fn sizeFor(parent: []const u8, name: []const u8) usize {
+        return @sizeOf(Job) + pathLen(parent, name) + 1;
+    }
+
+    fn pathLen(parent: []const u8, name: []const u8) usize {
+        return if (name.len == 0) parent.len else parent.len + 1 + name.len;
+    }
+
+    /// 渡したメモリ（sizeFor 以上）に Job を組み立てる。
+    /// path() は [:0] スライスを返すので、終端 NUL は生ポインタで先に書く
+    pub fn initIn(mem: [*]align(@alignOf(Job)) u8, root: u32, parent: []const u8, name: []const u8) *Job {
+        const len = pathLen(parent, name);
+        const job: *Job = @ptrCast(mem);
         job.* = .{ .next = null, .root = root, .len = len };
-        const p = job.path();
+        const p: [*]u8 = mem + @sizeOf(Job);
+        p[len] = 0;
         @memcpy(p[0..parent.len], parent);
         if (name.len > 0) {
             p[parent.len] = '/';
             @memcpy(p[parent.len + 1 ..][0..name.len], name);
         }
-        p[len] = 0;
         return job;
     }
 
-    fn destroy(self: *Job) void {
+    pub fn create(root: u32, parent: []const u8, name: []const u8) ?*Job {
+        const mem = c.malloc(sizeFor(parent, name)) orelse return null;
+        return initIn(@ptrCast(@alignCast(mem)), root, parent, name);
+    }
+
+    pub fn destroy(self: *Job) void {
         c.free(self);
     }
 };

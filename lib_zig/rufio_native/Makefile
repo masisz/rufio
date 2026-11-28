@@ -9,14 +9,15 @@
 ZIG := zig
 RUBY := ruby
 
-# コンパイルフラグ
-ZIG_FLAGS := -O ReleaseFast -dynamic -lc
+# コンパイルフラグ（外部ファイル解析の境界・オーバーフロー検証を保つため ReleaseSafe）
+ZIG_FLAGS := -O ReleaseSafe -dynamic -lc
 
 # ターゲット
 TARGET := librufio_zig.dylib
 BENCH := rufio_search
 SRC := src/main.zig
-SOURCES := src/main.zig src/search.zig src/os.zig src/zip.zig src/fuzzy.zig
+IMAGE_SOURCES := src/image.zig src/image_png.zig src/image_jpeg.zig src/image_bmp.zig src/image_resize.zig
+SOURCES := src/main.zig src/search.zig src/os.zig src/zip.zig src/fuzzy.zig $(IMAGE_SOURCES)
 SHARED_SOURCES := src/search.zig src/os.zig src/search_test.zig src/fuzzy.zig src/fuzzy_test.zig
 NVIM_ZIG_DIR ?= ../../../usurai.nvim/zig
 NATIVE_DIR := ../../lib/rufio/native
@@ -46,6 +47,7 @@ $(BENCH): src/cli.zig src/search.zig src/os.zig
 test:
 	$(ZIG) test src/search_test.zig
 	$(ZIG) test src/fuzzy_test.zig
+	$(ZIG) test src/image_test.zig -lc
 
 bench: $(BENCH)
 	./bench.sh
@@ -59,7 +61,7 @@ dist: $(SOURCES)
 		mkdir -p $(BUILD_DIR)/$$dir $(NATIVE_DIR)/$$dir || exit 1; \
 		$(ZIG) build-lib $(SRC) -target $$triple $(ZIG_FLAGS) -fstrip \
 			-femit-bin=$(BUILD_DIR)/$$dir/$$file || exit 1; \
-		cp $(BUILD_DIR)/$$dir/$$file $(NATIVE_DIR)/$$dir/$$file || exit 1; \
+		rm -f $(NATIVE_DIR)/$$dir/$$file && cp $(BUILD_DIR)/$$dir/$$file $(NATIVE_DIR)/$$dir/$$file || exit 1; \
 	done
 
 clean:

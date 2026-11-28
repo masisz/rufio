@@ -86,3 +86,38 @@ test "extension helpers follow Ruby semantics" {
     try std.testing.expectEqualStrings("", search.extname("Makefile"));
     try std.testing.expectEqualStrings(".gz", search.extname("a.tar.gz"));
 }
+
+test "counts newlines across large chunks without overflow" {
+    const buf = try std.testing.allocator.alloc(u8, 300 * 1024);
+    defer std.testing.allocator.free(buf);
+    @memset(buf, '\n');
+    try std.testing.expectEqual(@as(usize, 300 * 1024), search.countNewlines(buf));
+}
+
+test "Job.initIn writes the sentinel before taking a sentinel slice" {
+    // 未初期化のメモリ（0xAA）に組み立てる。終端 NUL を書く前に path() の
+    // [:0] スライスを作っていると、安全チェック付きビルドで sentinel mismatch になる
+    const parent = "/tmp/rufio-dir";
+    const name = "entry.txt";
+    const bytes = search.Job.sizeFor(parent, name);
+    const mem = try std.testing.allocator.alignedAlloc(u8, .of(search.Job), bytes);
+    defer std.testing.allocator.free(mem);
+    @memset(mem, 0xAA);
+
+    const job = search.Job.initIn(mem.ptr, 3, parent, name);
+    try std.testing.expectEqualStrings(parent ++ "/" ++ name, job.path());
+    try std.testing.expectEqual(@as(u8, 0), job.path().ptr[job.len]);
+    try std.testing.expectEqual(@as(u32, 3), job.root);
+}
+
+test "Job.initIn handles an empty name" {
+    const parent = "/tmp/rufio-root";
+    const bytes = search.Job.sizeFor(parent, "");
+    const mem = try std.testing.allocator.alignedAlloc(u8, .of(search.Job), bytes);
+    defer std.testing.allocator.free(mem);
+    @memset(mem, 0xAA);
+
+    const job = search.Job.initIn(mem.ptr, 0, parent, "");
+    try std.testing.expectEqualStrings(parent, job.path());
+    try std.testing.expectEqual(@as(u8, 0), job.path().ptr[job.len]);
+}

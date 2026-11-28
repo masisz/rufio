@@ -182,6 +182,7 @@ module Rufio
       return false unless @preview_focused
 
       @preview_focused = false
+      @preview_view&.release
       @preview_view = nil
       true
     end
@@ -236,7 +237,12 @@ module Rufio
     # 別のファイルを選び直したときなど、プレビューを先頭に戻す
     def reset_preview_scroll
       @preview_scroll_offset = 0
-      @preview_focused ? @preview_view&.reset : @preview_view = nil
+      if @preview_focused
+        @preview_view&.reset
+      else
+        @preview_view&.release
+        @preview_view = nil
+      end
       0
     end
 
@@ -246,9 +252,11 @@ module Rufio
 
     # プレビューペインフォーカス中のキー処理。
     # まずビュー（テキスト / 表）に渡し、扱わなかったキーだけここで処理する。
+    # ESC もビューに先に渡す（表のシート一覧を開いている間は、一覧を閉じるだけで
+    # プレビューモードは抜けない）。
     def handle_preview_focus_key(key)
-      return unfocus_preview_pane if key == "\e" # ESC
       return true if @preview_view&.handle_key(key)
+      return unfocus_preview_pane if key == "\e" # ESC
 
       case key
       when 'j', "\e[B" then scroll_preview_down

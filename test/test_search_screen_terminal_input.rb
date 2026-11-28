@@ -3,11 +3,11 @@
 require_relative 'test_helper'
 require 'minitest/autorun'
 
-class TestGlobalSearchTerminalInput < Minitest::Test
+class TestSearchScreenTerminalInput < Minitest::Test
   def setup
     @ui = Rufio::TerminalUI.new(test_mode: true)
     @ui.instance_variable_set(:@keybind_handler, Rufio::KeybindHandler.new)
-    @search = @ui.instance_variable_get(:@global_search)
+    @search = @ui.instance_variable_get(:@search_screen)
     @search.open([])
     @search.instance_variable_set(:@results, [
       { path: '/first', relative_path: 'first', bookmark: 'test' },
@@ -25,7 +25,7 @@ class TestGlobalSearchTerminalInput < Minitest::Test
   def feed(sequence)
     sequence.bytes.each { |byte| @queue << byte }
     assert @ui.send(:handle_input_nonblocking)
-    assert @search.active?, "G mode closed for #{sequence.inspect}"
+    assert @search.active?, "search screen closed for #{sequence.inspect}"
     assert_equal '', @search.query
     assert @queue.empty?, 'escape sequence was not fully consumed'
   end
@@ -86,7 +86,7 @@ end
 
 # Mac/Linux の読み取り経路でも、TerminalUI から選択位置の更新まで検証する。
 # ESC だけを先に渡し、後続バイトは読み取り待機に入ってから届ける。
-class TestGlobalSearchUnixTerminalInput < TestGlobalSearchTerminalInput
+class TestSearchScreenUnixTerminalInput < TestSearchScreenTerminalInput
   def setup
     skip 'Unix input path requires IO.select on pipes' if RUBY_PLATFORM =~ /mswin|mingw/
 
@@ -119,7 +119,7 @@ class TestGlobalSearchUnixTerminalInput < TestGlobalSearchTerminalInput
         assert @ui.send(:handle_input_nonblocking)
       end
     end
-    assert @search.active?, "G mode closed for #{sequence.inspect}"
+    assert @search.active?, "search screen closed for #{sequence.inspect}"
     assert_equal query, @search.query
     assert_empty continuation, 'escape continuation was never read'
     assert_nil select_method.call([@input_reader], nil, nil, 0), 'unconsumed input remains'
