@@ -261,7 +261,8 @@ class TestPreviewView < Minitest::Test
 
   def test_y_copies_the_raw_cell_value
     path = File.join(@test_dir, 'quoted.csv')
-    File.write(path, %(name,note\napple,"two\nlines"\n))
+    # セル内の改行そのものを確かめるので、Windows のテキストモード変換を避ける
+    File.binwrite(path, %(name,note\napple,"two\nlines"\n))
     view = Rufio::PreviewView.build(path)
     view.handle_key('l')
 

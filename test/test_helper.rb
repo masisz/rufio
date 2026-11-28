@@ -64,3 +64,28 @@ end
 
 # 手動でminitestを実行
 Minitest.run if __FILE__ == $0
+# 画像プレビューは Windows の端末では既定で無効（TerminalGraphics.enabled?）なので、
+# 対応端末として判定を通したいテストでは非 Windows の host_os に見せる。
+# Windows で無効になること自体は test_terminal_graphics.rb の専用テストで確かめる
+module HostOsStub
+  POSIX_HOST_OS = 'linux-gnu'
+
+  # setup から呼ぶ。teardown で restore_host_os すること
+  def stub_posix_host_os
+    @saved_host_os = RbConfig::CONFIG['host_os']
+    RbConfig::CONFIG['host_os'] = POSIX_HOST_OS
+  end
+
+  def restore_host_os
+    RbConfig::CONFIG['host_os'] = @saved_host_os if defined?(@saved_host_os) && @saved_host_os
+  end
+
+  # ブロックの間だけ host_os を差し替える
+  def with_host_os(value)
+    original = RbConfig::CONFIG['host_os']
+    RbConfig::CONFIG['host_os'] = value
+    yield
+  ensure
+    RbConfig::CONFIG['host_os'] = original
+  end
+end

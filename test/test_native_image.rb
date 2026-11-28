@@ -10,6 +10,7 @@ require_relative '../lib/rufio'
 # Zig 実装の画像デコード（Phase 3）と、それを使うプレビューの組み立て。
 # ライブラリが無い環境では native 側のテストをスキップし、フォールバックだけを確認する。
 class TestNativeImage < Minitest::Test
+  include HostOsStub
   FIXTURES = File.expand_path('fixtures/images', __dir__)
   # fixtures は 16x12 のグラデーション（PNG / JPEG / BMP）と 8x8 の半透明 PNG
   SOURCE = [16, 12].freeze
@@ -20,6 +21,7 @@ class TestNativeImage < Minitest::Test
       FileUtils.cp(File.join(FIXTURES, name), File.join(@dir, name))
     end
     File.write(File.join(@dir, 'notes.txt'), "hello\n")
+    stub_posix_host_os
     Rufio::TerminalGraphics.reset!
     support_graphics(true)
   end
@@ -27,6 +29,7 @@ class TestNativeImage < Minitest::Test
   def teardown
     Rufio::TerminalGraphics.reset!
     FileUtils.rm_rf(@dir) if @dir
+    restore_host_os
   end
 
   def support_graphics(supported)

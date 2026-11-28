@@ -10,7 +10,10 @@ require_relative '../lib/rufio'
 # 画像プレビューのズーム（`+` / `-` / `0`）と、ズーム中の移動（hjkl）。
 # 拡大は元画像の一部を切り出して同じセル矩形に出す方式で、デコードは要らない。
 class TestImageZoom < Minitest::Test
+  include HostOsStub
+
   def setup
+    stub_posix_host_os
     @dir = Dir.mktmpdir('rufio_image_zoom')
     @png = write_png('shot.png', 400, 300)
     # 端末が対応している状態にする（応答を与えて本物の判定を通す）
@@ -29,6 +32,7 @@ class TestImageZoom < Minitest::Test
   def teardown
     Rufio::TerminalGraphics.reset!
     FileUtils.rm_rf(@dir) if @dir
+    restore_host_os
   end
 
   def write_png(name, width, height)

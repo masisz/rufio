@@ -9,12 +9,17 @@ require_relative '../lib/rufio'
 # 問い合わせ（a=q）と Primary DA（\e[c）を続けて送り、応答を読んで決める。
 # 非対応端末でも DA は必ず返るので、待たされない。
 class TestTerminalGraphics < Minitest::Test
+  include HostOsStub
+
   def setup
+    # 判定そのものを確かめるので、Windows でも非 Windows の端末として見せる
+    stub_posix_host_os
     Rufio::TerminalGraphics.reset!
   end
 
   def teardown
     Rufio::TerminalGraphics.reset!
+    restore_host_os
   end
 
   def detect(response, env: {})
@@ -66,6 +71,13 @@ class TestTerminalGraphics < Minitest::Test
     output = detect("\e_Gi=31;OK\e\\", env: { 'RUFIO_IMAGE_PREVIEW' => '0' })
 
     refute Rufio::TerminalGraphics.supported?
+    assert_empty output.string, '無効なら問い合わせも送らないこと'
+  end
+
+  def test_windows_terminals_are_off_by_default
+    output = with_host_os('mingw32') { detect("\e_Gi=31;OK\e\\\e[?62;c") }
+
+    refute Rufio::TerminalGraphics.supported?, 'Windows では既定で使わないこと'
     assert_empty output.string, '無効なら問い合わせも送らないこと'
   end
 

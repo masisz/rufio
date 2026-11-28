@@ -10,7 +10,10 @@ require_relative '../lib/rufio'
 # 画像プレビュー（Phase 1: PNG 直送）。
 # セルは空白で確保し、画像は差分レンダリングの後に APC で送る。
 class TestImagePreview < Minitest::Test
+  include HostOsStub
+
   def setup
+    stub_posix_host_os
     @dir = Dir.mktmpdir('rufio_image_preview')
     @png = write_png('shot.png', 400, 300)
     @jpeg = write_jpeg('photo.jpg', 800, 600)
@@ -21,6 +24,7 @@ class TestImagePreview < Minitest::Test
   def teardown
     Rufio::TerminalGraphics.reset!
     FileUtils.rm_rf(@dir) if @dir
+    restore_host_os
   end
 
   def write_png(name, width, height)
